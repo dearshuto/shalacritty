@@ -1,0 +1,9 @@
+[package]
+name = "shalacritty"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e07bf6f" }
