@@ -2,7 +2,7 @@ use crate::app::App;
 
 mod app;
 
-fn main() {
-    App::run();
-    println!("Hello, world!");
+#[tokio::main]
+async fn main() {
+    App::run().await;
 }

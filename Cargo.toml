@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e07bf6f" }
+tokio = { version = "1", features = ["full"] }
+winit = "0.28"
