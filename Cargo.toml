@@ -9,3 +9,4 @@ edition = "2021"
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e07bf6f" }
 tokio = { version = "1", features = ["full"] }
 winit = "0.28"
+wgpu = "0.17.1"
