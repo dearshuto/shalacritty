@@ -1,6 +1,4 @@
-use crate::app::App;
-
-mod app;
+use shalacritty::App;
 
 #[tokio::main]
 async fn main() {
