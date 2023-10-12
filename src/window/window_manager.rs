@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use super::window::Window;
+use winit::{
+    event_loop::EventLoopWindowTarget,
+    window::{Window, WindowBuilder},
+};
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct WindowId {
@@ -28,8 +31,8 @@ impl WindowManager {
     }
 
     #[allow(dead_code)]
-    pub fn create_window(&mut self) -> WindowId {
-        let window = Window {};
+    pub fn create_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) -> WindowId {
+        let window = WindowBuilder::new().build(event_loop).unwrap();
         let id = WindowId::new();
         self.window_table.insert(id.clone(), window);
 
