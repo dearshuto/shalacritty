@@ -3,8 +3,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoopBuilder},
 };
 
-#[allow(unused_imports)]
-use crate::window::WindowManager;
+use crate::{tty::TeletypeManager, window::WindowManager};
 
 pub struct App;
 
@@ -15,6 +14,9 @@ impl App {
 
         let mut window_manager = WindowManager::new();
         let id = window_manager.create_window(&instance, &event_loop).await;
+
+        let mut teletype_manager = TeletypeManager::new();
+        let _tty_id = teletype_manager.create_teletype();
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
