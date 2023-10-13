@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e07bf6f" }
+crossfont = { version = "0.5.0", features = ["force_system_fontconfig"] }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.4.1", features = ["v4", "macro-diagnostics"] }
 winit = "0.28"
