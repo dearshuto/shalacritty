@@ -1,3 +1,3 @@
 mod window_manager;
 
-pub use window_manager::WindowManager;
+pub use window_manager::{WindowId, WindowManager};
