@@ -3,12 +3,16 @@ use winit::{
     event_loop::{ControlFlow, EventLoopBuilder},
 };
 
-use crate::{tty::TeletypeManager, window::WindowManager};
+use crate::{gfx::GlyphManager, tty::TeletypeManager, window::WindowManager};
 
 pub struct App;
 
 impl App {
     pub async fn run() {
+        // グリフの抽出は時間がかかるので最初に処理を始める
+        let mut glyph_manager = GlyphManager::new();
+        let task = tokio::spawn(async move { glyph_manager.extract_alphabet().await });
+
         let event_loop = EventLoopBuilder::new().build();
         let instance = wgpu::Instance::default();
 
@@ -17,6 +21,9 @@ impl App {
 
         let mut teletype_manager = TeletypeManager::new();
         let _tty_id = teletype_manager.create_teletype();
+
+        // アルファベットの抽出待ち
+        task.await.unwrap();
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
