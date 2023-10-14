@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use wgpu::include_spirv_raw;
+use wgpu::{include_spirv_raw, util::DeviceExt};
 
 use crate::window::WindowId;
 
@@ -12,6 +12,8 @@ pub struct Renderer {
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
     surface_table: HashMap<WindowId, wgpu::Surface>,
     pipelie_table: HashMap<WindowId, wgpu::RenderPipeline>,
+    vertex_buffer_table: HashMap<WindowId, wgpu::Buffer>,
+    index_buffer_table: HashMap<WindowId, wgpu::Buffer>,
 }
 
 impl Renderer {
@@ -23,6 +25,8 @@ impl Renderer {
             adapter_table: Default::default(),
             surface_table: Default::default(),
             pipelie_table: Default::default(),
+            vertex_buffer_table: Default::default(),
+            index_buffer_table: HashMap::default(),
         }
     }
 
@@ -70,6 +74,20 @@ impl Renderer {
         let _pixel_shader_module =
             unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
 
+        let swapchain_capabilities = surface.get_capabilities(&adapter);
+        let swapchain_format = swapchain_capabilities.formats[0];
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: swapchain_format,
+            width: 640,
+            height: 480,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            view_formats: vec![swapchain_format],
+        };
+
+        surface.configure(&device, &config);
+
         let vertex_buffers = [wgpu::VertexBufferLayout {
             array_stride: (std::mem::size_of::<f32>() * 2) as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -90,28 +108,35 @@ impl Renderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            fragment: None,
+            fragment: Some(wgpu::FragmentState {
+                module: &_pixel_shader_module,
+                entry_point: "main",
+                targets: &[Some(config.view_formats[0].into())],
+            }),
             multiview: None,
         });
 
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
-            width: 640,
-            height: 480,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![],
-        };
+        // 頂点バッファー
+        let vertrex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&[-0.5f32, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5]),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
-        surface.configure(&device, &config);
+        // インデックスバッファー
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&[0u16, 1, 2, 0, 2, 3]),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         self.device_table.insert(id.clone(), device);
         self.queue_table.insert(id.clone(), queue);
         self.adapter_table.insert(id, adapter);
         self.surface_table.insert(id.clone(), surface);
         self.pipelie_table.insert(id.clone(), render_pipeline);
+        self.vertex_buffer_table.insert(id.clone(), vertrex_buffer);
+        self.index_buffer_table.insert(id.clone(), index_buffer);
     }
 
     pub fn resize(&self, id: WindowId, width: u32, height: u32) {
@@ -136,7 +161,9 @@ impl Renderer {
         let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
         let surface = self.surface_table.get(&id).unwrap();
-        let _render_pipeline = self.pipelie_table.get(&id).unwrap();
+        let render_pipeline = self.pipelie_table.get(&id).unwrap();
+        let vertex_buffer = self.vertex_buffer_table.get(&id).unwrap();
+        let index_buffer = self.index_buffer_table.get(&id).unwrap();
 
         let frame = surface.get_current_texture().unwrap();
         let view = frame
@@ -146,7 +173,7 @@ impl Renderer {
         let mut command_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
-            let _render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -158,6 +185,10 @@ impl Renderer {
                 })],
                 depth_stencil_attachment: None,
             });
+            render_pass.set_pipeline(render_pipeline);
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..6, 0, 0..1);
         }
 
         queue.submit(Some(command_encoder.finish()));
