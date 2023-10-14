@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, num::NonZeroU64};
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::{include_spirv_raw, util::DeviceExt};
@@ -14,6 +14,8 @@ pub struct Renderer {
     pipelie_table: HashMap<WindowId, wgpu::RenderPipeline>,
     vertex_buffer_table: HashMap<WindowId, wgpu::Buffer>,
     index_buffer_table: HashMap<WindowId, wgpu::Buffer>,
+    bind_group_table: HashMap<WindowId, wgpu::BindGroup>,
+    character_storage_block_table: HashMap<WindowId, wgpu::Buffer>,
 }
 
 impl Renderer {
@@ -27,6 +29,8 @@ impl Renderer {
             pipelie_table: Default::default(),
             vertex_buffer_table: Default::default(),
             index_buffer_table: HashMap::default(),
+            bind_group_table: Default::default(),
+            character_storage_block_table: Default::default(),
         }
     }
 
@@ -52,17 +56,30 @@ impl Renderer {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
-                    limits: wgpu::Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits()),
+                    limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 },
                 None,
             )
             .await
             .unwrap();
 
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(std::mem::size_of::<f32>() as u64 * 6),
+                },
+                count: None,
+            }],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -130,6 +147,26 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        // 文字ごとの情報
+        let character_storage_block =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&[
+                    0.5f32, 0.0, -0.3, 0.0, 0.0, 0.5, 0.0, 0.0, //
+                    0.5f32, 0.0, 0.3, 0.0, 0.0, 0.5, 0.0, 0.0, //
+                ]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: character_storage_block.as_entire_binding(),
+            }],
+        });
+
         self.device_table.insert(id.clone(), device);
         self.queue_table.insert(id.clone(), queue);
         self.adapter_table.insert(id, adapter);
@@ -137,6 +174,9 @@ impl Renderer {
         self.pipelie_table.insert(id.clone(), render_pipeline);
         self.vertex_buffer_table.insert(id.clone(), vertrex_buffer);
         self.index_buffer_table.insert(id.clone(), index_buffer);
+        self.character_storage_block_table
+            .insert(id.clone(), character_storage_block);
+        self.bind_group_table.insert(id.clone(), bind_group);
     }
 
     pub fn resize(&self, id: WindowId, width: u32, height: u32) {
@@ -164,6 +204,7 @@ impl Renderer {
         let render_pipeline = self.pipelie_table.get(&id).unwrap();
         let vertex_buffer = self.vertex_buffer_table.get(&id).unwrap();
         let index_buffer = self.index_buffer_table.get(&id).unwrap();
+        let bind_group = self.bind_group_table.get(&id).unwrap();
 
         let frame = surface.get_current_texture().unwrap();
         let view = frame
@@ -188,7 +229,8 @@ impl Renderer {
             render_pass.set_pipeline(render_pipeline);
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..6, 0, 0..1);
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.draw_indexed(0..6, 0, 0..2);
         }
 
         queue.submit(Some(command_encoder.finish()));
