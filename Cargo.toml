@@ -15,7 +15,9 @@ uuid = { version = "1.4.1", features = ["v4", "macro-diagnostics"] }
 winit = "0.28"
 wgpu = { version = "0.17.1", features = [ "vulkan-portability"] }
 
-bmp = "*"
-
 [build-dependencies]
 naga = { version = "0.13.0", features = ["glsl-in", "spv-out"] }
+
+[dev-dependencies]
+bmp = "*"
+
