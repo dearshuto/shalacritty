@@ -16,6 +16,8 @@ pub struct Renderer {
     index_buffer_table: HashMap<WindowId, wgpu::Buffer>,
     bind_group_table: HashMap<WindowId, wgpu::BindGroup>,
     character_storage_block_table: HashMap<WindowId, wgpu::Buffer>,
+    sampler_table: HashMap<WindowId, wgpu::Sampler>,
+    glyph_texture: Option<wgpu::Texture>,
 }
 
 impl Renderer {
@@ -31,6 +33,8 @@ impl Renderer {
             index_buffer_table: HashMap::default(),
             bind_group_table: Default::default(),
             character_storage_block_table: Default::default(),
+            sampler_table: HashMap::default(),
+            glyph_texture: None,
         }
     }
 
@@ -65,16 +69,34 @@ impl Renderer {
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(std::mem::size_of::<f32>() as u64 * 6),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZeroU64::new(std::mem::size_of::<f32>() as u64 * 6),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -158,13 +180,67 @@ impl Renderer {
                 usage: wgpu::BufferUsages::STORAGE,
             });
 
+        // グリフを矩形に貼るときのサンプラー
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: None,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+
+        // 文字テクスチャ。一番複雑なところなので最終的には外部で管理する。
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 256,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::R8Uint],
+        });
+
+        // リソースたちのバインド設定
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: character_storage_block.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: character_storage_block.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture.create_view(
+                        &wgpu::TextureViewDescriptor {
+                            label: None,
+                            format: Some(wgpu::TextureFormat::R8Uint),
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            aspect: wgpu::TextureAspect::All,
+                            base_mip_level: 0,
+                            mip_level_count: None,
+                            base_array_layer: 0,
+                            array_layer_count: None,
+                        },
+                    )),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
         });
 
         self.device_table.insert(id.clone(), device);
@@ -177,6 +253,8 @@ impl Renderer {
         self.character_storage_block_table
             .insert(id.clone(), character_storage_block);
         self.bind_group_table.insert(id.clone(), bind_group);
+        self.sampler_table.insert(id.clone(), sampler);
+        self.glyph_texture = Some(texture);
     }
 
     pub fn resize(&self, id: WindowId, width: u32, height: u32) {
