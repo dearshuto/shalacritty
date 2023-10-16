@@ -47,6 +47,7 @@ impl App {
                     window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {
+                    renderer.update(id.clone());
                     renderer.render(id.clone());
                 }
                 Event::WindowEvent {
