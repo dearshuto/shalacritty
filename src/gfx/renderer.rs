@@ -5,6 +5,12 @@ use wgpu::{include_spirv_raw, util::DeviceExt};
 
 use crate::window::WindowId;
 
+#[repr(C)]
+struct CharacterData {
+    transform0: [f32; 4],
+    transform1: [f32; 4],
+}
+
 #[allow(dead_code)]
 pub struct Renderer {
     device_table: HashMap<WindowId, wgpu::Device>,
@@ -174,10 +180,10 @@ impl Renderer {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
                 contents: bytemuck::cast_slice(&[
-                    0.5f32, 0.0, -0.3, 0.0, 0.0, 0.5, 0.0, 0.0, //
-                    0.5f32, 0.0, 0.3, 0.0, 0.0, 0.5, 0.0, 0.0, //
+                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, //
+                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, //
                 ]),
-                usage: wgpu::BufferUsages::STORAGE,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
 
         // グリフを矩形に貼るときのサンプラー
@@ -273,6 +279,30 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(device, &config);
+    }
+
+    pub fn update(&mut self, id: WindowId) {
+        let queue = self.queue_table.get(&id).unwrap();
+        let buffer = self.character_storage_block_table.get(&id).unwrap();
+        let data = [
+            CharacterData {
+                transform0: [0.5, 0.0, -0.3, 0.0],
+                transform1: [0.0, 0.5, 0.0, 0.0],
+            },
+            CharacterData {
+                transform0: [0.5, 0.0, 0.3, 0.0],
+                transform1: [0.0, 0.5, 0.0, 0.0],
+            },
+        ];
+
+        let binary = unsafe {
+            std::slice::from_raw_parts(
+                (&data) as *const _ as *const u8,
+                std::mem::size_of::<CharacterData>() * data.len(),
+            )
+        };
+
+        queue.write_buffer(buffer, 0, binary);
     }
 
     pub fn render(&self, id: WindowId) {
