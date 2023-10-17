@@ -15,7 +15,10 @@ impl App {
     pub async fn run() {
         // グリフの抽出は時間がかかるので最初に処理を始める
         let mut glyph_manager = GlyphManager::new();
-        let task = tokio::spawn(async move { glyph_manager.extract_alphabet().await });
+        let task = tokio::spawn(async move {
+            glyph_manager.extract_alphabet().await;
+            glyph_manager
+        });
 
         let event_loop = EventLoopBuilder::new().build();
         let instance = wgpu::Instance::default();
@@ -31,7 +34,7 @@ impl App {
         renderer.register(id.clone(), &instance, &window).await;
 
         // アルファベットの抽出待ち
-        task.await.unwrap();
+        let glyph_manager = task.await.unwrap();
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
@@ -47,7 +50,12 @@ impl App {
                     window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    renderer.update(id.clone());
+                    renderer.update(
+                        id.clone(),
+                        glyph_manager.get_buffer(),
+                        glyph_manager.get_width(),
+                        glyph_manager.get_height(),
+                    );
                     renderer.render(id.clone());
                 }
                 Event::WindowEvent {
