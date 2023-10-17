@@ -90,7 +90,7 @@ impl Renderer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Uint,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -213,9 +213,9 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[wgpu::TextureFormat::R8Uint],
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::R8Unorm],
         });
 
         // リソースたちのバインド設定
@@ -232,7 +232,7 @@ impl Renderer {
                     resource: wgpu::BindingResource::TextureView(&texture.create_view(
                         &wgpu::TextureViewDescriptor {
                             label: None,
-                            format: Some(wgpu::TextureFormat::R8Uint),
+                            format: Some(wgpu::TextureFormat::R8Unorm),
                             dimension: Some(wgpu::TextureViewDimension::D2),
                             aspect: wgpu::TextureAspect::All,
                             base_mip_level: 0,
@@ -281,7 +281,7 @@ impl Renderer {
         surface.configure(device, &config);
     }
 
-    pub fn update(&mut self, id: WindowId) {
+    pub fn update(&mut self, id: WindowId, glyph: &[u8], width: u32, height: u32) {
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
         let data = [
@@ -303,6 +303,29 @@ impl Renderer {
         };
 
         queue.write_buffer(buffer, 0, binary);
+
+        // とりあえず何かしらのグリフを GPU に送る
+        let mut data = Vec::default();
+        for index in 0..(width * height) {
+            let r = glyph[3 * index as usize];
+            data.push(r);
+        }
+
+        let texture = self.glyph_texture.as_ref().unwrap();
+        queue.write_texture(
+            texture.as_image_copy(),
+            &data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(width),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub fn render(&self, id: WindowId) {
