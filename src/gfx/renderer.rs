@@ -1,10 +1,11 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
-use crossfont::RasterizedGlyph;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::{include_spirv_raw, util::DeviceExt};
 
 use crate::window::WindowId;
+
+use super::content_plotter::Diff;
 
 #[repr(C)]
 struct CharacterData {
@@ -85,7 +86,9 @@ impl Renderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new(std::mem::size_of::<f32>() as u64 * 6),
+                        min_binding_size: NonZeroU64::new(
+                            std::mem::size_of::<CharacterData>() as u64 * 1024,
+                        ),
                     },
                     count: None,
                 },
@@ -179,15 +182,12 @@ impl Renderer {
         });
 
         // 文字ごとの情報
-        let character_storage_block =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&[
-                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, //
-                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, //
-                ]),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            });
+        let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: std::mem::size_of::<CharacterData>() as u64 * 1024,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         // グリフを矩形に貼るときのサンプラー
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -284,61 +284,52 @@ impl Renderer {
         surface.configure(device, &config);
     }
 
-    pub fn update(&mut self, id: WindowId, glyph0: &RasterizedGlyph) {
+    pub fn update(&mut self, id: WindowId, diff: Diff) {
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
-        let data = [
-            CharacterData {
-                transform0: [0.5, 0.0, -0.3, 0.0],
-                transform1: [0.0, 0.5, 0.0, 0.0],
-                uv_bl: [0.0, 0.0],
-                uv_tr: [1.0, 1.0],
-            },
-            CharacterData {
-                transform0: [0.5, 0.0, 0.3, 0.0],
-                transform1: [0.0, 0.5, 0.0, 0.0],
-                uv_bl: [0.0, 0.0],
-                uv_tr: [1.0, 1.0],
-            },
-        ];
+        let data = diff
+            .character_info_array()
+            .iter()
+            .map(|info| {
+                let t = info.transform;
+                let character_data = CharacterData {
+                    transform0: [t[0], t[1], t[2], 0.0],
+                    transform1: [t[3], t[4], t[5], 0.0],
+                    uv_bl: [0.0, 0.0],
+                    uv_tr: [0.0, 1.0],
+                };
+                character_data
+            })
+            .collect::<Vec<CharacterData>>();
 
-        let binary = unsafe {
-            std::slice::from_raw_parts(
-                (&data) as *const _ as *const u8,
-                std::mem::size_of::<CharacterData>() * data.len(),
-            )
-        };
+        if data.len() > 0 {
+            println!("AA");
+            let binary = unsafe {
+                std::slice::from_raw_parts(
+                    data.as_ptr() as *const _ as *const u8,
+                    std::mem::size_of::<CharacterData>() * data.len(),
+                )
+            };
 
-        queue.write_buffer(buffer, 0, binary);
-
-        // とりあえず何かしらのグリフを GPU に送る
-        let mut data = Vec::default();
-        let glyph_data = {
-            match &glyph0.buffer {
-                crossfont::BitmapBuffer::Rgb(buffer) => buffer,
-                crossfont::BitmapBuffer::Rgba(buffer) => buffer,
-            }
-        };
-        for index in 0..(glyph0.width * glyph0.height) {
-            let r = glyph_data[3 * index as usize];
-            data.push(r);
+            queue.write_buffer(buffer, 0, binary);
         }
-
         let texture = self.glyph_texture.as_ref().unwrap();
-        queue.write_texture(
-            texture.as_image_copy(),
-            &data,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(glyph0.width as u32),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: glyph0.width as u32,
-                height: glyph0.height as u32,
-                depth_or_array_layers: 1,
-            },
-        );
+        for texture_patch in diff.glyph_texture_patches() {
+            queue.write_texture(
+                texture.as_image_copy(),
+                texture_patch.pixels(),
+                wgpu::ImageDataLayout {
+                    offset: texture_patch.offset() as u64,
+                    bytes_per_row: Some(texture_patch.width()),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: texture_patch.width(),
+                    height: texture_patch.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     pub fn render(&self, id: WindowId) {

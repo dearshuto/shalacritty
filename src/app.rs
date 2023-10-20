@@ -44,11 +44,8 @@ impl App {
             // 表示する要素が更新されていたら描画する要素に反映する
             if teletype_manager.is_dirty(tty_id) {
                 teletype_manager.get_content(tty_id, |c| {
-                    let diffs = plotter.calculate_diff(c);
-                    for diff in diffs {
-                        let glyph_f = glyph_manager.get_rasterized_glyph(diff.code);
-                        renderer.update(id.clone(), glyph_f);
-                    }
+                    let diff = plotter.calculate_diff(c, &glyph_manager);
+                    renderer.update(id.clone(), diff);
                 });
                 teletype_manager.clear_dirty(tty_id);
             }
