@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
+use crossfont::RasterizedGlyph;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::{include_spirv_raw, util::DeviceExt};
 
@@ -9,6 +10,8 @@ use crate::window::WindowId;
 struct CharacterData {
     transform0: [f32; 4],
     transform1: [f32; 4],
+    uv_bl: [f32; 2],
+    uv_tr: [f32; 2],
 }
 
 #[allow(dead_code)]
@@ -180,8 +183,8 @@ impl Renderer {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
                 contents: bytemuck::cast_slice(&[
-                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, //
-                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, //
+                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, //
+                    1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, //
                 ]),
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
@@ -281,17 +284,21 @@ impl Renderer {
         surface.configure(device, &config);
     }
 
-    pub fn update(&mut self, id: WindowId, glyph: &[u8], width: u32, height: u32) {
+    pub fn update(&mut self, id: WindowId, glyph0: &RasterizedGlyph) {
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
         let data = [
             CharacterData {
                 transform0: [0.5, 0.0, -0.3, 0.0],
                 transform1: [0.0, 0.5, 0.0, 0.0],
+                uv_bl: [0.0, 0.0],
+                uv_tr: [1.0, 1.0],
             },
             CharacterData {
                 transform0: [0.5, 0.0, 0.3, 0.0],
                 transform1: [0.0, 0.5, 0.0, 0.0],
+                uv_bl: [0.0, 0.0],
+                uv_tr: [1.0, 1.0],
             },
         ];
 
@@ -306,8 +313,14 @@ impl Renderer {
 
         // とりあえず何かしらのグリフを GPU に送る
         let mut data = Vec::default();
-        for index in 0..(width * height) {
-            let r = glyph[3 * index as usize];
+        let glyph_data = {
+            match &glyph0.buffer {
+                crossfont::BitmapBuffer::Rgb(buffer) => buffer,
+                crossfont::BitmapBuffer::Rgba(buffer) => buffer,
+            }
+        };
+        for index in 0..(glyph0.width * glyph0.height) {
+            let r = glyph_data[3 * index as usize];
             data.push(r);
         }
 
@@ -317,12 +330,12 @@ impl Renderer {
             &data,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(width),
+                bytes_per_row: Some(glyph0.width as u32),
                 rows_per_image: None,
             },
             wgpu::Extent3d {
-                width,
-                height,
+                width: glyph0.width as u32,
+                height: glyph0.height as u32,
                 depth_or_array_layers: 1,
             },
         );

@@ -16,7 +16,7 @@ impl App {
         // グリフの抽出は時間がかかるので最初に処理を始める
         let mut glyph_manager = GlyphManager::new();
         let task = tokio::spawn(async move {
-            glyph_manager.extract_alphabet().await;
+            glyph_manager.extract_alphabet_async().await;
             glyph_manager
         });
 
@@ -50,12 +50,8 @@ impl App {
                     window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    renderer.update(
-                        id.clone(),
-                        glyph_manager.get_buffer(),
-                        glyph_manager.get_width(),
-                        glyph_manager.get_height(),
-                    );
+                    let glyph_f = glyph_manager.get_rasterized_glyph('F');
+                    renderer.update(id.clone(), glyph_f);
                     renderer.render(id.clone());
                 }
                 Event::WindowEvent {
