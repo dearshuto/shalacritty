@@ -87,7 +87,7 @@ impl TeletypeManager {
         *self.dirty_table.lock().unwrap().get_mut(&id).unwrap() = false;
     }
 
-    pub fn get_content<TFunc: Fn(RenderableContent)>(&self, id: TeletypeId, func: TFunc) {
+    pub fn get_content<TFunc: FnMut(RenderableContent)>(&self, id: TeletypeId, mut func: TFunc) {
         let terminal = self.terminal_table.get(&id).unwrap().lock();
         // let terminal = terminal.unwrap();
         // let terminal = terminal.lock();

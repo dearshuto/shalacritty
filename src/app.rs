@@ -4,7 +4,7 @@ use winit::{
 };
 
 use crate::{
-    gfx::{GlyphManager, Renderer},
+    gfx::{ContentPlotter, GlyphManager, Renderer},
     tty::TeletypeManager,
     window::WindowManager,
 };
@@ -36,13 +36,19 @@ impl App {
         // アルファベットの抽出待ち
         let glyph_manager = task.await.unwrap();
 
+        let mut plotter = ContentPlotter::new();
+
         event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
+            *control_flow = ControlFlow::Wait;
 
             // 表示する要素が更新されていたら描画する要素に反映する
             if teletype_manager.is_dirty(tty_id) {
                 teletype_manager.get_content(tty_id, |c| {
-                    println!("redraw required: {}", c.display_iter.count());
+                    let diffs = plotter.calculate_diff(c);
+                    for diff in diffs {
+                        let glyph_f = glyph_manager.get_rasterized_glyph(diff.code);
+                        renderer.update(id.clone(), glyph_f);
+                    }
                 });
                 teletype_manager.clear_dirty(tty_id);
             }
@@ -58,8 +64,6 @@ impl App {
                     window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    let glyph_f = glyph_manager.get_rasterized_glyph('F');
-                    renderer.update(id.clone(), glyph_f);
                     renderer.render(id.clone());
                 }
                 Event::WindowEvent {
