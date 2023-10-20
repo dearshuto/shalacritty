@@ -1,14 +1,19 @@
-use crossfont::{BitmapBuffer, FontDesc, Rasterize, Slant, Style, Weight};
+use std::collections::HashMap;
+
+use crossfont::{FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
 
 pub struct GlyphManager {
-    buffer: Vec<u8>,
-    width: u32,
-    height: u32,
+    rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
 }
 
 impl GlyphManager {
     pub fn new() -> Self {
-        // 適当なグリフを抽出してみる
+        Self {
+            rasterized_glyph_table: HashMap::default(),
+        }
+    }
+
+    pub fn extract_alphabet(&mut self) {
         let mut rasterizer = crossfont::Rasterizer::new(1.0).unwrap();
         let font_key = rasterizer
             .load_font(
@@ -22,47 +27,33 @@ impl GlyphManager {
                 crossfont::Size::new(256.0),
             )
             .unwrap();
-        let rasterized_glyph = rasterizer
-            .get_glyph(crossfont::GlyphKey {
-                character: '愛',
-                font_key,
-                size: crossfont::Size::new(256.0),
-            })
-            .unwrap();
 
-        match rasterized_glyph.buffer {
-            BitmapBuffer::Rgb(data) => Self {
-                buffer: data,
-                width: rasterized_glyph.width as u32,
-                height: rasterized_glyph.height as u32,
-            },
-            BitmapBuffer::Rgba(_) => todo!(),
+        for char_code in ('a'..='z').chain('A'..'Z') {
+            let rasterized_glyph = rasterizer
+                .get_glyph(crossfont::GlyphKey {
+                    character: char_code,
+                    font_key,
+                    size: crossfont::Size::new(256.0),
+                })
+                .unwrap();
+            self.rasterized_glyph_table
+                .insert(char_code, rasterized_glyph);
         }
     }
 
-    pub async fn extract_alphabet(&mut self) {
-        // どうせ使うのでアルファベットはすべて抽出
+    pub async fn extract_alphabet_async(&mut self) {
+        self.extract_alphabet();
     }
 
-    // 暫定
-    #[allow(dead_code)]
-    pub fn get_buffer(&self) -> &[u8] {
-        &self.buffer
-    }
-
-    #[allow(dead_code)]
-    pub fn get_width(&self) -> u32 {
-        self.width
-    }
-
-    #[allow(dead_code)]
-    pub fn get_height(&self) -> u32 {
-        self.height
+    pub fn get_rasterized_glyph(&self, code: char) -> &RasterizedGlyph {
+        self.rasterized_glyph_table.get(&code).unwrap()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use bmp::Image;
+    use crossfont::BitmapBuffer;
 
     use super::GlyphManager;
 
@@ -70,13 +61,24 @@ mod tests {
     // リポジトリのルートに「愛」が出力される
     #[test]
     fn export() {
-        let glyph_manager = GlyphManager::new();
-        let buffer = glyph_manager.get_buffer();
-        let mut image = Image::new(glyph_manager.get_width(), glyph_manager.get_height());
+        let mut glyph_manager = GlyphManager::new();
+        glyph_manager.extract_alphabet();
+        let (buffer, width, height) = {
+            let rasterized_glyph = &glyph_manager.get_rasterized_glyph('K');
+            let buffer = &rasterized_glyph.buffer;
+            match buffer {
+                BitmapBuffer::Rgb(buffer) => {
+                    (buffer, rasterized_glyph.width, rasterized_glyph.height)
+                }
+                BitmapBuffer::Rgba(_) => todo!(),
+            }
+        };
 
-        for y in 0..glyph_manager.height as usize {
-            for x in 0..glyph_manager.width as usize {
-                let index = 3 * (x + (glyph_manager.width as usize) * y);
+        let mut image = Image::new(width as u32, height as u32);
+
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let index = 3 * (x + (width as usize) * y);
                 let r = buffer[index + 0];
                 let g = buffer[index + 1];
                 let b = buffer[index + 2];

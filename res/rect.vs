@@ -6,6 +6,8 @@ layout (location = 0) in vec2 i_Position;
 struct CharacterData
 {
     vec4 transform[2];
+    vec2 uv0;
+    vec2 uv1;
 };
 
 layout(std430, binding = 0) readonly buffer CharacterDataBuffer
