@@ -28,7 +28,7 @@ impl App {
         let window = window_manager.try_get_window(id.clone()).unwrap();
 
         let mut teletype_manager = TeletypeManager::new();
-        let _tty_id = teletype_manager.create_teletype();
+        let tty_id = teletype_manager.create_teletype();
 
         let mut renderer = Renderer::new();
         renderer.register(id.clone(), &instance, &window).await;
@@ -38,6 +38,14 @@ impl App {
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
+
+            // 表示する要素が更新されていたら描画する要素に反映する
+            if teletype_manager.is_dirty(tty_id) {
+                teletype_manager.get_content(tty_id, |c| {
+                    println!("redraw required: {}", c.display_iter.count());
+                });
+                teletype_manager.clear_dirty(tty_id);
+            }
 
             match event {
                 Event::WindowEvent {
