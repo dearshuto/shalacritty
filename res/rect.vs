@@ -17,12 +17,33 @@ layout(std430, binding = 0) readonly buffer CharacterDataBuffer
 
 void main()
 {
+    CharacterData characterData = u_CharacterDatas[gl_InstanceIndex];
     vec2 position = vec2(
-        dot(u_CharacterDatas[gl_InstanceIndex].transform[0].xyz, vec3(i_Position, 1.0)),
-        dot(u_CharacterDatas[gl_InstanceIndex].transform[1].xyz, vec3(i_Position, 1.0))
+        dot(characterData.transform[0].xyz, vec3(i_Position, 1.0)),
+        dot(characterData.transform[1].xyz, vec3(i_Position, 1.0))
         );
     gl_Position = vec4(position, 0.0, 1.0);
 
-    // 位置は -0.5~0.5
-    v_Uv = (i_Position + 0.5);
+    // TODO: 条件分岐を消したい
+    // 0 - 3
+    // |   |
+    // 1 - 2
+    if (gl_VertexIndex == 0)
+    {
+        v_Uv = characterData.uv0;
+    }
+    else if (gl_VertexIndex == 1)
+    {
+        v_Uv.x = characterData.uv0.x;
+        v_Uv.y = characterData.uv1.y;
+    }
+    else if (gl_VertexIndex == 2)
+    {
+        v_Uv = characterData.uv1;
+    }
+    else if (gl_VertexIndex == 3)
+    {
+        v_Uv.x = characterData.uv1.x;
+        v_Uv.y = characterData.uv0.y;
+    }
 }
