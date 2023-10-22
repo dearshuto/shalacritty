@@ -28,7 +28,7 @@ impl GlyphManager {
             )
             .unwrap();
 
-        for char_code in ('a'..='z').chain('A'..'Z') {
+        for char_code in ('a'..='z').chain('A'..='Z') {
             let rasterized_glyph = rasterizer
                 .get_glyph(crossfont::GlyphKey {
                     character: char_code,
