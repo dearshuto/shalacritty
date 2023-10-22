@@ -304,7 +304,6 @@ impl Renderer {
             .collect::<Vec<CharacterData>>();
 
         if data.len() > 0 {
-            println!("AA");
             let binary = unsafe {
                 std::slice::from_raw_parts(
                     data.as_ptr() as *const _ as *const u8,
