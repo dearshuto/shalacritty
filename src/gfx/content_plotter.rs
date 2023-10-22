@@ -73,53 +73,31 @@ impl ContentPlotter {
         _renderable_content: RenderableContent,
         glyph_manager: &GlyphManager,
     ) -> Diff {
+        let inputs = [
+            (-4.0, 0.0, 'H'),
+            (-3.0, 0.0, 'e'),
+            (-2.0, 0.0, 'l'),
+            (-1.0, 0.0, 'l'),
+            (-0.0, 0.0, 'o'),
+        ];
         let glyph_patches = self
             .glyph_writer
             .execute(&['H', 'e', 'l', 'o'], glyph_manager);
-        let h = self.glyph_writer.get_clip_rect('H');
-        let e = self.glyph_writer.get_clip_rect('e');
-        let l = self.glyph_writer.get_clip_rect('l');
-        let o = self.glyph_writer.get_clip_rect('o');
 
-        let scale: Matrix3<f32> = Matrix3::new_scaling(0.1f32);
-        let matrix_0 = Matrix3::new_translation(&Vector2::new(-0.4f32, 0.0));
-        let matrix_1 = Matrix3::new_translation(&Vector2::new(-0.3f32, 0.0));
-        let matrix_2 = Matrix3::new_translation(&Vector2::new(-0.2f32, 0.0));
-        let matrix_3 = Matrix3::new_translation(&Vector2::new(-0.1f32, 0.0));
-        let matrix_4 = Matrix3::new_translation(&Vector2::new(0.0f32, 0.0));
-
-        let items = vec![
-            CharacterInfo {
-                code: 'H',
-                transform: (matrix_0 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::new(h.uv_begin[0], h.uv_begin[1]),
-                uv1: nalgebra::Vector2::new(h.uv_end[0], h.uv_end[1]),
-            },
-            CharacterInfo {
-                code: 'e',
-                transform: (matrix_1 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::new(e.uv_begin[0], e.uv_begin[1]),
-                uv1: nalgebra::Vector2::new(e.uv_end[0], e.uv_end[1]),
-            },
-            CharacterInfo {
-                code: 'l',
-                transform: (matrix_2 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::new(l.uv_begin[0], l.uv_begin[1]),
-                uv1: nalgebra::Vector2::new(l.uv_end[0], l.uv_end[1]),
-            },
-            CharacterInfo {
-                code: 'l',
-                transform: (matrix_3 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::new(l.uv_begin[0], l.uv_begin[1]),
-                uv1: nalgebra::Vector2::new(l.uv_end[0], l.uv_end[1]),
-            },
-            CharacterInfo {
-                code: 'o',
-                transform: (matrix_4 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::new(o.uv_begin[0], o.uv_begin[1]),
-                uv1: nalgebra::Vector2::new(o.uv_end[0], o.uv_end[1]),
-            },
-        ];
+        let items = inputs
+            .map(|input| {
+                let (x, y, code) = input;
+                let scale: Matrix3<f32> = Matrix3::new_scaling(0.1f32);
+                let matrix = Matrix3::new_translation(&Vector2::new(0.1f32 * x, y));
+                let character = self.glyph_writer.get_clip_rect(code);
+                CharacterInfo {
+                    code,
+                    transform: (matrix * scale).transpose().remove_column(2),
+                    uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
+                    uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
+                }
+            })
+            .to_vec();
 
         if self.old_items == items {
             return Diff {
