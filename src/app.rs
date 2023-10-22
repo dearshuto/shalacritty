@@ -4,7 +4,7 @@ use winit::{
 };
 
 use crate::{
-    gfx::{ContentPlotter, GlyphManager, Renderer},
+    gfx::{ContentPlotter, GlyphManager, GlyphWriter, Renderer},
     tty::TeletypeManager,
     window::WindowManager,
 };
@@ -37,6 +37,18 @@ impl App {
         let glyph_manager = task.await.unwrap();
 
         let mut plotter = ContentPlotter::new();
+
+        // 抽出したグリフを配置したテクスチャーを作成
+        // 最終的には必要になったグリフを動的に生成しつつテクスチャーを更新するようにしたい
+        let mut glyph_writer = GlyphWriter::new();
+        let glyph_image_patches = glyph_writer.execute(&vec!['a', 'b', 'c'], &glyph_manager);
+        for patch in glyph_image_patches {
+            // TODO: ここで GPU に送る
+            let _ = patch.pixels();
+            let _ = patch.width();
+            let _ = patch.height();
+        }
+        let _ = glyph_writer.get_clip_rect('a');
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
