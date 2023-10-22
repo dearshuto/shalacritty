@@ -24,7 +24,7 @@ impl GlyphManager {
                         weight: Weight::Normal,
                     },
                 ),
-                crossfont::Size::new(256.0),
+                crossfont::Size::new(32.0),
             )
             .unwrap();
 
@@ -33,7 +33,7 @@ impl GlyphManager {
                 .get_glyph(crossfont::GlyphKey {
                     character: char_code,
                     font_key,
-                    size: crossfont::Size::new(256.0),
+                    size: crossfont::Size::new(32.0),
                 })
                 .unwrap();
             self.rasterized_glyph_table
