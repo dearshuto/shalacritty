@@ -44,8 +44,8 @@ pub struct GlyphWriter {
 impl GlyphWriter {
     pub fn new() -> Self {
         Self {
-            image_width: 32 * 32, /*32 ピクセルを 32 文字で 1024 ピクセル*/
-            image_height: 32 * 32,
+            image_width: 64 * 64, /*64 ピクセルを 64 文字で 4096 ピクセル*/
+            image_height: 64 * 64,
             character_data: HashMap::default(),
         }
     }
@@ -65,8 +65,8 @@ impl GlyphWriter {
         let mut current_count_y = 0;
         for code in codes {
             let glyph = glyph_manager.get_rasterized_glyph(*code);
-            let offset_x = current_count_x * 32;
-            let offset_y = current_count_y * 32;
+            let offset_x = current_count_x * 64;
+            let offset_y = current_count_y * 64;
 
             let BitmapBuffer::Rgb(buffer) = &glyph.buffer else {
                 continue;
@@ -80,12 +80,12 @@ impl GlyphWriter {
             }
 
             // 画像のどこに文字が配置されたかの情報
-            let uv_width = 32.0f32 / 1024.0;
-            let uv_height = 32.0f32 / 1024.0;
+            let uv_width = 64.0f32 / 4096.0;
+            let uv_height = 64.0f32 / 4096.0;
             let uv_begin_x = current_count_x as f32 * uv_width;
             let uv_begin_y = current_count_y as f32 * uv_height;
-            let uv_width = glyph.width as f32 / 1024.0;
-            let uv_height = glyph.height as f32 / 1024.0;
+            let uv_width = glyph.width as f32 / 4096.0;
+            let uv_height = glyph.height as f32 / 4096.0;
             let character_data = CharacterData {
                 uv_begin: [uv_begin_x, uv_begin_y],
                 uv_end: [uv_begin_x + uv_width, uv_begin_y + uv_height],
@@ -93,8 +93,8 @@ impl GlyphWriter {
             self.character_data.insert(*code, character_data);
 
             // x がはじまで到達したら、y は次の行に移動して x は先頭に戻る
-            current_count_y += (current_count_x + 1) / 32;
-            current_count_x = current_count_x + 1;
+            current_count_y += (current_count_x + 1) / 64;
+            current_count_x = (current_count_x + 1) % 64;
         }
 
         // ひとまず全部作り直してるので全領域をパッチとして返す
@@ -109,7 +109,8 @@ impl GlyphWriter {
 
     pub fn get_clip_rect(&self, code: char) -> &CharacterData {
         let Some(data) = self.character_data.get(&code) else {
-            return self.character_data.get(&'a').unwrap();
+            println!("{}: {}", code, code as u8);
+            return self.character_data.get(&'-').unwrap();
         };
 
         data
@@ -131,7 +132,7 @@ mod tests {
         glyph_manager.extract_alphabet();
 
         let mut glyph_writer = GlyphWriter::new();
-        let codes = vec!['a', 'b', 'c'];
+        let codes = ((' ' as char)..='~').collect::<Vec<char>>();
         let image_patches = glyph_writer.execute(&codes, &glyph_manager);
         let image_patch = &image_patches[0];
 

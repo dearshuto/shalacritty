@@ -70,25 +70,25 @@ impl ContentPlotter {
 
     pub fn calculate_diff(
         &mut self,
-        _renderable_content: RenderableContent,
+        renderable_content: RenderableContent,
         glyph_manager: &GlyphManager,
     ) -> Diff {
-        let inputs = [
-            (-4.0, 0.0, 'H'),
-            (-3.0, 0.0, 'e'),
-            (-2.0, 0.0, 'l'),
-            (-1.0, 0.0, 'l'),
-            (-0.0, 0.0, 'o'),
-        ];
-        let glyph_patches = self
-            .glyph_writer
-            .execute(&['H', 'e', 'l', 'o'], glyph_manager);
+        // 使いそうなグリフが詰まった画像を用意
+        let codes = ((0 as char)..='~').collect::<Vec<char>>();
+        let glyph_patches = self.glyph_writer.execute(&&codes, glyph_manager);
 
-        let items = inputs
-            .map(|input| {
-                let (x, y, code) = input;
-                let scale: Matrix3<f32> = Matrix3::new_scaling(0.1f32);
-                let matrix = Matrix3::new_translation(&Vector2::new(0.1f32 * x, y));
+        let items = renderable_content
+            .display_iter
+            .map(|cell| {
+                // [-1, 1] の範囲
+                // ウィンドウバーの分だけちょっとずらしてる
+                let position_normalized = 2.0
+                    * Vector2::new(cell.point.column.0 as f32, cell.point.line.0 as f32)
+                    / 64.0f32
+                    - Vector2::new(0.98, 0.98);
+                let code = cell.c;
+                let scale: Matrix3<f32> = Matrix3::new_scaling(0.020f32);
+                let matrix = Matrix3::new_translation(&position_normalized);
                 let character = self.glyph_writer.get_clip_rect(code);
                 CharacterInfo {
                     code,
@@ -97,7 +97,7 @@ impl ContentPlotter {
                     uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
                 }
             })
-            .to_vec();
+            .collect::<Vec<CharacterInfo>>();
 
         if self.old_items == items {
             return Diff {

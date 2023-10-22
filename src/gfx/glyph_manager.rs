@@ -28,7 +28,8 @@ impl GlyphManager {
             )
             .unwrap();
 
-        for char_code in ('a'..='z').chain('A'..='Z') {
+        // ASCII コードで使いそうなグリフをあらかじめ抽出しておく
+        for char_code in (0 as char)..='~' {
             let rasterized_glyph = rasterizer
                 .get_glyph(crossfont::GlyphKey {
                     character: char_code,

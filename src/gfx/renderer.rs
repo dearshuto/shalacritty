@@ -163,7 +163,18 @@ impl Renderer {
             fragment: Some(wgpu::FragmentState {
                 module: &_pixel_shader_module,
                 entry_point: "main",
-                targets: &[Some(config.view_formats[0].into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent::default(),
+                    }),
+                    write_mask: wgpu::ColorWrites::all(),
+                })],
             }),
             multiview: None,
         });
@@ -185,7 +196,7 @@ impl Renderer {
         // 文字ごとの情報
         let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: std::mem::size_of::<CharacterData>() as u64 * 1024,
+            size: std::mem::size_of::<CharacterData>() as u64 * 4 * 1024,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -210,8 +221,8 @@ impl Renderer {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
-                width: 1024,
-                height: 1024,
+                width: 4096,
+                height: 4096,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -365,7 +376,10 @@ impl Renderer {
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.draw_indexed(0..6, 0, 0..5);
+
+            // TODO: 文字数は外部から受け取るようにする
+            // 4096 は 64x64 の領域に文字が入るようにしている
+            render_pass.draw_indexed(0..6, 0, 0..4096);
         }
 
         queue.submit(Some(command_encoder.finish()));
