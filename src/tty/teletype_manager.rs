@@ -45,8 +45,8 @@ impl TeletypeManager {
             hold: true,
         };
         let window_size = WindowSize {
-            num_lines: 50,
-            num_cols: 80,
+            num_lines: 64,
+            num_cols: 64,
             cell_width: 8,
             cell_height: 8,
         };
