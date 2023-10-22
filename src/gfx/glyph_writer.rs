@@ -80,8 +80,8 @@ impl GlyphWriter {
             }
 
             // 画像のどこに文字が配置されたかの情報
-            let uv_width = 1.0f32 / 1024.0;
-            let uv_height = 1.0f32 / 1024.0;
+            let uv_width = 32.0f32 / 1024.0;
+            let uv_height = 32.0f32 / 1024.0;
             let uv_begin_x = current_count_x as f32 * uv_width;
             let uv_begin_y = current_count_y as f32 * uv_height;
             let uv_width = glyph.width as f32 / 1024.0;

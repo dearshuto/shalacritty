@@ -8,6 +8,7 @@ use crate::window::WindowId;
 use super::content_plotter::Diff;
 
 #[repr(C)]
+#[derive(Debug)]
 struct CharacterData {
     transform0: [f32; 4],
     transform1: [f32; 4],
@@ -209,8 +210,8 @@ impl Renderer {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
-                width: 256,
-                height: 256,
+                width: 1024,
+                height: 1024,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -295,8 +296,8 @@ impl Renderer {
                 let character_data = CharacterData {
                     transform0: [t[0], t[1], t[2], 0.0],
                     transform1: [t[3], t[4], t[5], 0.0],
-                    uv_bl: [0.0, 0.0],
-                    uv_tr: [0.0, 1.0],
+                    uv_bl: [info.uv0[0], info.uv0[1]],
+                    uv_tr: [info.uv1[0], info.uv1[1]],
                 };
                 character_data
             })
@@ -365,7 +366,7 @@ impl Renderer {
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.draw_indexed(0..6, 0, 0..2);
+            render_pass.draw_indexed(0..6, 0, 0..5);
         }
 
         queue.submit(Some(command_encoder.finish()));

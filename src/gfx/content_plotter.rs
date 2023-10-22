@@ -1,7 +1,7 @@
 use alacritty_terminal::term::RenderableContent;
 use nalgebra::{Matrix3, Vector2};
 
-use super::GlyphManager;
+use super::{GlyphManager, GlyphWriter};
 
 #[derive(PartialEq, Clone, Copy)]
 pub struct CharacterInfo {
@@ -53,12 +53,18 @@ impl Diff {
 
 pub struct ContentPlotter {
     old_items: Vec<CharacterInfo>,
+
+    // TODO: グリフ画像を生成する処理は外部からさせるようにしたい
+    glyph_writer: GlyphWriter,
 }
 
 impl ContentPlotter {
     pub fn new() -> Self {
+        let glyph_writer = GlyphWriter::new();
+
         Self {
             old_items: Vec::default(),
+            glyph_writer,
         }
     }
 
@@ -67,41 +73,52 @@ impl ContentPlotter {
         _renderable_content: RenderableContent,
         glyph_manager: &GlyphManager,
     ) -> Diff {
-        let scale: Matrix3<f32> = Matrix3::new_scaling(0.5f32);
-        let matrix_0 = Matrix3::new_translation(&Vector2::new(-0.3f32, 0.0));
-        let matrix_1 = Matrix3::new_translation(&Vector2::new(0.3f32, 0.0));
+        let glyph_patches = self
+            .glyph_writer
+            .execute(&['H', 'e', 'l', 'o'], glyph_manager);
+        let h = self.glyph_writer.get_clip_rect('H');
+        let e = self.glyph_writer.get_clip_rect('e');
+        let l = self.glyph_writer.get_clip_rect('l');
+        let o = self.glyph_writer.get_clip_rect('o');
+
+        let scale: Matrix3<f32> = Matrix3::new_scaling(0.1f32);
+        let matrix_0 = Matrix3::new_translation(&Vector2::new(-0.4f32, 0.0));
+        let matrix_1 = Matrix3::new_translation(&Vector2::new(-0.3f32, 0.0));
+        let matrix_2 = Matrix3::new_translation(&Vector2::new(-0.2f32, 0.0));
+        let matrix_3 = Matrix3::new_translation(&Vector2::new(-0.1f32, 0.0));
+        let matrix_4 = Matrix3::new_translation(&Vector2::new(0.0f32, 0.0));
 
         let items = vec![
             CharacterInfo {
                 code: 'H',
                 transform: (matrix_0 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::default(),
-                uv1: nalgebra::Vector2::default(),
+                uv0: nalgebra::Vector2::new(h.uv_begin[0], h.uv_begin[1]),
+                uv1: nalgebra::Vector2::new(h.uv_end[0], h.uv_end[1]),
             },
             CharacterInfo {
                 code: 'e',
                 transform: (matrix_1 * scale).transpose().remove_column(2),
-                uv0: nalgebra::Vector2::default(),
-                uv1: nalgebra::Vector2::default(),
-            }, /*
-               CharacterInfo {
-                   code: 'l',
-                   transform: nalgebra::Matrix3x2::identity(),
-                   uv0: nalgebra::Vector2::default(),
-                   uv1: nalgebra::Vector2::default(),
-               },
-               CharacterInfo {
-                   code: 'l',
-                   transform: nalgebra::Matrix3x2::identity(),
-                   uv0: nalgebra::Vector2::default(),
-                   uv1: nalgebra::Vector2::default(),
-               },
-               CharacterInfo {
-                   code: 'o',
-                   transform: nalgebra::Matrix3x2::identity(),
-                   uv0: nalgebra::Vector2::default(),
-                   uv1: nalgebra::Vector2::default(),
-               },*/
+                uv0: nalgebra::Vector2::new(e.uv_begin[0], e.uv_begin[1]),
+                uv1: nalgebra::Vector2::new(e.uv_end[0], e.uv_end[1]),
+            },
+            CharacterInfo {
+                code: 'l',
+                transform: (matrix_2 * scale).transpose().remove_column(2),
+                uv0: nalgebra::Vector2::new(l.uv_begin[0], l.uv_begin[1]),
+                uv1: nalgebra::Vector2::new(l.uv_end[0], l.uv_end[1]),
+            },
+            CharacterInfo {
+                code: 'l',
+                transform: (matrix_3 * scale).transpose().remove_column(2),
+                uv0: nalgebra::Vector2::new(l.uv_begin[0], l.uv_begin[1]),
+                uv1: nalgebra::Vector2::new(l.uv_end[0], l.uv_end[1]),
+            },
+            CharacterInfo {
+                code: 'o',
+                transform: (matrix_4 * scale).transpose().remove_column(2),
+                uv0: nalgebra::Vector2::new(o.uv_begin[0], o.uv_begin[1]),
+                uv1: nalgebra::Vector2::new(o.uv_end[0], o.uv_end[1]),
+            },
         ];
 
         if self.old_items == items {
@@ -113,25 +130,13 @@ impl ContentPlotter {
 
         self.old_items = items.clone();
 
-        // とりあえず何かしらのグリフを GPU に送る
-        let glyph = glyph_manager.get_rasterized_glyph('F');
-        let mut data = Vec::default();
-        let glyph_data = {
-            match &glyph.buffer {
-                crossfont::BitmapBuffer::Rgb(buffer) => buffer,
-                crossfont::BitmapBuffer::Rgba(buffer) => buffer,
-            }
-        };
-        for index in 0..(glyph.width * glyph.height) {
-            let r = glyph_data[3 * index as usize];
-            data.push(r);
-        }
-
+        // グリフ
+        let glyph_patch = &glyph_patches[0];
         let texture_patch = GlyphTexturePatch {
             offset: 0,
-            width: glyph.width as u32,
-            height: glyph.height as u32,
-            pixels: data,
+            width: glyph_patch.width(),
+            height: glyph_patch.height(),
+            pixels: glyph_patch.pixels().to_vec(),
         };
 
         return Diff {
