@@ -25,23 +25,24 @@ void main()
     gl_Position = vec4(position, 0.0, 1.0);
 
     // TODO: 条件分岐を消したい
+    // TODO: UV の上下反転をちゃんと考えたい
     // 0 - 3
     // |   |
     // 1 - 2
-    if (gl_VertexIndex == 0)
+    if (gl_VertexIndex == 1)
     {
         v_Uv = characterData.uv0;
     }
-    else if (gl_VertexIndex == 1)
+    else if (gl_VertexIndex == 0)
     {
         v_Uv.x = characterData.uv0.x;
         v_Uv.y = characterData.uv1.y;
     }
-    else if (gl_VertexIndex == 2)
+    else if (gl_VertexIndex == 3)
     {
         v_Uv = characterData.uv1;
     }
-    else if (gl_VertexIndex == 3)
+    else if (gl_VertexIndex == 2)
     {
         v_Uv.x = characterData.uv1.x;
         v_Uv.y = characterData.uv0.y;

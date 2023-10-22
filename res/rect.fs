@@ -8,6 +8,8 @@ layout (binding = 2) uniform sampler u_GlyphSampler;
 
 void main()
 {
-    vec4 color = texture(sampler2D(u_GlyphTexture, u_GlyphSampler), v_Uv);
-    o_Color = vec4(color.xyz, 1.0);
+    // グリフをアルファで抜く
+    // TODO: 色に対応する
+    vec4 alpha = texture(sampler2D(u_GlyphTexture, u_GlyphSampler), v_Uv);
+    o_Color = vec4(vec3(1.0), alpha);
 }
