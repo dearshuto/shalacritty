@@ -108,7 +108,11 @@ impl GlyphWriter {
     }
 
     pub fn get_clip_rect(&self, code: char) -> &CharacterData {
-        self.character_data.get(&code).unwrap()
+        let Some(data) = self.character_data.get(&code) else {
+            return self.character_data.get(&'a').unwrap();
+        };
+
+        data
     }
 }
 
