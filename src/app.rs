@@ -39,7 +39,7 @@ impl App {
         let mut plotter = ContentPlotter::new();
 
         event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Wait;
+            *control_flow = ControlFlow::Poll;
 
             // 表示する要素が更新されていたら描画する要素に反映する
             if teletype_manager.is_dirty(tty_id) {
@@ -47,6 +47,8 @@ impl App {
                     let diff = plotter.calculate_diff(c, &glyph_manager);
                     renderer.update(id.clone(), diff);
                 });
+                let window = window_manager.try_get_window(id.clone()).unwrap();
+                window.request_redraw();
                 teletype_manager.clear_dirty(tty_id);
             }
 
