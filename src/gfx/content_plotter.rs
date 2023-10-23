@@ -74,7 +74,12 @@ impl ContentPlotter {
         glyph_manager: &GlyphManager,
     ) -> Diff {
         // 使いそうなグリフが詰まった画像を用意
-        let codes = ((0 as char)..='~').collect::<Vec<char>>();
+        let codes = vec!['─', '│', 'v', '└', '┌', '┐', '▼', '▲', '┘', '°', '…'];
+        let dots = '⠀'..='⣿';
+        let codes = ((1 as char)..='~')
+            .chain(codes)
+            .chain(dots)
+            .collect::<Vec<char>>();
         let glyph_patches = self.glyph_writer.execute(&&codes, glyph_manager);
 
         let items = renderable_content
