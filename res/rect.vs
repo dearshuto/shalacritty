@@ -1,11 +1,13 @@
 #version 450
 
 layout (location = 0) out vec2 v_Uv;
+layout (location = 1) out vec4 v_ForeGroundColor;
 layout (location = 0) in vec2 i_Position;
 
 struct CharacterData
 {
     vec4 transform[2];
+    vec4 foreGroundColor;
     vec2 uv0;
     vec2 uv1;
 };
@@ -23,6 +25,7 @@ void main()
         dot(characterData.transform[1].xyz, vec3(i_Position, 1.0))
         );
     gl_Position = vec4(position, 0.0, 1.0);
+    v_ForeGroundColor = characterData.foreGroundColor;
 
     // TODO: 条件分岐を消したい
     // TODO: UV の上下反転をちゃんと考えたい

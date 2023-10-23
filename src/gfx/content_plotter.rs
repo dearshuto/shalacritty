@@ -1,4 +1,4 @@
-use alacritty_terminal::term::RenderableContent;
+use alacritty_terminal::{ansi::NamedColor, term::RenderableContent};
 use nalgebra::{Matrix3, Vector2};
 
 use super::{GlyphManager, GlyphWriter};
@@ -7,6 +7,7 @@ use super::{GlyphManager, GlyphWriter};
 pub struct CharacterInfo {
     pub code: char,
     pub transform: nalgebra::Matrix3x2<f32>,
+    pub fore_ground_color: [f32; 4],
     pub uv0: nalgebra::Vector2<f32>,
     pub uv1: nalgebra::Vector2<f32>,
 }
@@ -100,9 +101,20 @@ impl ContentPlotter {
                 ));
                 let matrix = Matrix3::new_translation(&position_normalized);
                 let character = self.glyph_writer.get_clip_rect(code);
+                let fore_ground_color = match cell.fg {
+                    alacritty_terminal::ansi::Color::Named(c) => Self::convert_named_color(c),
+                    alacritty_terminal::ansi::Color::Spec(rgb) => [
+                        rgb.r as f32 / 255.0,
+                        rgb.g as f32 / 255.0,
+                        rgb.b as f32 / 255.0,
+                        1.0f32,
+                    ],
+                    alacritty_terminal::ansi::Color::Indexed(i) => Self::convert_index_color(i),
+                };
                 CharacterInfo {
                     code,
                     transform: (matrix * scale).transpose().remove_column(2),
+                    fore_ground_color,
                     uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
                     uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
                 }
@@ -131,5 +143,63 @@ impl ContentPlotter {
             glyph_texture_patches: vec![texture_patch],
             character_info_array: items,
         };
+    }
+
+    fn convert_index_color(i: u8) -> [f32; 4] {
+        match i {
+            0 => Self::convert_named_color(NamedColor::White),
+            1 => Self::convert_named_color(NamedColor::Magenta),
+            2 => Self::convert_named_color(NamedColor::Black),
+            4 => Self::convert_named_color(NamedColor::White),
+            6 => Self::convert_named_color(NamedColor::BrightWhite),
+            7 => Self::convert_named_color(NamedColor::White),
+            10 => Self::convert_named_color(NamedColor::BrightBlue),
+            11 => Self::convert_named_color(NamedColor::Green),
+            12 => Self::convert_named_color(NamedColor::Blue),
+            13 => Self::convert_named_color(NamedColor::Cyan),
+            14 => Self::convert_named_color(NamedColor::White),
+            _ => {
+                println!("{}", i);
+                [0.0; 4]
+            }
+        }
+    }
+
+    fn convert_named_color(color: NamedColor) -> [f32; 4] {
+        match color {
+            NamedColor::Black => [0.0, 0.0, 0.0, 0.0],
+            NamedColor::Red => [1.0, 0.0, 0.0, 0.0],
+            NamedColor::Green => [0.0, 1.0, 0.0, 0.0],
+            NamedColor::Yellow => [0.0, 1.0, 1.0, 0.0],
+            NamedColor::Blue => [0.0, 0.0, 0.8, 0.0],
+            NamedColor::White => [1.0, 1.0, 1.0, 0.0],
+            NamedColor::Magenta => [1.0, 0.0, 1.0, 0.0],
+            NamedColor::Cyan => [87.0 / 255.0, 154.0 / 255.0, 205.0 / 255.0, 0.0],
+            NamedColor::BrightBlack => [0.2, 0.2, 0.2, 0.0],
+            // NamedColor::BrightRed => todo!(),
+            // NamedColor::BrightGreen => todo!(),
+            // NamedColor::BrightYellow => todo!(),
+            NamedColor::BrightBlue => [0.0, 0.0, 1.0, 0.0],
+            // NamedColor::BrightMagenta => todo!(),
+            // NamedColor::BrightCyan => todo!(),
+            NamedColor::BrightWhite => [0.8, 0.8, 0.8, 0.0],
+            NamedColor::Foreground => [1.0, 1.0, 1.0, 0.0],
+            NamedColor::Background => [1.0, 1.0, 1.0, 0.0],
+            // NamedColor::Cursor => todo!(),
+            // NamedColor::DimBlack => todo!(),
+            // NamedColor::DimRed => todo!(),
+            // NamedColor::DimGreen => todo!(),
+            // NamedColor::DimYellow => todo!(),
+            // NamedColor::DimBlue => todo!(),
+            // NamedColor::DimMagenta => todo!(),
+            // NamedColor::DimCyan => todo!(),
+            // NamedColor::DimWhite => todo!(),
+            // NamedColor::BrightForeground => todo!(),
+            // NamedColor::DimForeground => todo!(),
+            _ => {
+                println!("{:?}", color);
+                [0.0, 0.0, 0.0, 0.0]
+            }
+        }
     }
 }
