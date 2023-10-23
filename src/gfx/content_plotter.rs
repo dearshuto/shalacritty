@@ -87,7 +87,12 @@ impl ContentPlotter {
                     / 64.0f32
                     - Vector2::new(0.98, 0.98);
                 let code = cell.c;
-                let scale: Matrix3<f32> = Matrix3::new_scaling(0.020f32);
+                let glyph = glyph_manager.get_rasterized_glyph(code);
+                // GlyphManager がフォントサイズ 32 決め打ちでラスタライズしている
+                let scale: Matrix3<f32> = Matrix3::new_nonuniform_scaling(&Vector2::new(
+                    0.035 * (glyph.width as f32 / 32.0),
+                    0.035 * (glyph.height as f32 / 32.0),
+                ));
                 let matrix = Matrix3::new_translation(&position_normalized);
                 let character = self.glyph_writer.get_clip_rect(code);
                 CharacterInfo {
