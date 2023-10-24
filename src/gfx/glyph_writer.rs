@@ -53,7 +53,7 @@ impl GlyphWriter {
     pub fn execute(
         &mut self,
         codes: &[char],
-        glyph_manager: &GlyphManager,
+        glyph_manager: &mut GlyphManager,
     ) -> Vec<GlyphImagePatch> {
         // とりあえず毎回作り直す
         self.character_data.clear();
@@ -64,7 +64,7 @@ impl GlyphWriter {
         let mut current_count_x = 0;
         let mut current_count_y = 0;
         for code in codes {
-            let glyph = glyph_manager.get_rasterized_glyph(*code);
+            let glyph = glyph_manager.acquire_rasterized_glyph(*code);
             let offset_x = current_count_x * 64;
             let offset_y = current_count_y * 64;
 

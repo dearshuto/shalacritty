@@ -34,7 +34,7 @@ impl App {
         renderer.register(id.clone(), &instance, &window).await;
 
         // アルファベットの抽出待ち
-        let glyph_manager = task.await.unwrap();
+        let mut glyph_manager = task.await.unwrap();
 
         let mut plotter = ContentPlotter::new();
 
@@ -44,7 +44,7 @@ impl App {
             // 表示する要素が更新されていたら描画する要素に反映する
             if teletype_manager.is_dirty(tty_id) {
                 teletype_manager.get_content(tty_id, |c| {
-                    let diff = plotter.calculate_diff(c, &glyph_manager);
+                    let diff = plotter.calculate_diff(c, &mut glyph_manager);
                     renderer.update(id.clone(), diff);
                 });
                 let window = window_manager.try_get_window(id.clone()).unwrap();

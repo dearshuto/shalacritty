@@ -3,17 +3,13 @@ use std::collections::HashMap;
 use crossfont::{FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
 
 pub struct GlyphManager {
+    rasterizer: crossfont::Rasterizer,
+    font_key: crossfont::FontKey,
     rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
 }
 
 impl GlyphManager {
     pub fn new() -> Self {
-        Self {
-            rasterized_glyph_table: HashMap::default(),
-        }
-    }
-
-    pub fn extract_alphabet(&mut self) {
         let mut rasterizer = crossfont::Rasterizer::new(1.0).unwrap();
         let font_key = rasterizer
             .load_font(
@@ -27,20 +23,19 @@ impl GlyphManager {
                 crossfont::Size::new(32.0),
             )
             .unwrap();
+        Self {
+            rasterizer,
+            font_key,
+            rasterized_glyph_table: HashMap::default(),
+        }
+    }
 
+    pub fn extract_alphabet(&mut self) {
         // ASCII コードで使いそうなグリフをあらかじめ抽出しておく
         let codes = vec!['─', '│', 'v', '└', '┌', '┐', '▼', '▲', '┘', '°', '…'];
         let dots = '⠀'..='⣿';
         for char_code in ((1 as char)..='~').chain(codes).chain(dots) {
-            let rasterized_glyph = rasterizer
-                .get_glyph(crossfont::GlyphKey {
-                    character: char_code,
-                    font_key,
-                    size: crossfont::Size::new(32.0),
-                })
-                .unwrap();
-            self.rasterized_glyph_table
-                .insert(char_code, rasterized_glyph);
+            self.extract(char_code);
         }
     }
 
@@ -48,7 +43,33 @@ impl GlyphManager {
         self.extract_alphabet();
     }
 
+    pub fn extract(&mut self, code: char) {
+        if self.rasterized_glyph_table.contains_key(&code) {
+            return;
+        }
+
+        let rasterized_glyph = self
+            .rasterizer
+            .get_glyph(crossfont::GlyphKey {
+                character: code,
+                font_key: self.font_key,
+                size: crossfont::Size::new(32.0),
+            })
+            .unwrap();
+        self.rasterized_glyph_table.insert(code, rasterized_glyph);
+    }
+
     pub fn get_rasterized_glyph(&self, code: char) -> &RasterizedGlyph {
+        let Some(glyph) = self.rasterized_glyph_table.get(&code) else {
+            return self.rasterized_glyph_table.get(&' ').unwrap();
+        };
+
+        glyph
+    }
+
+    pub fn acquire_rasterized_glyph(&mut self, code: char) -> &RasterizedGlyph {
+        self.extract(code);
+
         self.rasterized_glyph_table.get(&code).unwrap()
     }
 }

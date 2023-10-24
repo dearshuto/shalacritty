@@ -1,4 +1,9 @@
-use alacritty_terminal::{ansi::NamedColor, term::RenderableContent};
+use alacritty_terminal::{
+    ansi::NamedColor,
+    grid::Indexed,
+    term::{cell::Cell, RenderableContent},
+};
+
 use nalgebra::{Matrix3, Vector2};
 
 use super::{GlyphManager, GlyphWriter};
@@ -72,19 +77,18 @@ impl ContentPlotter {
     pub fn calculate_diff(
         &mut self,
         renderable_content: RenderableContent,
-        glyph_manager: &GlyphManager,
+        glyph_manager: &mut GlyphManager,
     ) -> Diff {
-        // 使いそうなグリフが詰まった画像を用意
-        let codes = vec!['─', '│', 'v', '└', '┌', '┐', '▼', '▲', '┘', '°', '…'];
-        let dots = '⠀'..='⣿';
-        let codes = ((1 as char)..='~')
-            .chain(codes)
-            .chain(dots)
-            .collect::<Vec<char>>();
-        let glyph_patches = self.glyph_writer.execute(&&codes, glyph_manager);
-
-        let items = renderable_content
+        // グリフは全部作り直してる。差分検出したい
+        let cells = renderable_content
             .display_iter
+            .collect::<Vec<Indexed<&Cell>>>();
+        let codes = cells.iter().map(|c| c.c).collect::<Vec<char>>();
+
+        let glyph_patches = self.glyph_writer.execute(&codes, glyph_manager);
+
+        let items = cells
+            .iter()
             .map(|cell| {
                 // [-1, 1] の範囲
                 // ウィンドウバーの分だけちょっとずらしてる
