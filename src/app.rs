@@ -1,5 +1,6 @@
+use alacritty_terminal::event_loop::Msg;
 use winit::{
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
 };
 
@@ -28,7 +29,7 @@ impl App {
         let window = window_manager.try_get_window(id.clone()).unwrap();
 
         let mut teletype_manager = TeletypeManager::new();
-        let tty_id = teletype_manager.create_teletype();
+        let (tty_id, channel) = teletype_manager.create_teletype();
 
         let mut renderer = Renderer::new();
         renderer.register(id.clone(), &instance, &window).await;
@@ -62,14 +63,42 @@ impl App {
                     let window = window_manager.try_get_window(id.clone()).unwrap();
                     window.request_redraw();
                 }
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::KeyboardInput { input, .. } => {
+                        if input.state != ElementState::Pressed {
+                            return;
+                        }
+
+                        let text = match input.virtual_keycode.unwrap() {
+                            VirtualKeyCode::B => "b",
+                            VirtualKeyCode::D => "d",
+                            VirtualKeyCode::E => "e",
+                            VirtualKeyCode::L => "l",
+                            VirtualKeyCode::M => "m",
+                            VirtualKeyCode::N => "n",
+                            VirtualKeyCode::P => "p",
+                            VirtualKeyCode::Q => "q",
+                            VirtualKeyCode::S => "s",
+                            VirtualKeyCode::T => "t",
+                            VirtualKeyCode::U => "u",
+                            VirtualKeyCode::W => "w",
+                            VirtualKeyCode::Return => "\n",
+                            _ => "",
+                        };
+                        let mut bytes = Vec::with_capacity(text.len() + 1);
+                        bytes.extend_from_slice(text.as_bytes());
+                        if text.len() == 0 {
+                            bytes.push(b'\x1b');
+                        }
+                        channel.send(Msg::Input(bytes.into()));
+                    }
+                    WindowEvent::CloseRequested { .. } => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    _ => {}
+                },
                 Event::RedrawRequested(_) => {
                     renderer.render(id.clone());
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => {
-                    *control_flow = ControlFlow::Exit;
                 }
                 _ => {}
             }

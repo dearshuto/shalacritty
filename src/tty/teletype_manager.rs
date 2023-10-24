@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::config::{Program, PtyConfig};
+use alacritty_terminal::event_loop::EventLoopSender;
 use alacritty_terminal::term::RenderableContent;
 use alacritty_terminal::Term;
 use alacritty_terminal::{
@@ -37,10 +38,10 @@ impl TeletypeManager {
         }
     }
 
-    pub fn create_teletype(&mut self) -> TeletypeId {
+    pub fn create_teletype(&mut self) -> (TeletypeId, EventLoopSender) {
         let id = TeletypeId::new();
         let pty_config = &PtyConfig {
-            shell: Some(Program::Just("btm".to_string())),
+            shell: Some(Program::Just("bash".to_string())),
             working_directory: None,
             hold: true,
         };
@@ -70,13 +71,13 @@ impl TeletypeManager {
             true, /*ref_test*/
         );
         // コマンドを送信するにはこれを返り値として渡す
-        let _channel = event_loop.channel();
+        let channel = event_loop.channel();
 
         // 起動
         let _io_thread = event_loop.spawn();
         self.terminal_table.insert(id.clone(), terminal);
 
-        id
+        (id, channel)
     }
 
     pub fn is_dirty(&self, id: TeletypeId) -> bool {
@@ -112,15 +113,18 @@ impl EventListener for EventProxy {
             alacritty_terminal::event::Event::Wakeup => {
                 self.dirty_table.lock().unwrap().insert(self.id, true);
             }
-            _ => {println!("{:?}", event)}
+            alacritty_terminal::event::Event::PtyWrite(str) =>{
+                // self.dirty_table.lock().unwrap().insert(self.id, true);
+                println!("{}", str);
+            },
+             _ => {println!("{:?}", event)}
             // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
             // alacritty_terminal::event::Event::Title(_) => todo!(),
             // alacritty_terminal::event::Event::ResetTitle => todo!(),
             // alacritty_terminal::event::Event::ClipboardStore(_, _) => todo!(),
             // alacritty_terminal::event::Event::ClipboardLoad(_, _) => todo!(),
             // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
-            // alacritty_terminal::event::Event::PtyWrite(_) => todo!(),
-            // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
+           // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
             // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
             // alacritty_terminal::event::Event::Bell => todo!(),
             // alacritty_terminal::event::Event::Exit => todo!(),
