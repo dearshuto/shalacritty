@@ -31,7 +31,10 @@ impl WindowManager {
     }
 
     pub async fn create_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) -> WindowId {
-        let window = WindowBuilder::new().build(event_loop).unwrap();
+        let window = WindowBuilder::new()
+            .with_transparent(true)
+            .build(event_loop)
+            .unwrap();
         let id = WindowId::new();
         self.window_table.insert(id, window);
         id
