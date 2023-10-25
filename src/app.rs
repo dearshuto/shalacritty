@@ -1,6 +1,6 @@
 use alacritty_terminal::event_loop::Msg;
 use winit::{
-    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
+    event::{ElementState, Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
 };
 
@@ -69,22 +69,7 @@ impl App {
                             return;
                         }
 
-                        let text = match input.virtual_keycode.unwrap() {
-                            VirtualKeyCode::B => "b",
-                            VirtualKeyCode::D => "d",
-                            VirtualKeyCode::E => "e",
-                            VirtualKeyCode::L => "l",
-                            VirtualKeyCode::M => "m",
-                            VirtualKeyCode::N => "n",
-                            VirtualKeyCode::P => "p",
-                            VirtualKeyCode::Q => "q",
-                            VirtualKeyCode::S => "s",
-                            VirtualKeyCode::T => "t",
-                            VirtualKeyCode::U => "u",
-                            VirtualKeyCode::W => "w",
-                            VirtualKeyCode::Return => "\n",
-                            _ => "",
-                        };
+                        let text = crate::convert_key_to_str(input.virtual_keycode.unwrap());
                         let mut bytes = Vec::with_capacity(text.len() + 1);
                         bytes.extend_from_slice(text.as_bytes());
                         if text.len() == 0 {
