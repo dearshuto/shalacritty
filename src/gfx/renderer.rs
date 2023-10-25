@@ -135,10 +135,9 @@ impl Renderer {
             width: 640,
             height: 480,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
             view_formats: vec![swapchain_format],
         };
-
         surface.configure(&device, &config);
 
         let vertex_buffers = [wgpu::VertexBufferLayout {
@@ -172,7 +171,7 @@ impl Renderer {
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
-                        alpha: wgpu::BlendComponent::default(),
+                        alpha: wgpu::BlendComponent::OVER,
                     }),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
@@ -291,7 +290,7 @@ impl Renderer {
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
             view_formats: vec![],
         };
         surface.configure(device, &config);
@@ -368,7 +367,12 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 0.5,
+                        }),
                         store: true,
                     },
                 })],
