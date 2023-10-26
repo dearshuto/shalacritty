@@ -39,6 +39,10 @@ pub struct GlyphWriter {
 
     // キャッシュ
     character_data: HashMap<char, CharacterData>,
+
+    // 現在どこまでテクスチャーを利用しているか
+    current_x: u32,
+    current_y: u32,
 }
 
 impl GlyphWriter {
@@ -47,6 +51,8 @@ impl GlyphWriter {
             image_width: 64 * 64, /*64 ピクセルを 64 文字で 4096 ピクセル*/
             image_height: 64 * 64,
             character_data: HashMap::default(),
+            current_x: 0,
+            current_y: 0,
         }
     }
 
@@ -57,16 +63,16 @@ impl GlyphWriter {
     ) -> Vec<GlyphImagePatch> {
         // とりあえず毎回作り直す
         self.character_data.clear();
+        self.current_x = 0;
+        self.current_y = 0;
 
         let mut result = Vec::default();
         result.resize((self.image_width * self.image_height) as usize, 0);
 
-        let mut current_count_x = 0;
-        let mut current_count_y = 0;
         for code in codes {
             let glyph = glyph_manager.acquire_rasterized_glyph(*code);
-            let offset_x = current_count_x * 64;
-            let offset_y = current_count_y * 64;
+            let offset_x = self.current_x * 64;
+            let offset_y = self.current_y * 64;
 
             let BitmapBuffer::Rgb(buffer) = &glyph.buffer else {
                 continue;
@@ -82,8 +88,8 @@ impl GlyphWriter {
             // 画像のどこに文字が配置されたかの情報
             let uv_width = 64.0f32 / 4096.0;
             let uv_height = 64.0f32 / 4096.0;
-            let uv_begin_x = current_count_x as f32 * uv_width;
-            let uv_begin_y = current_count_y as f32 * uv_height;
+            let uv_begin_x = self.current_x as f32 * uv_width;
+            let uv_begin_y = self.current_y as f32 * uv_height;
             let uv_width = glyph.width as f32 / 4096.0;
             let uv_height = glyph.height as f32 / 4096.0;
             let character_data = CharacterData {
@@ -93,8 +99,8 @@ impl GlyphWriter {
             self.character_data.insert(*code, character_data);
 
             // x がはじまで到達したら、y は次の行に移動して x は先頭に戻る
-            current_count_y += (current_count_x + 1) / 64;
-            current_count_x = (current_count_x + 1) % 64;
+            self.current_y += (self.current_x + 1) / 64;
+            self.current_x = (self.current_x + 1) % 64;
         }
 
         // ひとまず全部作り直してるので全領域をパッチとして返す
