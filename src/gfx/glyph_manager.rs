@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crossfont::{FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
+use crossfont::{BitmapBuffer, FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
 
 pub struct GlyphManager {
     rasterizer: crossfont::Rasterizer,
@@ -45,6 +45,23 @@ impl GlyphManager {
 
     pub fn extract(&mut self, code: char) {
         if self.rasterized_glyph_table.contains_key(&code) {
+            return;
+        }
+
+        // 空白だけ特別扱い
+        if code == ' ' {
+            let mut buffer = Vec::default();
+            buffer.resize(3 * 32 * 32, 0);
+            let space = RasterizedGlyph {
+                character: ' ',
+                width: 32,
+                height: 32,
+                top: 0,
+                left: 0,
+                advance: (0, 0),
+                buffer: BitmapBuffer::Rgb(buffer),
+            };
+            self.rasterized_glyph_table.insert(' ', space);
             return;
         }
 
