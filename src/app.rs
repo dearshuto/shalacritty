@@ -8,12 +8,15 @@ use crate::{
     gfx::{ContentPlotter, GlyphManager, Renderer},
     tty::TeletypeManager,
     window::WindowManager,
+    ConfigService,
 };
 
 pub struct App;
 
 impl App {
     pub async fn run() {
+        let _config_service = ConfigService::new();
+
         // グリフの抽出は時間がかかるので最初に処理を始める
         let mut glyph_manager = GlyphManager::new();
         let task = tokio::spawn(async move {

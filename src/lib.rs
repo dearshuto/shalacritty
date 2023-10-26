@@ -1,9 +1,11 @@
 mod app;
+mod config;
 mod gfx;
 mod tty;
 mod window;
 
 pub use app::App;
+pub use config::{Config, ConfigService};
 use winit::event::VirtualKeyCode;
 
 // static ss: String = b'0x7f'.to_string();
