@@ -327,11 +327,21 @@ impl Renderer {
         }
         let texture = self.glyph_texture.as_ref().unwrap();
         for texture_patch in diff.glyph_texture_patches() {
+            let image_copy = wgpu::ImageCopyTexture {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: texture_patch.offset_x(),
+                    y: texture_patch.offset_y(),
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            };
             queue.write_texture(
-                texture.as_image_copy(),
+                image_copy,
                 texture_patch.pixels(),
                 wgpu::ImageDataLayout {
-                    offset: texture_patch.offset() as u64,
+                    offset: 0,
                     bytes_per_row: Some(texture_patch.width()),
                     rows_per_image: None,
                 },

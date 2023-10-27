@@ -17,16 +17,22 @@ pub struct CharacterInfo {
     pub uv1: nalgebra::Vector2<f32>,
 }
 
+#[derive(Debug)]
 pub struct GlyphTexturePatch {
-    offset: u32,
+    offset_x: u32,
+    offset_y: u32,
     width: u32,
     height: u32,
     pixels: Vec<u8>,
 }
 
 impl GlyphTexturePatch {
-    pub fn offset(&self) -> u32 {
-        self.offset
+    pub fn offset_x(&self) -> u32 {
+        self.offset_x
+    }
+
+    pub fn offset_y(&self) -> u32 {
+        self.offset_y
     }
 
     pub fn width(&self) -> u32 {
@@ -135,16 +141,22 @@ impl ContentPlotter {
         self.old_items = items.clone();
 
         // グリフ
-        let glyph_patch = &glyph_patches[0];
-        let texture_patch = GlyphTexturePatch {
-            offset: 0,
-            width: glyph_patch.width(),
-            height: glyph_patch.height(),
-            pixels: glyph_patch.pixels().to_vec(),
-        };
+        let glyph_texture_patches = glyph_patches
+            .iter()
+            .map(|glyph_patch| {
+                //
+                GlyphTexturePatch {
+                    offset_x: glyph_patch.offset_x(),
+                    offset_y: glyph_patch.offset_y(),
+                    width: glyph_patch.width(),
+                    height: glyph_patch.height(),
+                    pixels: glyph_patch.pixels().to_vec(),
+                }
+            })
+            .collect::<Vec<GlyphTexturePatch>>();
 
         return Diff {
-            glyph_texture_patches: vec![texture_patch],
+            glyph_texture_patches,
             character_info_array: items,
         };
     }

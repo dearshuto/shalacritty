@@ -4,15 +4,21 @@ use crossfont::BitmapBuffer;
 
 use super::GlyphManager;
 
+#[derive(Clone, Copy)]
+struct CharacterCache {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 pub struct CharacterData {
     pub uv_begin: [f32; 2],
     pub uv_end: [f32; 2],
 }
 
 pub struct GlyphImagePatch {
-    #[allow(dead_code)]
     offset_x: u32,
-    #[allow(dead_code)]
     offset_y: u32,
     width: u32,
     height: u32,
@@ -20,6 +26,14 @@ pub struct GlyphImagePatch {
 }
 
 impl GlyphImagePatch {
+    pub fn offset_x(&self) -> u32 {
+        self.offset_x
+    }
+
+    pub fn offset_y(&self) -> u32 {
+        self.offset_y
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -38,21 +52,27 @@ pub struct GlyphWriter {
     image_height: u32,
 
     // キャッシュ
-    character_data: HashMap<char, CharacterData>,
+    character_data: HashMap<char, CharacterCache>,
 
     // 現在どこまでテクスチャーを利用しているか
     current_x: u32,
     current_y: u32,
+
+    buffer: Vec<u8>,
 }
 
 impl GlyphWriter {
     pub fn new() -> Self {
+        let mut buffer = Vec::default();
+        buffer.resize(4096 * 4096, 0);
+
         Self {
             image_width: 64 * 64, /*64 ピクセルを 64 文字で 4096 ピクセル*/
             image_height: 64 * 64,
             character_data: HashMap::default(),
             current_x: 0,
             current_y: 0,
+            buffer,
         }
     }
 
@@ -61,65 +81,107 @@ impl GlyphWriter {
         codes: &[char],
         glyph_manager: &mut GlyphManager,
     ) -> Vec<GlyphImagePatch> {
-        // とりあえず毎回作り直す
-        self.character_data.clear();
-        self.current_x = 0;
-        self.current_y = 0;
+        let diff_items = codes
+            .iter()
+            .filter_map(|code| {
+                if self.character_data.contains_key(code) {
+                    return None;
+                };
 
-        let mut result = Vec::default();
-        result.resize((self.image_width * self.image_height) as usize, 0);
-
-        for code in codes {
-            let glyph = glyph_manager.acquire_rasterized_glyph(*code);
-            let offset_x = self.current_x * 64;
-            let offset_y = self.current_y * 64;
-
-            let BitmapBuffer::Rgb(buffer) = &glyph.buffer else {
-                continue;
-            };
-            for y in 0..glyph.height as u32 {
-                for x in 0..glyph.width as u32 {
-                    let data = buffer[3 * (x + y * glyph.width as u32) as usize];
-                    let dst_index = (offset_x + x) + (y + offset_y) * self.image_height;
-                    result[dst_index as usize] = data;
+                // 空白はグリフが存在しないので特別扱い
+                if *code == ' ' {
+                    return Some((
+                        ' ',
+                        CharacterCache {
+                            x: 4000,
+                            y: 4000,
+                            width: 32,
+                            height: 32,
+                        },
+                    ));
                 }
-            }
 
-            // 画像のどこに文字が配置されたかの情報
-            let uv_width = 64.0f32 / 4096.0;
-            let uv_height = 64.0f32 / 4096.0;
-            let uv_begin_x = self.current_x as f32 * uv_width;
-            let uv_begin_y = self.current_y as f32 * uv_height;
-            let uv_width = glyph.width as f32 / 4096.0;
-            let uv_height = glyph.height as f32 / 4096.0;
-            let character_data = CharacterData {
-                uv_begin: [uv_begin_x, uv_begin_y],
-                uv_end: [uv_begin_x + uv_width, uv_begin_y + uv_height],
-            };
-            self.character_data.insert(*code, character_data);
+                let glyph = glyph_manager.acquire_rasterized_glyph(*code);
+                let offset_x = self.current_x * 64;
+                let offset_y = self.current_y * 64;
+                let character_data = CharacterCache {
+                    x: offset_x,
+                    y: offset_y,
+                    width: glyph.width as u32,
+                    height: glyph.height as u32,
+                };
+                // x がはじまで到達したら、y は次の行に移動して x は先頭に戻る
+                self.current_y += (self.current_x + 1) / 64;
+                self.current_x = (self.current_x + 1) % 64;
+                Some((*code, character_data))
+            })
+            .collect::<Vec<(char, CharacterCache)>>();
 
-            // x がはじまで到達したら、y は次の行に移動して x は先頭に戻る
-            self.current_y += (self.current_x + 1) / 64;
-            self.current_x = (self.current_x + 1) % 64;
+        // キャッシュに反映
+        for (code, character_cache) in &diff_items {
+            self.character_data.insert(*code, *character_cache);
         }
 
-        // ひとまず全部作り直してるので全領域をパッチとして返す
-        vec![GlyphImagePatch {
-            offset_x: 0,
-            offset_y: 0,
-            width: self.image_width,
-            height: self.image_height,
-            pixel_data: result,
-        }]
+        // グリフのパッチ
+        let glyph_image_patches = diff_items
+            .iter()
+            .map(|(code, character_cache)| {
+                // グリフを取得
+                let glyph = glyph_manager.acquire_rasterized_glyph(*code);
+                let buffer = match &glyph.buffer {
+                    BitmapBuffer::Rgb(buffer) => {
+                        buffer.chunks(3).map(|rgb| rgb[0]).collect::<Vec<u8>>()
+                    }
+                    BitmapBuffer::Rgba(_) => todo!(),
+                };
+
+                GlyphImagePatch {
+                    offset_x: character_cache.x,
+                    offset_y: character_cache.y,
+                    width: character_cache.width,
+                    height: character_cache.height,
+                    pixel_data: buffer.clone(),
+                }
+            })
+            .collect();
+
+        glyph_image_patches
     }
 
-    pub fn get_clip_rect(&self, code: char) -> &CharacterData {
-        let Some(data) = self.character_data.get(&code) else {
-            println!("{}: {}", code, code as u8);
-            return self.character_data.get(&'-').unwrap();
+    pub fn get_clip_rect(&self, code: char) -> CharacterData {
+        let data = match self.character_data.get(&code) {
+            Some(data) => data,
+            None => {
+                // なければ豆腐
+                self.character_data.get(&'-').unwrap()
+            }
         };
 
-        data
+        let uv_begin_x = data.x as f32 / 4096.0;
+        let uv_begin_y = data.y as f32 / 4096.0;
+        let uv_width = data.width as f32 / 4096.0;
+        let uv_height = data.height as f32 / 4096.0;
+        CharacterData {
+            uv_begin: [uv_begin_x, uv_begin_y],
+            uv_end: [uv_begin_x + uv_width, uv_begin_y + uv_height],
+        }
+    }
+
+    // Uint_R
+    // Debug 用途
+    #[allow(dead_code)]
+    pub fn get_buffer(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    #[allow(dead_code)]
+    pub fn width(&self) -> u32 {
+        self.image_width
+    }
+
+    #[allow(dead_code)]
+    pub fn height(&self) -> u32 {
+        self.image_height
     }
 }
 
@@ -139,21 +201,55 @@ mod tests {
 
         let mut glyph_writer = GlyphWriter::new();
         let codes = ((' ' as char)..='~').collect::<Vec<char>>();
-        let image_patches = glyph_writer.execute(&codes, &glyph_manager);
-        let image_patch = &image_patches[0];
+        let image_patches = glyph_writer.execute(&codes, &mut glyph_manager);
 
-        let mut image = Image::new(image_patch.width, image_patch.height);
-        for y in image_patch.offset_y..image_patch.height {
-            for x in image_patch.offset_x..image_patch.width {
-                let index = (x + y * image_patch.width) as usize;
-                let pixels = image_patch.pixels();
-                let r = pixels[index];
-                let g = pixels[index];
-                let b = pixels[index];
-                image.set_pixel(x as u32, y as u32, bmp::Pixel { r, g, b });
+        let mut image = Image::new(glyph_writer.width(), glyph_writer.height());
+        for image_patch in image_patches {
+            for y in 0..image_patch.height {
+                for x in 0..image_patch.width {
+                    let src_index = x + y * image_patch.width();
+                    let data = image_patch.pixels()[src_index as usize];
+                    let dst_x = image_patch.offset_x + x;
+                    let dst_y = image_patch.offset_y + y;
+                    image.set_pixel(
+                        dst_x,
+                        dst_y,
+                        bmp::Pixel {
+                            r: data,
+                            g: data,
+                            b: data,
+                        },
+                    );
+                }
             }
         }
 
         image.save("placed_glyph.png").unwrap();
+    }
+
+    #[test]
+    fn patch() {
+        let mut glyph_manager = GlyphManager::new();
+        let mut glyph_writer = GlyphWriter::new();
+        let codes = ('a'..'d').collect::<Vec<char>>();
+        let image_patches = glyph_writer.execute(&codes, &mut glyph_manager);
+
+        for image_patch in image_patches {
+            let mut image = Image::new(image_patch.width, image_patch.height);
+            for y in 0..image_patch.height {
+                for x in 0..image_patch.width {
+                    let index = (x + y * image_patch.width) as usize;
+
+                    let pixels = image_patch.pixels();
+                    let r = pixels[index];
+                    let g = pixels[index];
+                    let b = pixels[index];
+                    image.set_pixel(x as u32, y as u32, bmp::Pixel { r, g, b });
+                }
+            }
+
+            let file_name = format!("{}x{}.png", image_patch.offset_x, image_patch.offset_y);
+            image.save(file_name).unwrap();
+        }
     }
 }
