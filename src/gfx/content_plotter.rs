@@ -87,6 +87,7 @@ impl ContentPlotter {
 
         let glyph_patches = self.glyph_writer.execute(&codes, glyph_manager);
 
+        // 表示要素を描画に必要な情報に変換
         let items = cells
             .iter()
             .map(|cell| {
@@ -125,13 +126,34 @@ impl ContentPlotter {
             })
             .collect::<Vec<CharacterInfo>>();
 
-        if self.old_items == items {
+        // 差分検出
+        let mut diff_items = Vec::default();
+        for index in 0..items.len() {
+            let new_item = items[index];
+
+            // 古い要素がなかったら新規要素として追加
+            let Some(old_item) = self.old_items.get(index) else {
+                diff_items.push(new_item);
+                continue;
+            };
+
+            // 差分がなければ何もしない
+            if old_item == &new_item {
+                continue;
+            }
+
+            diff_items.push(new_item);
+        }
+
+        // 差分がなければ更新する要素はない
+        if diff_items.is_empty() {
             return Diff {
                 glyph_texture_patches: Vec::default(),
                 character_info_array: Vec::default(),
             };
         }
 
+        // 新たな値をキャッシュ。次の差分検出に使う。
         self.old_items = items.clone();
 
         // グリフ
