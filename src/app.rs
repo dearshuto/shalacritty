@@ -33,6 +33,7 @@ impl App {
 
         let mut teletype_manager = TeletypeManager::new();
         let (tty_id, channel) = teletype_manager.create_teletype();
+        let (_tty_id, _channel) = teletype_manager.create_teletype();
 
         let mut renderer = Renderer::new();
         renderer.register(id.clone(), &instance, &window).await;
