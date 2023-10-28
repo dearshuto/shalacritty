@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use alacritty_terminal::event_loop::Msg;
 use winit::{
     event::{ElementState, Event, WindowEvent},
@@ -37,34 +39,52 @@ impl App {
 
         let mut renderer = Renderer::new();
         renderer.register(id.clone(), &instance, &window).await;
+        let renderer = Arc::new(Mutex::new(renderer));
+        let r_l = renderer.clone();
+        let r_e = renderer.clone();
+
+        let window_manager = Arc::new(Mutex::new(window_manager));
 
         // アルファベットの抽出待ち
         let mut glyph_manager = task.await.unwrap();
 
         let mut plotter = ContentPlotter::new();
 
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
+        let l = window_manager.clone();
+        let w = window_manager.clone();
+        let _job = tokio::task::spawn(async move {
+            loop {
+                // 表示する要素が更新されていたら描画する要素に反映する
+                if teletype_manager.is_dirty(tty_id) {
+                    teletype_manager.get_content(tty_id, |c| {
+                        let diff = plotter.calculate_diff(c, &mut glyph_manager);
+                        r_l.lock().unwrap().update(id, diff);
+                    });
+                    let binding = l.lock().unwrap();
+                    let window = binding.try_get_window(id).unwrap();
+                    window.request_redraw();
+                    teletype_manager.clear_dirty(tty_id);
+                }
 
-            // 表示する要素が更新されていたら描画する要素に反映する
-            if teletype_manager.is_dirty(tty_id) {
-                teletype_manager.get_content(tty_id, |c| {
-                    let diff = plotter.calculate_diff(c, &mut glyph_manager);
-                    renderer.update(id.clone(), diff);
-                });
-                let window = window_manager.try_get_window(id.clone()).unwrap();
-                window.request_redraw();
-                teletype_manager.clear_dirty(tty_id);
+                std::thread::sleep(std::time::Duration::from_millis(8));
             }
+        });
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Wait;
 
             match event {
                 Event::WindowEvent {
                     event: WindowEvent::Resized(size),
                     ..
                 } => {
-                    renderer.resize(id.clone(), size.width, size.height);
+                    renderer
+                        .lock()
+                        .unwrap()
+                        .resize(id.clone(), size.width, size.height);
 
-                    let window = window_manager.try_get_window(id.clone()).unwrap();
+                    let binding = w.lock().unwrap();
+                    let window = binding.try_get_window(id.clone()).unwrap();
                     window.request_redraw();
                 }
                 Event::WindowEvent { event, .. } => match event {
@@ -87,7 +107,8 @@ impl App {
                     _ => {}
                 },
                 Event::RedrawRequested(_) => {
-                    renderer.render(id.clone());
+                    // job.abort();
+                    r_e.lock().unwrap().render(id.clone());
                 }
                 _ => {}
             }
