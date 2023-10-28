@@ -1,3 +1,4 @@
+mod background_renderer;
 mod content_plotter;
 mod glyph_manager;
 mod glyph_writer;

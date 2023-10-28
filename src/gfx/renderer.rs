@@ -5,7 +5,7 @@ use wgpu::{include_spirv_raw, util::DeviceExt};
 
 use crate::window::WindowId;
 
-use super::content_plotter::Diff;
+use super::{background_renderer::BackgroundRenderer, content_plotter::Diff};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -18,7 +18,7 @@ struct CharacterData {
 }
 
 #[allow(dead_code)]
-pub struct Renderer {
+pub struct Renderer<'a> {
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
@@ -30,9 +30,12 @@ pub struct Renderer {
     character_storage_block_table: HashMap<WindowId, wgpu::Buffer>,
     sampler_table: HashMap<WindowId, wgpu::Sampler>,
     glyph_texture: Option<wgpu::Texture>,
+
+    // 背景
+    background_renderer: BackgroundRenderer<'a>,
 }
 
-impl Renderer {
+impl<'a> Renderer<'a> {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
@@ -47,6 +50,9 @@ impl Renderer {
             character_storage_block_table: Default::default(),
             sampler_table: HashMap::default(),
             glyph_texture: None,
+
+            // 背景
+            background_renderer: BackgroundRenderer::new(),
         }
     }
 
@@ -264,6 +270,11 @@ impl Renderer {
             ],
         });
 
+        // 背景描画
+        // TODO: プラグイン化
+        self.background_renderer
+            .register(id, &device, config.format);
+
         self.device_table.insert(id.clone(), device);
         self.queue_table.insert(id.clone(), queue);
         self.adapter_table.insert(id, adapter);
@@ -294,9 +305,14 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(device, &config);
+
+        // 背景描画
+        // TODO: プラグイン化
+        self.background_renderer.resize(id, width, height);
     }
 
     pub fn update(&mut self, id: WindowId, diff: Diff) {
+        let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
         let data = diff
@@ -352,6 +368,8 @@ impl Renderer {
                 },
             );
         }
+
+        self.background_renderer.update(id, device, queue);
     }
 
     pub fn render(&self, id: WindowId) {
@@ -370,8 +388,10 @@ impl Renderer {
 
         let mut command_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        // 背景描画
         {
-            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -383,6 +403,23 @@ impl Renderer {
                             b: 0.3,
                             a: 0.5,
                         }),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            self.background_renderer.render(id, render_pass);
+        }
+
+        // 文字描画
+        {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],

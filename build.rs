@@ -1,19 +1,39 @@
 use std::{fs::File, io::Write};
 
 fn main() {
-    let vertex_shader_binary =
-        convert_to_spv(include_str!("res/rect.vs"), naga::ShaderStage::Vertex);
-    let mut vertex_shader_binary_file = File::create("src/gfx/rect.vs.spv").unwrap();
-    vertex_shader_binary_file
-        .write_all(&vertex_shader_binary)
-        .unwrap();
+    {
+        let vertex_shader_binary =
+            convert_to_spv(include_str!("res/rect.vs"), naga::ShaderStage::Vertex);
+        let mut vertex_shader_binary_file = File::create("src/gfx/rect.vs.spv").unwrap();
+        vertex_shader_binary_file
+            .write_all(&vertex_shader_binary)
+            .unwrap();
 
-    let pixel_shader_binary =
-        convert_to_spv(include_str!("res/rect.fs"), naga::ShaderStage::Fragment);
-    let mut pixel_shader_binary_file = File::create("src/gfx/rect.fs.spv").unwrap();
-    pixel_shader_binary_file
-        .write_all(&pixel_shader_binary)
-        .unwrap();
+        let pixel_shader_binary =
+            convert_to_spv(include_str!("res/rect.fs"), naga::ShaderStage::Fragment);
+        let mut pixel_shader_binary_file = File::create("src/gfx/rect.fs.spv").unwrap();
+        pixel_shader_binary_file
+            .write_all(&pixel_shader_binary)
+            .unwrap();
+    }
+
+    {
+        let vertex_shader_binary =
+            convert_to_spv(include_str!("res/background.vs"), naga::ShaderStage::Vertex);
+        let mut vertex_shader_binary_file = File::create("src/gfx/background.vs.spv").unwrap();
+        vertex_shader_binary_file
+            .write_all(&vertex_shader_binary)
+            .unwrap();
+
+        let pixel_shader_binary = convert_to_spv(
+            include_str!("res/background.fs"),
+            naga::ShaderStage::Fragment,
+        );
+        let mut pixel_shader_binary_file = File::create("src/gfx/background.fs.spv").unwrap();
+        pixel_shader_binary_file
+            .write_all(&pixel_shader_binary)
+            .unwrap();
+    }
 }
 
 fn convert_to_spv(source: &str, stage: naga::ShaderStage) -> Vec<u8> {
