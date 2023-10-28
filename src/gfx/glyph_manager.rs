@@ -1,9 +1,16 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crossfont::{BitmapBuffer, FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
 
 pub struct GlyphManager {
-    rasterizer: crossfont::Rasterizer,
+    // Windows 版では 'static な型ではなくなるので、
+    // 値をムーブするときに Windows 版だけビルドエラーになる。
+    // それを回避するために Arc で保持するようにする
+    rasterizer: Arc<Mutex<crossfont::Rasterizer>>,
+
     font_key: crossfont::FontKey,
     rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
 }
@@ -24,7 +31,7 @@ impl GlyphManager {
             )
             .unwrap();
         Self {
-            rasterizer,
+            rasterizer: Arc::new(Mutex::new(rasterizer)),
             font_key,
             rasterized_glyph_table: HashMap::default(),
         }
@@ -67,6 +74,8 @@ impl GlyphManager {
 
         let rasterized_glyph = self
             .rasterizer
+            .lock()
+            .unwrap()
             .get_glyph(crossfont::GlyphKey {
                 character: code,
                 font_key: self.font_key,
