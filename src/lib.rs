@@ -44,6 +44,10 @@ pub fn convert_key_to_str(key_code: VirtualKeyCode) -> &'static str {
         VirtualKeyCode::Space => return " ",
         VirtualKeyCode::Tab => return "\t",
         VirtualKeyCode::Return => "\n",
+        VirtualKeyCode::Up => "\x1b\x5b\x41",
+        VirtualKeyCode::Down => "\x1b\x5b\x42",
+        VirtualKeyCode::Right => "\x1b\x5b\x43",
+        VirtualKeyCode::Left => "\x1b\x5b\x44",
         _ => return "",
     }
 }
