@@ -14,20 +14,13 @@ use alacritty_terminal::{
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TeletypeId {
-    id: uuid::Uuid,
-}
-
-impl TeletypeId {
-    pub fn new() -> Self {
-        Self {
-            id: uuid::Uuid::new_v4(),
-        }
-    }
+    internal: u64,
 }
 
 pub struct TeletypeManager {
     terminal_table: HashMap<TeletypeId, Arc<FairMutex<Term<EventProxy>>>>,
     dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>,
+    current_id: u64,
 }
 
 impl TeletypeManager {
@@ -35,11 +28,16 @@ impl TeletypeManager {
         Self {
             terminal_table: Default::default(),
             dirty_table: Arc::new(Mutex::new(HashMap::default())),
+            current_id: 0,
         }
     }
 
     pub fn create_teletype(&mut self) -> (TeletypeId, EventLoopSender) {
-        let id = TeletypeId::new();
+        let id = TeletypeId {
+            internal: self.current_id,
+        };
+        self.current_id += 1;
+
         let pty_config = &PtyConfig {
             shell: Some(Program::Just("bash".to_string())),
             working_directory: None,
@@ -52,10 +50,7 @@ impl TeletypeManager {
             cell_height: 8,
         };
 
-        // 紐づいた Window を表す識別子
-        // とりあえず適当な数値で決め打ち
-        let internal_id = 1;
-        let pty = alacritty_terminal::tty::new(pty_config, window_size, internal_id).unwrap();
+        let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
 
         let event_proxy = EventProxy::new(id.clone(), self.dirty_table.clone());
         let grid = SizeInfo::new();
