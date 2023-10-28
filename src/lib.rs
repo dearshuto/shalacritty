@@ -55,6 +55,9 @@ pub fn convert_key_to_str(key_code: VirtualKeyCode) -> &'static str {
         VirtualKeyCode::Back => return "\x7f",
         VirtualKeyCode::Space => return " ",
         VirtualKeyCode::Tab => return "\t",
+        #[cfg(target_os = "macos")]
+        VirtualKeyCode::Return => "\r",
+        #[cfg(target_os = "linux")]
         VirtualKeyCode::Return => "\n",
         VirtualKeyCode::Up => "\x1b\x5b\x41",
         VirtualKeyCode::Down => "\x1b\x5b\x42",
