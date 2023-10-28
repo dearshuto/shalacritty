@@ -44,8 +44,8 @@ impl TeletypeManager {
             hold: true,
         };
         let window_size = WindowSize {
-            num_lines: 64,
-            num_cols: 64,
+            num_lines: 128,
+            num_cols: 128,
             cell_width: 8,
             cell_height: 8,
         };
@@ -150,10 +150,10 @@ impl Dimensions for SizeInfo {
     }
 
     fn screen_lines(&self) -> usize {
-        64
+        128
     }
 
     fn columns(&self) -> usize {
-        64
+        128
     }
 }

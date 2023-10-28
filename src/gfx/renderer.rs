@@ -202,7 +202,7 @@ impl<'a> Renderer<'a> {
         // 文字ごとの情報
         let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: std::mem::size_of::<CharacterData>() as u64 * 4 * 1024,
+            size: std::mem::size_of::<CharacterData>() as u64 * 64 * 1024,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -431,8 +431,8 @@ impl<'a> Renderer<'a> {
             render_pass.set_bind_group(0, bind_group, &[]);
 
             // TODO: 文字数は外部から受け取るようにする
-            // 4096 は 64x64 の領域に文字が入るようにしている
-            render_pass.draw_indexed(0..6, 0, 0..4096);
+            // 128x64 の領域に文字が入るようにしている
+            render_pass.draw_indexed(0..6, 0, 0..(128 * 64));
         }
 
         queue.submit(Some(command_encoder.finish()));

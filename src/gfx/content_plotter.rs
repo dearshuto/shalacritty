@@ -99,10 +99,11 @@ impl ContentPlotter {
             .map(|cell| {
                 // [-1, 1] の範囲
                 // ウィンドウバーの分だけちょっとずらしてる
-                let position_normalized = 2.0
-                    * Vector2::new(cell.point.column.0 as f32, cell.point.line.0 as f32)
-                    / 64.0f32
-                    - Vector2::new(0.98, 0.98);
+                let position_normalized =
+                    2.3 * Vector2::new(
+                        cell.point.column.0 as f32 / 128.0f32,
+                        cell.point.line.0 as f32 / 64.0f32,
+                    ) - Vector2::new(0.98, 0.98);
                 let code = cell.c;
                 let glyph = glyph_manager.get_rasterized_glyph(code);
                 // GlyphManager がフォントサイズ 32 決め打ちでラスタライズしている
