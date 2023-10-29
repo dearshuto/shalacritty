@@ -1,3 +1,3 @@
 mod teletype_manager;
 
-pub use teletype_manager::TeletypeManager;
+pub use teletype_manager::{TeletypeId, TeletypeManager};

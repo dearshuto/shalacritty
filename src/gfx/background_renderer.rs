@@ -1,6 +1,5 @@
 use wgpu::{include_spirv_raw, util::DeviceExt};
-
-use crate::window::WindowId;
+use winit::window::WindowId;
 
 struct ConstantBufferData {}
 

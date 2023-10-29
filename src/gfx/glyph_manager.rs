@@ -30,6 +30,7 @@ impl GlyphManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn extract_alphabet(&mut self) {
         // ASCII コードで使いそうなグリフをあらかじめ抽出しておく
         let codes = vec!['─', '│', 'v', '└', '┌', '┐', '▼', '▲', '┘', '°', '…'];
@@ -39,6 +40,7 @@ impl GlyphManager {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn extract_alphabet_async(&mut self) {
         self.extract_alphabet();
     }
