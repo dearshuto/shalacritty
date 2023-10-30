@@ -14,6 +14,9 @@ impl GlyphManager {
         let font_key = rasterizer
             .load_font(
                 &FontDesc::new(
+                    #[cfg(not(any(target_os = "macos", windows)))]
+                    "monospace",
+                    #[cfg(target_os = "macos")]
                     "Menlo",
                     Style::Description {
                         slant: Slant::Normal,
