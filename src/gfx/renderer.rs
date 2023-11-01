@@ -1,9 +1,10 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::{include_spirv_raw, util::DeviceExt};
-
-use crate::window::WindowId;
+use winit::{
+    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
+    window::WindowId,
+};
 
 use super::{background_renderer::BackgroundRenderer, content_plotter::Diff};
 
@@ -62,7 +63,7 @@ impl<'a> Renderer<'a> {
         instance: &wgpu::Instance,
         window: &TWindow,
     ) where
-        TWindow: HasRawWindowHandle + HasRawDisplayHandle,
+        TWindow: HasWindowHandle + HasDisplayHandle,
     {
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
         let adapter = instance
@@ -141,6 +142,9 @@ impl<'a> Renderer<'a> {
             width: 640,
             height: 480,
             present_mode: wgpu::PresentMode::Fifo,
+            #[cfg(not(any(target_os = "macos", windows)))]
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            #[cfg(target_os = "macos")]
             alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
             view_formats: vec![swapchain_format],
         };
@@ -301,6 +305,9 @@ impl<'a> Renderer<'a> {
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
+            #[cfg(not(any(target_os = "macos", windows)))]
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            #[cfg(target_os = "macos")]
             alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
             view_formats: vec![],
         };
@@ -403,10 +410,12 @@ impl<'a> Renderer<'a> {
                             b: 0.3,
                             a: 0.5,
                         }),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
             self.background_renderer.render(id, render_pass);
         }
@@ -420,10 +429,12 @@ impl<'a> Renderer<'a> {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
             render_pass.set_pipeline(render_pipeline);
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
