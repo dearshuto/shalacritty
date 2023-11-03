@@ -1,10 +1,12 @@
-use std::{collections::HashMap, num::NonZeroU64};
+use std::{collections::HashMap, num::NonZeroU64, sync::Arc};
 
 use wgpu::{include_spirv_raw, util::DeviceExt};
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowId,
 };
+
+use crate::ConfigService;
 
 use super::{background_renderer::BackgroundRenderer, content_plotter::Diff};
 
@@ -34,11 +36,14 @@ pub struct Renderer<'a> {
 
     // 背景
     background_renderer: BackgroundRenderer<'a>,
+
+    // 設定
+    config: Arc<ConfigService>,
 }
 
 impl<'a> Renderer<'a> {
     #[allow(dead_code)]
-    pub fn new() -> Self {
+    pub fn new(config: Arc<ConfigService>) -> Self {
         Self {
             device_table: Default::default(),
             queue_table: Default::default(),
@@ -54,6 +59,9 @@ impl<'a> Renderer<'a> {
 
             // 背景
             background_renderer: BackgroundRenderer::new(),
+
+            // 設定
+            config,
         }
     }
 
@@ -398,6 +406,7 @@ impl<'a> Renderer<'a> {
 
         // 背景描画
         {
+            let config = self.config.read().unwrap();
             let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -405,10 +414,10 @@ impl<'a> Renderer<'a> {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 0.5,
+                            r: config.background[0] as f64,
+                            g: config.background[1] as f64,
+                            b: config.background[2] as f64,
+                            a: config.background[3] as f64,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
