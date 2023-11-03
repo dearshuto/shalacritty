@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use alacritty_terminal::event_loop::{EventLoopSender, Msg};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
@@ -13,7 +13,7 @@ use crate::{
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
     #[allow(dead_code)]
-    config_service: ConfigService,
+    config_service: Arc<ConfigService>,
     glyph_manager: GlyphManager,
     teletype_manager: TeletypeManager,
     window_manager: WindowManager,
@@ -26,12 +26,12 @@ pub struct Workspace<'a> {
 impl<'a> Workspace<'a> {
     pub fn new() -> Self {
         let instance = wgpu::Instance::default();
-        let config_service = ConfigService::new();
+        let config_service = Arc::new(ConfigService::new());
         let glyph_manager = GlyphManager::new();
         let teletype_manager = TeletypeManager::new();
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
-        let renderer = Renderer::new();
+        let renderer = Renderer::new(Arc::clone(&config_service));
 
         Self {
             instance,
