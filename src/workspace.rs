@@ -105,6 +105,12 @@ impl<'a> Workspace<'a> {
                 self.renderer.update(id, diff);
             });
         }
+
+        // 最描画要求
+        let Some(window) = self.window_manager.try_get_window(id) else {
+            return;
+        };
+        window.request_redraw();
     }
 
     pub fn send(&mut self, _id: WindowId, text: &str) {
