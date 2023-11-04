@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub background: [f32; 4],
+
+    pub image: String,
 }
 
 pub struct ConfigService {
@@ -112,7 +114,16 @@ fn load_config(path: &Path) -> Config {
     let mut file = std::fs::File::open(path).unwrap();
     let mut str: String = String::new();
     file.read_to_string(&mut str).ok().unwrap();
-    toml::from_str(&str).unwrap()
+    let mut config: Config = toml::from_str(&str).unwrap();
+
+    // 画像パスは設定ファイルからの相対パスにする
+    let mut image_path = path.to_path_buf();
+    image_path.pop();
+    image_path.push(config.image);
+    config.image = image_path.to_str().unwrap().to_string();
+    println!("{}", config.image);
+
+    config
 }
 
 fn create_config_directory() -> PathBuf {
