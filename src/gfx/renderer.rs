@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroU64, sync::Arc};
+use std::{collections::HashMap, num::NonZeroU64, path::Path, sync::Arc};
 
 use wgpu::{include_spirv_raw, util::DeviceExt};
 use winit::{
@@ -285,7 +285,7 @@ impl<'a> Renderer<'a> {
         // 背景描画
         // TODO: プラグイン化
         self.background_renderer
-            .register(id, &device, config.format);
+            .register(id, &device, &queue, config.format);
 
         self.device_table.insert(id.clone(), device);
         self.queue_table.insert(id.clone(), queue);
@@ -384,7 +384,22 @@ impl<'a> Renderer<'a> {
             );
         }
 
-        self.background_renderer.update(id, device, queue);
+        // 背景レンダラーの更新
+        let surface = self.surface_table.get(&id).unwrap();
+        let adapter = self.adapter_table.get(&id).unwrap();
+        let swapchain_capabilities = surface.get_capabilities(adapter);
+        let swapchain_format = swapchain_capabilities.formats[0];
+        let image_path = &self.config.read().unwrap().image;
+        if Path::new(image_path).exists()
+        {
+            self.background_renderer.update(
+                id,
+                device,
+                queue,
+                swapchain_format,
+                image_path,
+            );
+        }
     }
 
     pub fn render(&self, id: WindowId) {
