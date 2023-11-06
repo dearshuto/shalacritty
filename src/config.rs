@@ -20,7 +20,7 @@ pub struct ConfigService {
     #[allow(dead_code)]
     watcher: Arc<dyn notify::Watcher + Send + Sync>,
     #[allow(dead_code)]
-    path: PathBuf,
+    path: Arc<PathBuf>,
     config: Arc<Mutex<Config>>,
 }
 
@@ -50,7 +50,7 @@ impl ConfigService {
 
         Self {
             watcher: Arc::new(watcher),
-            path: config_path,
+            path: Arc::new(config_path),
             config,
         }
     }
