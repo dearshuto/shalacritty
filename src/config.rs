@@ -16,7 +16,10 @@ pub struct Config {
 }
 
 pub struct ConfigService {
-    watcher: Box<dyn notify::Watcher>,
+    // ConfigService は各種オブジェクトに共有することを想定するので Send + Sync
+    #[allow(dead_code)]
+    watcher: Arc<dyn notify::Watcher + Send + Sync>,
+    #[allow(dead_code)]
     path: PathBuf,
     config: Arc<Mutex<Config>>,
 }
@@ -46,7 +49,7 @@ impl ConfigService {
             .unwrap();
 
         Self {
-            watcher: Box::new(watcher),
+            watcher: Arc::new(watcher),
             path: config_path,
             config,
         }
@@ -65,7 +68,8 @@ impl Default for ConfigService {
 
 impl Drop for ConfigService {
     fn drop(&mut self) {
-        self.watcher.unwatch(&self.path).unwrap();
+        // 解放した方がキレイだけどしなくてもよさそう
+        // self.watcher.unwatch(&self.path).unwrap();
     }
 }
 
