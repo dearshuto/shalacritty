@@ -200,7 +200,7 @@ mod tests {
         glyph_manager.extract_alphabet();
 
         let mut glyph_writer = GlyphWriter::new();
-        let codes = ((' ' as char)..='~').collect::<Vec<char>>();
+        let codes = (' '..='~').collect::<Vec<char>>();
         let image_patches = glyph_writer.execute(&codes, &mut glyph_manager);
 
         let mut image = Image::new(glyph_writer.width(), glyph_writer.height());
@@ -244,7 +244,7 @@ mod tests {
                     let r = pixels[index];
                     let g = pixels[index];
                     let b = pixels[index];
-                    image.set_pixel(x as u32, y as u32, bmp::Pixel { r, g, b });
+                    image.set_pixel(x, y, bmp::Pixel { r, g, b });
                 }
             }
 
