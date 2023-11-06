@@ -90,7 +90,7 @@ impl notify::EventHandler for EventHandler {
                 // 定義ファイルが作成されたので読み込む
                 for path in &e.paths {
                     println!("{:?}: {:?}", e.kind, path);
-                    let _file = std::fs::File::open(&path).unwrap();
+                    let _file = std::fs::File::open(path).unwrap();
                 }
             }
             notify::EventKind::Modify(kind) => {
@@ -140,5 +140,5 @@ fn create_config_directory() -> PathBuf {
     config_directory_path.push(".config");
     config_directory_path.push("shalacritty");
 
-    return config_directory_path;
+    config_directory_path
 }
