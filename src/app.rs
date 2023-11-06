@@ -31,7 +31,7 @@ impl App {
                     window_id, event, ..
                 } => match event {
                     WindowEvent::Resized(size) => {
-                        workspace.resize(window_id, size.width, size.width);
+                        workspace.resize(window_id, size.width, size.height);
                     }
                     WindowEvent::RedrawRequested => {
                         workspace.render(window_id);
