@@ -287,17 +287,17 @@ impl<'a> Renderer<'a> {
         self.background_renderer
             .register(id, &device, &queue, config.format);
 
-        self.device_table.insert(id.clone(), device);
-        self.queue_table.insert(id.clone(), queue);
+        self.device_table.insert(id, device);
+        self.queue_table.insert(id, queue);
         self.adapter_table.insert(id, adapter);
-        self.surface_table.insert(id.clone(), surface);
-        self.pipelie_table.insert(id.clone(), render_pipeline);
-        self.vertex_buffer_table.insert(id.clone(), vertrex_buffer);
-        self.index_buffer_table.insert(id.clone(), index_buffer);
+        self.surface_table.insert(id, surface);
+        self.pipelie_table.insert(id, render_pipeline);
+        self.vertex_buffer_table.insert(id, vertrex_buffer);
+        self.index_buffer_table.insert(id, index_buffer);
         self.character_storage_block_table
-            .insert(id.clone(), character_storage_block);
-        self.bind_group_table.insert(id.clone(), bind_group);
-        self.sampler_table.insert(id.clone(), sampler);
+            .insert(id, character_storage_block);
+        self.bind_group_table.insert(id, bind_group);
+        self.sampler_table.insert(id, sampler);
         self.glyph_texture = Some(texture);
     }
 
@@ -305,7 +305,7 @@ impl<'a> Renderer<'a> {
         let device = self.device_table.get(&id).unwrap();
         let surface = self.surface_table.get(&id).unwrap();
         let adapter = self.adapter_table.get(&id).unwrap();
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
+        let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -335,18 +335,17 @@ impl<'a> Renderer<'a> {
             .iter()
             .map(|info| {
                 let t = info.transform;
-                let character_data = CharacterData {
+                CharacterData {
                     transform0: [t[0], t[1], t[2], 0.0],
                     transform1: [t[3], t[4], t[5], 0.0],
                     fore_ground_color: info.fore_ground_color,
                     uv_bl: [info.uv0[0], info.uv0[1]],
                     uv_tr: [info.uv1[0], info.uv1[1]],
-                };
-                character_data
+                }
             })
             .collect::<Vec<CharacterData>>();
 
-        if data.len() > 0 {
+        if !data.is_empty() {
             let binary = unsafe {
                 std::slice::from_raw_parts(
                     data.as_ptr() as *const _ as *const u8,
@@ -390,15 +389,9 @@ impl<'a> Renderer<'a> {
         let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let image_path = &self.config.read().unwrap().image;
-        if Path::new(image_path).exists()
-        {
-            self.background_renderer.update(
-                id,
-                device,
-                queue,
-                swapchain_format,
-                image_path,
-            );
+        if Path::new(image_path).exists() {
+            self.background_renderer
+                .update(id, device, queue, swapchain_format, image_path);
         }
     }
 
