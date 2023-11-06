@@ -52,7 +52,7 @@ impl TeletypeManager {
 
         let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
 
-        let event_proxy = EventProxy::new(id.clone(), self.dirty_table.clone());
+        let event_proxy = EventProxy::new(id, self.dirty_table.clone());
         let grid = SizeInfo::new();
         let terminal =
             alacritty_terminal::Term::new(&Default::default(), &grid, event_proxy.clone());
@@ -70,7 +70,7 @@ impl TeletypeManager {
 
         // 起動
         let _io_thread = event_loop.spawn();
-        self.terminal_table.insert(id.clone(), terminal);
+        self.terminal_table.insert(id, terminal);
 
         (id, channel)
     }
@@ -130,7 +130,7 @@ impl EventListener for EventProxy {
 impl Clone for EventProxy {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             dirty_table: Arc::clone(&self.dirty_table),
         }
     }
