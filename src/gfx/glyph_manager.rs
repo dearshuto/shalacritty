@@ -125,7 +125,7 @@ mod tests {
         for y in 0..height as usize {
             for x in 0..width as usize {
                 let index = 3 * (x + (width as usize) * y);
-                let r = buffer[index + 0];
+                let r = buffer[index];
                 let g = buffer[index + 1];
                 let b = buffer[index + 2];
                 image.set_pixel(x as u32, y as u32, bmp::Pixel { r, g, b });
