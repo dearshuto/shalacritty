@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use winit::{
+    dpi::PhysicalSize,
     event_loop::EventLoopWindowTarget,
     window::{Window, WindowBuilder, WindowId},
 };
@@ -20,6 +21,7 @@ impl WindowManager {
     pub async fn create_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) -> WindowId {
         let window = WindowBuilder::new()
             .with_transparent(true)
+            .with_min_inner_size(PhysicalSize::new(300, 300))
             .build(event_loop)
             .unwrap();
         let id = window.id();

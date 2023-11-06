@@ -10,7 +10,12 @@ use image::{
 use wgpu::{include_spirv_raw, util::DeviceExt};
 use winit::window::WindowId;
 
-struct ConstantBufferData {}
+#[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
+#[repr(C)]
+struct ConstantBufferData {
+    image_tansform0: [f32; 4],
+    image_tansform1: [f32; 4],
+}
 
 struct Instance {
     render_pipeline: wgpu::RenderPipeline,
@@ -24,6 +29,8 @@ struct Instance {
     sampler: wgpu::Sampler,
     #[allow(dead_code)]
     texture: wgpu::Texture,
+    width: u32,
+    height: u32,
 }
 
 pub struct BackgroundRenderer<'a> {
@@ -53,7 +60,40 @@ impl<'a> BackgroundRenderer<'a> {
         self.instance = Some(instance);
     }
 
-    pub fn resize(&self, _id: WindowId, _width: u32, _height: u32) {}
+    pub fn resize(&self, _id: WindowId, queue: &wgpu::Queue, width: u32, height: u32) {
+        let Some(instance) = &self.instance else {
+            return;
+        };
+
+        let width = width as f32;
+        let height = height as f32;
+        let image_width = instance.width as f32;
+        let image_height = instance.height as f32;
+
+        // 画像の UV 変換
+        let scale_x = width / image_width;
+        let scale_y = height / image_height;
+
+        // (1, 1) より外を参照してたらフィットするよう補正
+        // [0, 1] だったら補正は不要なので 1 で抑えておく
+        let factor = scale_x.max(scale_y).max(1.0);
+        let x = scale_x / factor;
+        let y = scale_y / factor;
+
+        // 画像の中心とターミナルの中心が一致するように並行移動
+        let t_x = 0.5 * (image_width - width).max(0.0) / width;
+        let t_y = 0.5 * (image_height - height).max(0.0) / height;
+        let constant_buffer_data = ConstantBufferData {
+            image_tansform0: [x, 0.0, x * t_x, 0.0],
+            image_tansform1: [0.0, y, y * t_y, 0.0],
+        };
+        let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
+        queue.write_buffer(
+            &self.instance.as_ref().unwrap().constant_buffer,
+            0,
+            constant_buffer_data,
+        );
+    }
 
     pub fn update<TPath>(
         &mut self,
@@ -127,16 +167,16 @@ where
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[
-                        //     wgpu::BindGroupLayoutEntry {
-                        //     binding: 0,
-                        //     visibility: wgpu::ShaderStages::VERTEX,
-                        //     ty: wgpu::BindingType::Buffer {
-                        //         ty: wgpu::BufferBindingType::Uniform,
-                        //         has_dynamic_offset: false,
-                        //         min_binding_size: None,
-                        //     },
-                        //     count: None,
-                        // },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -241,7 +281,7 @@ where
             });
 
             let (bind_group, texture, sampler) =
-                create_bind_group(device, &bind_group_layout, sampler, 1, 1);
+                create_bind_group(device, &bind_group_layout, &constant_buffer, sampler, 1, 1);
 
             Instance {
                 render_pipeline,
@@ -252,6 +292,8 @@ where
                 constant_buffer,
                 sampler,
                 texture,
+                width: 1,
+                height: 1,
             }
         }
         CreateInstanceParams::WithCache(instance, path) => {
@@ -279,6 +321,7 @@ where
             let (bind_group, texture, sampler) = create_bind_group(
                 device,
                 &instance.bind_group_layout_cache,
+                &instance.constant_buffer,
                 instance.sampler,
                 image.width(),
                 image.height(),
@@ -308,6 +351,8 @@ where
                 constant_buffer: instance.constant_buffer,
                 sampler,
                 texture,
+                width: image.width(),
+                height: image.height(),
             }
         }
     }
@@ -317,6 +362,7 @@ where
 fn create_bind_group(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
+    constant_buffer: &wgpu::Buffer,
     sampler: wgpu::Sampler,
     width: u32,
     height: u32,
@@ -340,10 +386,10 @@ fn create_bind_group(
         label: None,
         layout: bind_group_layout,
         entries: &[
-            // wgpu::BindGroupEntry {
-            //     binding: 0,
-            //     resource: constant_buffer.as_entire_binding(),
-            // },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: constant_buffer.as_entire_binding(),
+            },
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::TextureView(&texture.create_view(

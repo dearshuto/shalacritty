@@ -303,6 +303,7 @@ impl<'a> Renderer<'a> {
 
     pub fn resize(&self, id: WindowId, width: u32, height: u32) {
         let device = self.device_table.get(&id).unwrap();
+        let queue = self.queue_table.get(&id).unwrap();
         let surface = self.surface_table.get(&id).unwrap();
         let adapter = self.adapter_table.get(&id).unwrap();
         let swapchain_capabilities = surface.get_capabilities(adapter);
@@ -310,20 +311,20 @@ impl<'a> Renderer<'a> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
-            width,
-            height,
+            width: width as u32,
+            height: height as u32,
             present_mode: wgpu::PresentMode::Fifo,
             #[cfg(not(any(target_os = "macos", windows)))]
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             #[cfg(target_os = "macos")]
-            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
         surface.configure(device, &config);
 
         // 背景描画
         // TODO: プラグイン化
-        self.background_renderer.resize(id, width, height);
+        self.background_renderer.resize(id, queue, width, height);
     }
 
     pub fn update(&mut self, id: WindowId, diff: Diff) {
