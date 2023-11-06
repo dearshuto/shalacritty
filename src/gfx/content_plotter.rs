@@ -134,22 +134,22 @@ impl ContentPlotter {
 
         // 差分検出
         let mut diff_items = Vec::default();
-        for index in 0..items.len() {
+        (0..items.len()).for_each(|index| {
             let new_item = items[index];
 
             // 古い要素がなかったら新規要素として追加
             let Some(old_item) = self.old_items.get(index) else {
                 diff_items.push(new_item);
-                continue;
+                return;
             };
 
             // 差分がなければ何もしない
             if old_item == &new_item {
-                continue;
+                return;
             }
 
             diff_items.push(new_item);
-        }
+        });
 
         // 差分がなければ更新する要素はない
         if diff_items.is_empty() {
@@ -177,10 +177,10 @@ impl ContentPlotter {
             })
             .collect::<Vec<GlyphTexturePatch>>();
 
-        return Diff {
+        Diff {
             glyph_texture_patches,
             character_info_array: items,
-        };
+        }
     }
 
     fn convert_index_color(i: u8) -> [f32; 4] {
