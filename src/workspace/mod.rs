@@ -28,6 +28,9 @@ pub struct Workspace<'a> {
 
     #[allow(dead_code)]
     virtual_window_manager: VirtualWindowManager,
+
+    // VirtualWindow -> Tty
+    virtual_window_tty_table: HashMap<VirtualWindowId, TeletypeId>,
 }
 
 impl<'a> Workspace<'a> {
@@ -56,6 +59,7 @@ impl<'a> Workspace<'a> {
             window_tty_table: HashMap::default(),
             sender: None,
             virtual_window_manager,
+            virtual_window_tty_table: HashMap::default(),
         }
     }
 
@@ -67,6 +71,11 @@ impl<'a> Workspace<'a> {
         let (tty_id, sender) = self.teletype_manager.create_teletype();
         self.window_tty_table.insert(id, vec![tty_id]);
         self.sender = Some(sender);
+
+        // シェルを表示する領域
+        let virtual_window_id = self.virtual_window_manager.spawn_virtual_window(64, 64);
+        self.virtual_window_tty_table
+            .insert(virtual_window_id, tty_id);
     }
 
     pub fn update(&mut self) {
