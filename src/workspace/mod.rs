@@ -1,3 +1,7 @@
+mod virtual_window_manager;
+
+pub use virtual_window_manager::{VirtualWindow, VirtualWindowId, VirtualWindowManager};
+
 use std::{collections::HashMap, sync::Arc};
 
 use alacritty_terminal::event_loop::{EventLoopSender, Msg};
@@ -21,6 +25,9 @@ pub struct Workspace<'a> {
     renderer: Renderer<'a>,
     window_tty_table: HashMap<WindowId, Vec<TeletypeId>>,
     sender: Option<EventLoopSender>,
+
+    #[allow(dead_code)]
+    virtual_window_manager: VirtualWindowManager,
 }
 
 impl<'a> Workspace<'a> {
@@ -33,6 +40,11 @@ impl<'a> Workspace<'a> {
         let content_plotter = ContentPlotter::new();
         let renderer = Renderer::new(Arc::clone(&config_service));
 
+        // ウィンドウを分割した仮想的な領域
+        let mut virtual_window_manager = VirtualWindowManager::new();
+        let id = virtual_window_manager.spawn_virtual_window(64, 64);
+        let _virtual_window = virtual_window_manager.try_get_window(id);
+
         Self {
             instance,
             config_service,
@@ -43,6 +55,7 @@ impl<'a> Workspace<'a> {
             renderer,
             window_tty_table: HashMap::default(),
             sender: None,
+            virtual_window_manager,
         }
     }
 
