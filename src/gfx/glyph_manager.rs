@@ -35,10 +35,8 @@ impl GlyphManager {
 
     #[allow(dead_code)]
     pub fn extract_alphabet(&mut self) {
-        // ASCII コードで使いそうなグリフをあらかじめ抽出しておく
-        let codes = vec!['─', '│', 'v', '└', '┌', '┐', '▼', '▲', '┘', '°', '…'];
-        let dots = '⠀'..='⣿';
-        for char_code in ((1 as char)..='~').chain(codes).chain(dots) {
+        // アルファベットをあらかじめ抽出しておく
+        for char_code in 'A'..='z' {
             self.extract(char_code);
         }
     }
