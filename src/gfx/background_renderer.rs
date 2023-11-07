@@ -297,8 +297,14 @@ where
             }
         }
         CreateInstanceParams::WithCache(instance, path) => {
+            // ファイルが見つからなかったらなにもしない
+            if !path.as_ref().is_file() {
+                return instance;
+            }
+
             let mut reader = File::open(path.as_ref()).unwrap();
             let path = Path::new(path.as_ref());
+
             let image = if path.extension().unwrap() == "png" {
                 let decoder = PngDecoder::new(&mut reader).unwrap();
                 DynamicImage::from_decoder(decoder).unwrap()
