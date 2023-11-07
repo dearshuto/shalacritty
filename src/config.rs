@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub background: [f32; 4],
 
+    #[serde(default)]
     pub image: String,
 }
 
