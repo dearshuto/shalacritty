@@ -18,6 +18,8 @@ impl GlyphManager {
                     "monospace",
                     #[cfg(target_os = "macos")]
                     "Menlo",
+                    #[cfg(target_os = "windows")]
+                    "Consolas",
                     Style::Description {
                         slant: Slant::Normal,
                         weight: Weight::Normal,

@@ -39,7 +39,10 @@ impl TeletypeManager {
         self.current_id += 1;
 
         let pty_config = &PtyConfig {
+            #[cfg(not(target_os = "windows"))]
             shell: Some(Program::Just("bash".to_string())),
+            #[cfg(target_os = "windows")]
+            shell: Some(Program::Just("cmd.exe".to_string())),
             working_directory: None,
             hold: true,
         };
