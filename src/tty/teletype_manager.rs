@@ -65,6 +65,7 @@ impl TeletypeManager {
 
         let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
 
+        self.dirty_table.lock().unwrap().insert(id, true);
         let event_proxy = EventProxy::new(id, self.dirty_table.clone());
         let terminal =
             alacritty_terminal::Term::new(&Default::default(), &size, event_proxy.clone());
