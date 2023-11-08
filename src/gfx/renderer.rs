@@ -154,6 +154,8 @@ impl<'a> Renderer<'a> {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             #[cfg(target_os = "macos")]
             alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
+            #[cfg(target_os = "windows")]
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![swapchain_format],
         };
         surface.configure(&device, &config);
@@ -317,6 +319,8 @@ impl<'a> Renderer<'a> {
             #[cfg(not(any(target_os = "macos", windows)))]
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             #[cfg(target_os = "macos")]
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            #[cfg(target_os = "windows")]
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };

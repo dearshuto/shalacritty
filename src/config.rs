@@ -134,7 +134,7 @@ fn load_config(path: &Path) -> Config {
 
 fn create_config_directory() -> PathBuf {
     #[cfg(target_os = "windows")]
-    let home_directory = std::env::var("FOLDERID_RoamingAppData").unwrap();
+    let home_directory = std::env::var("APPDATA").unwrap();
 
     #[cfg(target_os = "macos")]
     let home_directory = std::env::var("HOME").unwrap();
