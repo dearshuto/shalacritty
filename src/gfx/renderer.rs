@@ -27,6 +27,7 @@ pub struct Renderer<'a> {
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
     surface_table: HashMap<WindowId, wgpu::Surface>,
     pipelie_table: HashMap<WindowId, wgpu::RenderPipeline>,
+    character_background_pipeline: Option<wgpu::RenderPipeline>,
     vertex_buffer_table: HashMap<WindowId, wgpu::Buffer>,
     index_buffer_table: HashMap<WindowId, wgpu::Buffer>,
     bind_group_table: HashMap<WindowId, wgpu::BindGroup>,
@@ -50,6 +51,7 @@ impl<'a> Renderer<'a> {
             adapter_table: Default::default(),
             surface_table: Default::default(),
             pipelie_table: Default::default(),
+            character_background_pipeline: None,
             vertex_buffer_table: Default::default(),
             index_buffer_table: HashMap::default(),
             bind_group_table: Default::default(),
@@ -134,14 +136,6 @@ impl<'a> Renderer<'a> {
             push_constant_ranges: &[],
         });
 
-        let vertex_shader_module_spirv = include_spirv_raw!("rect.vs.spv");
-        let vertex_shader_module =
-            unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
-
-        let pixel_shader_module_spirv = include_spirv_raw!("rect.fs.spv");
-        let _pixel_shader_module =
-            unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
-
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
@@ -169,35 +163,78 @@ impl<'a> Renderer<'a> {
                 shader_location: 0,
             }],
         }];
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &vertex_shader_module,
-                entry_point: "main",
-                buffers: &vertex_buffers,
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &_pixel_shader_module,
-                entry_point: "main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent::OVER,
-                    }),
-                    write_mask: wgpu::ColorWrites::all(),
-                })],
-            }),
-            multiview: None,
-        });
+        let render_pipeline = {
+            let vertex_shader_module_spirv = include_spirv_raw!("rect.vs.spv");
+            let vertex_shader_module =
+                unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
+
+            let pixel_shader_module_spirv = include_spirv_raw!("rect.fs.spv");
+            let _pixel_shader_module =
+                unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
+
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: "main",
+                    buffers: &vertex_buffers,
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &_pixel_shader_module,
+                    entry_point: "main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent::OVER,
+                        }),
+                        write_mask: wgpu::ColorWrites::all(),
+                    })],
+                }),
+                multiview: None,
+            })
+        };
+
+        let render_pipeline_character_background = {
+            let vertex_shader_module_spirv = include_spirv_raw!("character_background.vs.spv");
+            let vertex_shader_module =
+                unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
+
+            let pixel_shader_module_spirv = include_spirv_raw!("character_background.fs.spv");
+            let pixel_shader_module =
+                unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
+            let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader_module,
+                    entry_point: "main",
+                    buffers: &vertex_buffers,
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &pixel_shader_module,
+                    entry_point: "main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::all(),
+                    })],
+                }),
+                multiview: None,
+            });
+            Some(render_pipeline)
+        };
 
         // 頂点バッファー
         let vertrex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -294,6 +331,7 @@ impl<'a> Renderer<'a> {
         self.adapter_table.insert(id, adapter);
         self.surface_table.insert(id, surface);
         self.pipelie_table.insert(id, render_pipeline);
+        self.character_background_pipeline = render_pipeline_character_background;
         self.vertex_buffer_table.insert(id, vertrex_buffer);
         self.index_buffer_table.insert(id, index_buffer);
         self.character_storage_block_table
@@ -440,6 +478,32 @@ impl<'a> Renderer<'a> {
                 occlusion_query_set: None,
             });
             self.background_renderer.render(id, render_pass);
+        }
+
+        // 文字の背景
+        if let Some(render_pipeline) = &self.character_background_pipeline {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_pipeline(render_pipeline);
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_bind_group(0, bind_group, &[]);
+
+            // TODO: 文字数は外部から受け取るようにする
+            // 4096 は 64x64 の領域に文字が入るようにしている
+            render_pass.draw_indexed(0..6, 0, 0..4096);
         }
 
         // 文字描画

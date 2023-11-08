@@ -13,4 +13,8 @@ void main()
     // TODO: 色に対応する
     vec4 alpha = texture(sampler2D(u_GlyphTexture, u_GlyphSampler), v_Uv);
     o_Color = vec4(v_ForeGroundColor.xyz, alpha);
+
+#ifdef BACKGROUND
+    o_Color.rgb *= 0.1;
+#endif
 }

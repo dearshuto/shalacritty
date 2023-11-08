@@ -20,10 +20,17 @@ layout(std430, binding = 0) readonly buffer CharacterDataBuffer
 void main()
 {
     CharacterData characterData = u_CharacterDatas[gl_InstanceIndex];
+#ifdef BACKGROUND
+    vec2 position = vec2(
+        dot(characterData.transform[0].xyz, vec3(1.01 * i_Position, 1.0)),
+        dot(characterData.transform[1].xyz, vec3(1.01 * i_Position, 1.0))
+    );
+#else
     vec2 position = vec2(
         dot(characterData.transform[0].xyz, vec3(i_Position, 1.0)),
         dot(characterData.transform[1].xyz, vec3(i_Position, 1.0))
-        );
+    );
+#endif
     gl_Position = vec4(position, 0.0, 1.0);
     v_ForeGroundColor = characterData.foreGroundColor;
 
