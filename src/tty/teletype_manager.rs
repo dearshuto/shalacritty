@@ -33,6 +33,16 @@ impl TeletypeManager {
     }
 
     pub fn create_teletype(&mut self) -> (TeletypeId, EventLoopSender) {
+        self.create_teletype_with_size(SizeInfo::new())
+    }
+
+    pub fn create_teletype_with_size<TDimension>(
+        &mut self,
+        size: TDimension,
+    ) -> (TeletypeId, EventLoopSender)
+    where
+        TDimension: Dimensions,
+    {
         let id = TeletypeId {
             internal: self.current_id,
         };
@@ -56,9 +66,8 @@ impl TeletypeManager {
         let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
 
         let event_proxy = EventProxy::new(id, self.dirty_table.clone());
-        let grid = SizeInfo::new();
         let terminal =
-            alacritty_terminal::Term::new(&Default::default(), &grid, event_proxy.clone());
+            alacritty_terminal::Term::new(&Default::default(), &size, event_proxy.clone());
         let terminal = Arc::new(FairMutex::new(terminal));
 
         let event_loop = EventLoop::new(

@@ -28,12 +28,14 @@ impl VirtualWindow {
 
 pub struct VirtualWindowManager {
     virtual_window_table: HashMap<VirtualWindowId, VirtualWindow>,
+    root_windows: Vec<VirtualWindowId>,
 }
 
 impl VirtualWindowManager {
     pub fn new() -> Self {
         Self {
             virtual_window_table: HashMap::new(),
+            root_windows: Vec::default(),
         }
     }
 
@@ -42,6 +44,17 @@ impl VirtualWindowManager {
         let virtual_window = VirtualWindow::new(width, height);
         self.virtual_window_table.insert(id, virtual_window);
         id
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        for id in &self.root_windows {
+            let Some(window) = self.virtual_window_table.get_mut(id) else {
+                continue;
+            };
+
+            window.width = width;
+            window.height = height;
+        }
     }
 
     pub fn try_get_window(&self, id: VirtualWindowId) -> Option<&VirtualWindow> {

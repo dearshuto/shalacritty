@@ -112,6 +112,9 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
+        // 仮想ウインドウにリサイズを反映
+        self.virtual_window_manager.resize(width, height);
+
         self.renderer.resize(id, width, height);
 
         let Some(tty_ids) = self.window_tty_table.get(&id) else {
