@@ -97,20 +97,47 @@ impl ContentPlotter {
         let items = cells
             .iter()
             .map(|cell| {
-                // [-1, 1] の範囲
-                // ウィンドウバーの分だけちょっとずらしてる
-                let position_normalized = 2.0
-                    * Vector2::new(cell.point.column.0 as f32, cell.point.line.0 as f32)
-                    / 64.0f32
-                    - Vector2::new(0.98, 0.98);
                 let code = cell.c;
                 let glyph = glyph_manager.get_rasterized_glyph(code);
-                // GlyphManager がフォントサイズ 32 決め打ちでラスタライズしている
-                let scale: Matrix3<f32> = Matrix3::new_nonuniform_scaling(&Vector2::new(
-                    0.035 * (glyph.width as f32 / 32.0),
-                    0.035 * (glyph.height as f32 / 32.0),
+
+                // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
+                let local_pixel_scale_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
+                    glyph.width as f32,
+                    glyph.height as f32,
                 ));
-                let matrix = Matrix3::new_translation(&position_normalized);
+
+                // ピクセル座標で表示位置をずらす
+                let local_pixel_translate_matrix = Matrix3::new_translation(&Vector2::new(
+                    glyph.left as f32,
+                    (32 - glyph.top) as f32,
+                ));
+
+                // ピクセル座標を [0, 1] 空間に変換する行列
+                // フレームバッファーのサイズで変わる
+                // 文字間を開けて見栄えを整えるために文字サイズを 0.6 倍している
+                let normalized_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
+                    0.6f32 / 1600.0,
+                    0.6f32 / 1200.0,
+                ));
+
+                // [0, 1] => [-1, 1]
+                let view_matrix =
+                    Matrix3::new_translation(&Vector2::new(-1.0, -1.0)) * Matrix3::new_scaling(2.0);
+
+                // 画面上に配置
+                let offset_matrix = Matrix3::new_translation(
+                    &(Vector2::new(
+                        cell.point.column.0 as f32 / 32.0,
+                        cell.point.line.0 as f32 / 32.0,
+                    )),
+                );
+
+                let transform_matrix = offset_matrix
+                    * view_matrix
+                    * normalized_matrix
+                    * local_pixel_translate_matrix
+                    * local_pixel_scale_matrix;
+
                 let character = self.glyph_writer.get_clip_rect(code);
                 let fore_ground_color = match cell.fg {
                     alacritty_terminal::ansi::Color::Named(c) => Self::convert_named_color(c),
@@ -124,7 +151,7 @@ impl ContentPlotter {
                 };
                 CharacterInfo {
                     code,
-                    transform: (matrix * scale).transpose().remove_column(2),
+                    transform: transform_matrix.transpose().remove_column(2),
                     fore_ground_color,
                     uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
                     uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
