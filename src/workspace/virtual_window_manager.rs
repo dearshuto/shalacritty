@@ -39,10 +39,14 @@ pub struct VirtualWindowManager {
 
 impl VirtualWindowManager {
     pub fn new() -> Self {
+        let root_window_id = VirtualWindowId::default();
+        let mut hierarchy_table = HashMap::default();
+        hierarchy_table.insert(root_window_id, Vec::default());
+
         Self {
-            root_window_id: VirtualWindowId::default(),
+            root_window_id,
             virtual_window_table: HashMap::new(),
-            hierarchy_table: HashMap::default(),
+            hierarchy_table,
         }
     }
 
@@ -50,7 +54,35 @@ impl VirtualWindowManager {
         let id = VirtualWindowId::default();
         let virtual_window = VirtualWindow::new(width, height);
         self.virtual_window_table.insert(id, virtual_window);
+
+        // ルート直下に追加
+        let Some(root_children) = self.hierarchy_table.get_mut(&self.root_window_id) else {
+            // ルート要素は必ず存在するはず
+            panic!();
+        };
+        root_children.push(id);
+
         id
+    }
+
+    #[allow(dead_code)]
+    pub fn spawn_virtual_window_with_parent(
+        &mut self,
+        width: u32,
+        height: u32,
+        parent_id: VirtualWindowId,
+    ) -> Option<VirtualWindowId> {
+        // 存在しない親を指定してないかチェック
+        let Some(children) = self.hierarchy_table.get_mut(&parent_id) else {
+            return None;
+        };
+
+        let id = VirtualWindowId::default();
+        let virtual_window = VirtualWindow::new(width, height);
+        self.virtual_window_table.insert(id, virtual_window);
+        children.push(id);
+
+        Some(id)
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
