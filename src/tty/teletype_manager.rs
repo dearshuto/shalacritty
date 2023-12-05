@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
-use alacritty_terminal::config::{Program, PtyConfig};
 use alacritty_terminal::event_loop::EventLoopSender;
 use alacritty_terminal::term::RenderableContent;
+use alacritty_terminal::tty::{Options, Shell};
 use alacritty_terminal::Term;
 use alacritty_terminal::{
     event::{EventListener, WindowSize},
@@ -11,6 +8,8 @@ use alacritty_terminal::{
     grid::Dimensions,
     sync::FairMutex,
 };
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TeletypeId {
@@ -48,11 +47,11 @@ impl TeletypeManager {
         };
         self.current_id += 1;
 
-        let pty_config = &PtyConfig {
+        let pty_config = &Options {
             #[cfg(not(target_os = "windows"))]
-            shell: Some(Program::Just("bash".to_string())),
+            shell: Some(Shell::new("bash".to_string(), Vec::default())),
             #[cfg(target_os = "windows")]
-            shell: Some(Program::Just("cmd.exe".to_string())),
+            shell: Some(Shell::new("cmd.exe".to_string(), Vec::default())),
             working_directory: None,
             hold: true,
         };
@@ -68,7 +67,7 @@ impl TeletypeManager {
         self.dirty_table.lock().unwrap().insert(id, true);
         let event_proxy = EventProxy::new(id, self.dirty_table.clone());
         let terminal =
-            alacritty_terminal::Term::new(&Default::default(), &size, event_proxy.clone());
+            alacritty_terminal::Term::new(Default::default(), &size, event_proxy.clone());
         let terminal = Arc::new(FairMutex::new(terminal));
 
         let event_loop = EventLoop::new(
@@ -121,21 +120,22 @@ impl EventListener for EventProxy {
             alacritty_terminal::event::Event::Wakeup => {
                 self.dirty_table.lock().unwrap().insert(self.id, true);
             }
-            alacritty_terminal::event::Event::PtyWrite(str) =>{
+            alacritty_terminal::event::Event::PtyWrite(str) => {
                 // self.dirty_table.lock().unwrap().insert(self.id, true);
                 println!("{}", str);
-            },
-             _ => {println!("{:?}", event)}
+            }
+            _ => {
+                println!("{:?}", event)
+            }
             // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
             // alacritty_terminal::event::Event::Title(_) => todo!(),
             // alacritty_terminal::event::Event::ResetTitle => todo!(),
             // alacritty_terminal::event::Event::ClipboardStore(_, _) => todo!(),
             // alacritty_terminal::event::Event::ClipboardLoad(_, _) => todo!(),
             // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
-           // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
+            // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
             // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
             // alacritty_terminal::event::Event::Bell => todo!(),
-            // alacritty_terminal::event::Event::Exit => todo!(),
         }
     }
 }

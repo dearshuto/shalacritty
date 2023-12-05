@@ -1,7 +1,7 @@
 use alacritty_terminal::{
-    ansi::NamedColor,
     grid::Indexed,
     term::{cell::Cell, RenderableContent},
+    vte::ansi::{Color, NamedColor},
 };
 
 use nalgebra::{Matrix3, Vector2};
@@ -140,14 +140,14 @@ impl ContentPlotter {
 
                 let character = self.glyph_writer.get_clip_rect(code);
                 let fore_ground_color = match cell.fg {
-                    alacritty_terminal::ansi::Color::Named(c) => Self::convert_named_color(c),
-                    alacritty_terminal::ansi::Color::Spec(rgb) => [
+                    Color::Named(c) => Self::convert_named_color(c),
+                    Color::Spec(rgb) => [
                         rgb.r as f32 / 255.0,
                         rgb.g as f32 / 255.0,
                         rgb.b as f32 / 255.0,
                         1.0f32,
                     ],
-                    alacritty_terminal::ansi::Color::Indexed(i) => Self::convert_index_color(i),
+                    Color::Indexed(i) => Self::convert_index_color(i),
                 };
                 CharacterInfo {
                     code,
