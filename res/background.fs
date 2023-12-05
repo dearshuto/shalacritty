@@ -10,4 +10,7 @@ void main()
 {
     vec4 color = texture(sampler2D(u_BackgroundTexture, u_Sampler), v_Uv);
     o_Color = color;
+
+    // 定数バッファーで指定できるようにする
+    o_Color.a = 0.75;
 }

@@ -15,6 +15,13 @@ pub struct Config {
 
     #[serde(default)]
     pub image: String,
+
+    #[serde(default = "default_image_alpha")]
+    pub image_alpha: f32,
+}
+
+fn default_image_alpha() -> f32 {
+    1.0
 }
 
 pub struct ConfigService {
