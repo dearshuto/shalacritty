@@ -31,6 +31,9 @@ pub struct Workspace<'a> {
 
     // VirtualWindow -> Tty
     virtual_window_tty_table: HashMap<VirtualWindowId, TeletypeId>,
+
+    // 操作対象となっているウィンドウ
+    active_window_id: Option<VirtualWindowId>,
 }
 
 impl<'a> Workspace<'a> {
@@ -60,6 +63,7 @@ impl<'a> Workspace<'a> {
             sender: None,
             virtual_window_manager,
             virtual_window_tty_table: HashMap::default(),
+            active_window_id: None,
         }
     }
 
@@ -76,6 +80,8 @@ impl<'a> Workspace<'a> {
         let virtual_window_id = self.virtual_window_manager.spawn_virtual_window(64, 64);
         self.virtual_window_tty_table
             .insert(virtual_window_id, tty_id);
+
+        self.active_window_id = Some(virtual_window_id);
     }
 
     pub fn update(&mut self) {
