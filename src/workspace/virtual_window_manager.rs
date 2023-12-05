@@ -27,15 +27,22 @@ impl VirtualWindow {
 }
 
 pub struct VirtualWindowManager {
+    // 番兵用のルート
+    root_window_id: VirtualWindowId,
+
+    // ウィンドウ一覧
     virtual_window_table: HashMap<VirtualWindowId, VirtualWindow>,
-    root_windows: Vec<VirtualWindowId>,
+
+    // 親ウィンドウ -> 子ウィンドウ
+    hierarchy_table: HashMap<VirtualWindowId, Vec<VirtualWindowId>>,
 }
 
 impl VirtualWindowManager {
     pub fn new() -> Self {
         Self {
+            root_window_id: VirtualWindowId::default(),
             virtual_window_table: HashMap::new(),
-            root_windows: Vec::default(),
+            hierarchy_table: HashMap::default(),
         }
     }
 
@@ -47,7 +54,10 @@ impl VirtualWindowManager {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        for id in &self.root_windows {
+        let Some(root_windows) = self.hierarchy_table.get(&self.root_window_id) else {
+            return;
+        };
+        for id in root_windows {
             let Some(window) = self.virtual_window_table.get_mut(id) else {
                 continue;
             };
