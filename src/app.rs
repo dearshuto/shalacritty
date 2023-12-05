@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use winit::{
     event::{ElementState, Event, KeyEvent, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
+    platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
 use crate::workspace::Workspace;
@@ -55,10 +56,10 @@ impl App {
     }
 
     fn convert_key_to_str(key_event: KeyEvent) -> String {
-        let Some(text) = &key_event.text else {
+        let Some(text) = key_event.text_with_all_modifiers() else {
             return "".to_string();
         };
 
-        text.as_str().to_string()
+        text.to_string()
     }
 }
