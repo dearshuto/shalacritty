@@ -7,7 +7,7 @@ rust-version = "1.73"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e07bf6f" }
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "28d913cfd09df2a520a3d285f6abc0ece4e1035b" }
 bytemuck = { version = "*", features = ["derive"] }
 crossfont = { version = "0.5.0", features = ["force_system_fontconfig"] }
 image = "0.24.7"
