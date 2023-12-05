@@ -202,7 +202,7 @@ impl<'a> Renderer<'a> {
         // 頂点バッファー
         let vertrex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[-0.5f32, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5]),
+            contents: bytemuck::cast_slice(&[0.0f32, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
