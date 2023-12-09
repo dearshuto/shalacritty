@@ -4,7 +4,10 @@ pub use virtual_window_manager::{VirtualWindow, VirtualWindowId, VirtualWindowMa
 
 use std::{collections::HashMap, sync::Arc};
 
-use alacritty_terminal::event_loop::{EventLoopSender, Msg};
+use alacritty_terminal::{
+    event::WindowSize,
+    event_loop::{EventLoopSender, Msg},
+};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
@@ -85,6 +88,8 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn update(&mut self) {
+        self.virtual_window_manager.uodate();
+
         // 表示する要素が更新されていたら描画する要素に反映する
         for (window_id, value) in &self.window_tty_table {
             for id in value {
@@ -129,6 +134,7 @@ impl<'a> Workspace<'a> {
 
         for tty_id in tty_ids {
             self.teletype_manager.is_dirty(*tty_id);
+
             self.teletype_manager.get_content(*tty_id, |c| {
                 let diff = self
                     .content_plotter
@@ -136,6 +142,14 @@ impl<'a> Workspace<'a> {
                 self.renderer.update(id, diff);
             });
         }
+
+        // TODO: tty のリサイズ
+        self.sender.as_mut().unwrap().send(Msg::Resize(WindowSize {
+            num_lines: 64,
+            num_cols: 64,
+            cell_width: 8,
+            cell_height: 8,
+        }));
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {
