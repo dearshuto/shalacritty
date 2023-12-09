@@ -1,38 +1,43 @@
 use std::{fs::File, io::Write};
 
 fn main() {
-    {
-        let vertex_shader_binary =
-            convert_to_spv(include_str!("res/rect.vs"), naga::ShaderStage::Vertex);
-        let mut vertex_shader_binary_file = File::create("src/gfx/rect.vs.spv").unwrap();
-        vertex_shader_binary_file
-            .write_all(&vertex_shader_binary)
-            .unwrap();
-
-        let pixel_shader_binary =
-            convert_to_spv(include_str!("res/rect.fs"), naga::ShaderStage::Fragment);
-        let mut pixel_shader_binary_file = File::create("src/gfx/rect.fs.spv").unwrap();
-        pixel_shader_binary_file
-            .write_all(&pixel_shader_binary)
-            .unwrap();
-    }
-
-    {
-        let vertex_shader_binary =
-            convert_to_spv(include_str!("res/background.vs"), naga::ShaderStage::Vertex);
-        let mut vertex_shader_binary_file = File::create("src/gfx/background.vs.spv").unwrap();
-        vertex_shader_binary_file
-            .write_all(&vertex_shader_binary)
-            .unwrap();
-
-        let pixel_shader_binary = convert_to_spv(
-            include_str!("res/background.fs"),
+    let settings = [
+        (
+            include_str!("res/rect.vs"),
+            "src/gfx/detail/rect.vs.spv",
+            naga::ShaderStage::Vertex,
+        ),
+        (
+            include_str!("res/rect.fs"),
+            "src/gfx/detail/rect.fs.spv",
             naga::ShaderStage::Fragment,
-        );
-        let mut pixel_shader_binary_file = File::create("src/gfx/background.fs.spv").unwrap();
-        pixel_shader_binary_file
-            .write_all(&pixel_shader_binary)
-            .unwrap();
+        ),
+        (
+            include_str!("res/char_rect.vs"),
+            "src/gfx/char_rect.vs.spv",
+            naga::ShaderStage::Vertex,
+        ),
+        (
+            include_str!("res/char_rect.fs"),
+            "src/gfx/char_rect.fs.spv",
+            naga::ShaderStage::Fragment,
+        ),
+        (
+            include_str!("res/background.vs"),
+            "src/gfx/background.vs.spv",
+            naga::ShaderStage::Vertex,
+        ),
+        (
+            include_str!("res/background.fs"),
+            "src/gfx/background.fs.spv",
+            naga::ShaderStage::Fragment,
+        ),
+    ];
+
+    for setting in settings {
+        let shader_binary = convert_to_spv(setting.0, setting.2);
+        let mut shader_binary_file = File::create(setting.1).unwrap();
+        shader_binary_file.write_all(&shader_binary).unwrap();
     }
 }
 

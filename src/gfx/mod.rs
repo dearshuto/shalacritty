@@ -1,5 +1,5 @@
-mod background_renderer;
 mod content_plotter;
+mod detail;
 mod glyph_manager;
 mod glyph_writer;
 mod renderer;

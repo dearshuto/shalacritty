@@ -8,7 +8,10 @@ use winit::{
 
 use crate::ConfigService;
 
-use super::{background_renderer::BackgroundRenderer, content_plotter::Diff};
+use super::{
+    content_plotter::Diff,
+    detail::{BackgroundRenderer, CursorRenderer},
+};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -34,6 +37,9 @@ pub struct Renderer<'a> {
     sampler_table: HashMap<WindowId, wgpu::Sampler>,
     glyph_texture: Option<wgpu::Texture>,
 
+    // カーソル
+    cursor_renderer: CursorRenderer<'a>,
+
     // 背景
     background_renderer: BackgroundRenderer<'a>,
 
@@ -56,6 +62,9 @@ impl<'a> Renderer<'a> {
             character_storage_block_table: Default::default(),
             sampler_table: HashMap::default(),
             glyph_texture: None,
+
+            // カーソル
+            cursor_renderer: CursorRenderer::new(),
 
             // 背景
             background_renderer: BackgroundRenderer::new(),
@@ -134,11 +143,11 @@ impl<'a> Renderer<'a> {
             push_constant_ranges: &[],
         });
 
-        let vertex_shader_module_spirv = include_spirv_raw!("rect.vs.spv");
+        let vertex_shader_module_spirv = include_spirv_raw!("char_rect.vs.spv");
         let vertex_shader_module =
             unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
 
-        let pixel_shader_module_spirv = include_spirv_raw!("rect.fs.spv");
+        let pixel_shader_module_spirv = include_spirv_raw!("char_rect.fs.spv");
         let _pixel_shader_module =
             unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
 
@@ -289,6 +298,10 @@ impl<'a> Renderer<'a> {
         self.background_renderer
             .register(id, &device, &queue, config.format);
 
+        // カーソル描画
+        self.cursor_renderer
+            .register(id, &device, &queue, config.format);
+
         self.device_table.insert(id, device);
         self.queue_table.insert(id, queue);
         self.adapter_table.insert(id, adapter);
@@ -398,6 +411,9 @@ impl<'a> Renderer<'a> {
             self.background_renderer
                 .update(id, device, queue, swapchain_format, image_path);
         }
+
+        // カーソルレンダラーの更新
+        self.cursor_renderer.update(id, &diff, queue);
     }
 
     pub fn render(&self, id: WindowId) {
@@ -440,6 +456,25 @@ impl<'a> Renderer<'a> {
                 occlusion_query_set: None,
             });
             self.background_renderer.render(id, render_pass);
+        }
+
+        // カーソル描画
+        {
+            let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.cursor_renderer.render(id, render_pass);
         }
 
         // 文字描画

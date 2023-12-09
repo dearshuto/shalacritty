@@ -1,6 +1,6 @@
 use alacritty_terminal::{
     grid::Indexed,
-    term::{cell::Cell, RenderableContent},
+    term::{cell::Cell, RenderableContent, RenderableCursor},
     vte::ansi::{Color, NamedColor},
 };
 
@@ -51,6 +51,7 @@ impl GlyphTexturePatch {
 pub struct Diff {
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     character_info_array: Vec<CharacterInfo>,
+    cursor: Option<RenderableCursor>,
 }
 
 impl Diff {
@@ -60,6 +61,10 @@ impl Diff {
 
     pub fn character_info_array(&self) -> &[CharacterInfo] {
         &self.character_info_array
+    }
+
+    pub fn cursor(&self) -> Option<&RenderableCursor> {
+        self.cursor.as_ref()
     }
 }
 
@@ -183,6 +188,7 @@ impl ContentPlotter {
             return Diff {
                 glyph_texture_patches: Vec::default(),
                 character_info_array: Vec::default(),
+                cursor: Some(renderable_content.cursor),
             };
         }
 
@@ -207,6 +213,7 @@ impl ContentPlotter {
         Diff {
             glyph_texture_patches,
             character_info_array: items,
+            cursor: Some(renderable_content.cursor),
         }
     }
 
