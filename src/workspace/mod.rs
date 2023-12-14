@@ -85,6 +85,9 @@ impl<'a> Workspace<'a> {
             .insert(virtual_window_id, tty_id);
 
         self.active_window_id = Some(virtual_window_id);
+
+        // 初期サイズ反映
+        self.resize(id, window.inner_size().width, window.inner_size().height);
     }
 
     pub fn update(&mut self) {
