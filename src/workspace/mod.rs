@@ -4,10 +4,7 @@ pub use virtual_window_manager::{VirtualWindow, VirtualWindowId, VirtualWindowMa
 
 use std::{collections::HashMap, sync::Arc};
 
-use alacritty_terminal::{
-    event::WindowSize,
-    event_loop::{EventLoopSender, Msg},
-};
+use alacritty_terminal::event_loop::{EventLoopSender, Msg};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
@@ -72,22 +69,39 @@ impl<'a> Workspace<'a> {
 
     pub async fn spawn_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) {
         let id = self.window_manager.create_window(event_loop).await;
+
         let window = self.window_manager.try_get_window(id).unwrap();
         self.renderer.register(id, &self.instance, window).await;
 
-        let (tty_id, sender) = self.teletype_manager.create_teletype();
-        self.window_tty_table.insert(id, vec![tty_id]);
-        self.sender = Some(sender);
-
-        // シェルを表示する領域
         let virtual_window_id = self.virtual_window_manager.spawn_virtual_window(64, 64);
+
+        self.spawn_tty(virtual_window_id);
+    }
+
+    pub async fn split_horizontal(&mut self) {
+        // アクティブな領域を取得。これが分割対象。
+        let Some(active_virtual_window) = self.active_window_id else {
+            return;
+        };
+
+        // 分割対象のウィンドウに紐づいた tty を付け替える
+        let Some(tty) = self.virtual_window_tty_table.remove(&active_virtual_window) else {
+            return;
+        };
+
+        let Some(new_virtual_window_id) = self
+            .virtual_window_manager
+            .spawn_virtual_window_with_parent(64, 32, active_virtual_window)
+        else {
+            return;
+        };
+
+        // 分割前に紐づいてた tty を分割後の仮想ウィンドウに紐づける
         self.virtual_window_tty_table
-            .insert(virtual_window_id, tty_id);
+            .insert(active_virtual_window, tty);
 
-        self.active_window_id = Some(virtual_window_id);
-
-        // 初期サイズ反映
-        self.resize(id, window.inner_size().width, window.inner_size().height);
+        // 新たに追加した仮想ウィンドウには tty を新規に話ありあてる
+        self.spawn_tty(new_virtual_window_id);
     }
 
     pub fn update(&mut self) {
@@ -128,7 +142,6 @@ impl<'a> Workspace<'a> {
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         // 仮想ウインドウにリサイズを反映
         self.virtual_window_manager.resize(width, height);
-
         self.renderer.resize(id, width, height);
 
         let Some(tty_ids) = self.window_tty_table.get(&id) else {
@@ -146,14 +159,6 @@ impl<'a> Workspace<'a> {
             });
         }
 
-        // TODO: tty のリサイズ
-        self.sender.as_mut().unwrap().send(Msg::Resize(WindowSize {
-            num_lines: 64,
-            num_cols: 64,
-            cell_width: 8,
-            cell_height: 8,
-        }));
-
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {
             return;
@@ -168,5 +173,17 @@ impl<'a> Workspace<'a> {
             bytes.push(b'\x1b');
         }
         self.sender.as_mut().unwrap().send(Msg::Input(bytes.into()));
+    }
+
+    async fn spawn_tty(&mut self, id: VirtualWindowId) {
+        let (tty_id, sender) = self.teletype_manager.create_teletype();
+        self.window_tty_table.insert(id, vec![tty_id]);
+        self.sender = Some(sender);
+
+        // シェルを表示する領域
+        self.virtual_window_tty_table.insert(id, tty_id);
+
+        // 初期サイズ反映
+        self.resize(id, window.inner_size().width, window.inner_size().height);
     }
 }
