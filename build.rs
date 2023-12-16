@@ -24,12 +24,12 @@ fn main() {
         ),
         (
             include_str!("res/background.vs"),
-            "src/gfx/background.vs.spv",
+            "src/gfx/detail/background.vs.spv",
             naga::ShaderStage::Vertex,
         ),
         (
             include_str!("res/background.fs"),
-            "src/gfx/background.fs.spv",
+            "src/gfx/detail/background.fs.spv",
             naga::ShaderStage::Fragment,
         ),
     ];
