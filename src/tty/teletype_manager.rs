@@ -124,6 +124,9 @@ impl EventListener for EventProxy {
                 // self.dirty_table.lock().unwrap().insert(self.id, true);
                 println!("{}", str);
             }
+            alacritty_terminal::event::Event::Bell => {
+                // とりあえず未サポート
+            }
             _ => {
                 println!("{:?}", event)
             }
@@ -135,7 +138,6 @@ impl EventListener for EventProxy {
             // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
             // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
             // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
-            // alacritty_terminal::event::Event::Bell => todo!(),
         }
     }
 }
