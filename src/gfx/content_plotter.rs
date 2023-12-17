@@ -222,16 +222,20 @@ impl ContentPlotter {
             0 => Self::convert_named_color(NamedColor::White),
             1 => Self::convert_named_color(NamedColor::Magenta),
             2 => Self::convert_named_color(NamedColor::Black),
+            3 => Self::convert_named_color(NamedColor::BrightBlack),
             4 => Self::convert_named_color(NamedColor::White),
+            5 => Self::convert_named_color(NamedColor::BrightMagenta),
             6 => Self::convert_named_color(NamedColor::BrightWhite),
             7 => Self::convert_named_color(NamedColor::White),
+            8 => Self::convert_named_color(NamedColor::BrightBlack),
             10 => Self::convert_named_color(NamedColor::BrightBlue),
             11 => Self::convert_named_color(NamedColor::Green),
             12 => Self::convert_named_color(NamedColor::Blue),
             13 => Self::convert_named_color(NamedColor::Cyan),
             14 => Self::convert_named_color(NamedColor::White),
+            15 => Self::convert_named_color(NamedColor::Green),
             _ => {
-                println!("{}", i);
+                println!("unknown index color: {}", i);
                 [0.0; 4]
             }
         }
@@ -252,7 +256,7 @@ impl ContentPlotter {
             // NamedColor::BrightGreen => todo!(),
             // NamedColor::BrightYellow => todo!(),
             NamedColor::BrightBlue => [0.0, 0.0, 1.0, 0.0],
-            // NamedColor::BrightMagenta => todo!(),
+            NamedColor::BrightMagenta => [1.0, 0.0, 1.0, 0.0],
             // NamedColor::BrightCyan => todo!(),
             NamedColor::BrightWhite => [0.8, 0.8, 0.8, 0.0],
             NamedColor::Foreground => [1.0, 1.0, 1.0, 0.0],
@@ -269,7 +273,7 @@ impl ContentPlotter {
             // NamedColor::BrightForeground => todo!(),
             // NamedColor::DimForeground => todo!(),
             _ => {
-                println!("{:?}", color);
+                println!("unknown color: {:?}", color);
                 [0.0, 0.0, 0.0, 0.0]
             }
         }
