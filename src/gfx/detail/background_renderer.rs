@@ -17,6 +17,12 @@ struct ConstantBufferData {
     image_tansform1: [f32; 4],
 }
 
+#[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
+#[repr(C)]
+struct MaterialData {
+    alpha_enhance: f32,
+}
+
 struct Instance {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
@@ -25,6 +31,7 @@ struct Instance {
     bind_group: wgpu::BindGroup,
     #[allow(dead_code)]
     constant_buffer: wgpu::Buffer,
+    material_buffer: wgpu::Buffer,
     #[allow(dead_code)]
     sampler: wgpu::Sampler,
     #[allow(dead_code)]
@@ -56,7 +63,8 @@ impl<'a> BackgroundRenderer<'a> {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
     ) {
-        let instance = create_instance::<PathBuf>(device, queue, format, CreateInstanceParams::New);
+        let instance =
+            create_instance::<PathBuf>(device, queue, format, CreateInstanceParams::New, 1.0);
         self.instance = Some(instance);
     }
 
@@ -102,6 +110,7 @@ impl<'a> BackgroundRenderer<'a> {
         queue: &wgpu::Queue,
         texture_format: wgpu::TextureFormat,
         image_path: TPath,
+        alpha_enhance: f32,
     ) where
         TPath: AsRef<Path>,
     {
@@ -119,6 +128,12 @@ impl<'a> BackgroundRenderer<'a> {
             queue,
             texture_format,
             CreateInstanceParams::WithCache(instance.unwrap(), image_path),
+            alpha_enhance,
+        );
+        queue.write_buffer(
+            &instance.material_buffer,
+            0,
+            bytemuck::bytes_of(&MaterialData { alpha_enhance }),
         );
         self.instance = Some(instance);
     }
@@ -149,6 +164,7 @@ fn create_instance<TPath>(
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
     params: CreateInstanceParams<TPath>,
+    alpha_enhance: f32,
 ) -> Instance
 where
     TPath: AsRef<Path>,
@@ -193,6 +209,16 @@ where
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
                     ],
                 });
 
@@ -234,7 +260,7 @@ where
                                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                                 operation: wgpu::BlendOperation::Add,
                             },
-                            alpha: wgpu::BlendComponent::OVER,
+                            alpha: wgpu::BlendComponent::REPLACE,
                         }),
                         write_mask: wgpu::ColorWrites::all(),
                     })],
@@ -264,6 +290,13 @@ where
                 mapped_at_creation: false,
             });
 
+            let constant_buffer_material =
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    contents: bytemuck::bytes_of(&MaterialData { alpha_enhance }),
+                });
+
             // グリフを矩形に貼るときのサンプラー
             let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
                 label: None,
@@ -280,8 +313,15 @@ where
                 border_color: None,
             });
 
-            let (bind_group, texture, sampler) =
-                create_bind_group(device, &bind_group_layout, &constant_buffer, sampler, 1, 1);
+            let (bind_group, texture, sampler) = create_bind_group(
+                device,
+                &bind_group_layout,
+                &constant_buffer,
+                &constant_buffer_material,
+                sampler,
+                1,
+                1,
+            );
 
             Instance {
                 render_pipeline,
@@ -290,6 +330,7 @@ where
                 bind_group_layout_cache: bind_group_layout,
                 bind_group,
                 constant_buffer,
+                material_buffer: constant_buffer_material,
                 sampler,
                 texture,
                 width: 1,
@@ -328,6 +369,7 @@ where
                 device,
                 &instance.bind_group_layout_cache,
                 &instance.constant_buffer,
+                &instance.material_buffer,
                 instance.sampler,
                 image.width(),
                 image.height(),
@@ -355,6 +397,7 @@ where
                 bind_group_layout_cache: instance.bind_group_layout_cache,
                 bind_group,
                 constant_buffer: instance.constant_buffer,
+                material_buffer: instance.material_buffer,
                 sampler,
                 texture,
                 width: image.width(),
@@ -369,6 +412,7 @@ fn create_bind_group(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
     constant_buffer: &wgpu::Buffer,
+    constant_buffer_material: &wgpu::Buffer,
     sampler: wgpu::Sampler,
     width: u32,
     height: u32,
@@ -414,6 +458,10 @@ fn create_bind_group(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: constant_buffer_material.as_entire_binding(),
             },
         ],
     });
