@@ -406,10 +406,18 @@ impl<'a> Renderer<'a> {
         let adapter = self.adapter_table.get(&id).unwrap();
         let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
-        let image_path = &self.config.read().unwrap().image;
+        let config = self.config.read().unwrap();
+        let image_path = &config.image;
+        let image_alpha = config.image_alpha;
         if Path::new(image_path).exists() {
-            self.background_renderer
-                .update(id, device, queue, swapchain_format, image_path);
+            self.background_renderer.update(
+                id,
+                device,
+                queue,
+                swapchain_format,
+                image_path,
+                image_alpha,
+            );
         }
 
         // カーソルレンダラーの更新
