@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::NonZeroU64, path::Path, sync::Arc};
 
-use wgpu::{include_spirv_raw, util::DeviceExt};
+use wgpu::{include_spirv_raw, util::DeviceExt, WasmNotSendSync};
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowId,
@@ -28,7 +28,7 @@ pub struct Renderer<'a> {
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
-    surface_table: HashMap<WindowId, wgpu::Surface>,
+    surface_table: HashMap<WindowId, wgpu::Surface<'a>>,
     pipelie_table: HashMap<WindowId, wgpu::RenderPipeline>,
     vertex_buffer_table: HashMap<WindowId, wgpu::Buffer>,
     index_buffer_table: HashMap<WindowId, wgpu::Buffer>,
@@ -78,11 +78,11 @@ impl<'a> Renderer<'a> {
         &mut self,
         id: WindowId,
         instance: &wgpu::Instance,
-        window: &TWindow,
+        window: Arc<TWindow>,
     ) where
-        TWindow: HasWindowHandle + HasDisplayHandle,
+        TWindow: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 'a,
     {
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -95,8 +95,8 @@ impl<'a> Renderer<'a> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
-                    limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                    required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
+                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 },
                 None,
             )
