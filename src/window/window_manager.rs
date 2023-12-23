@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use winit::{
     dpi::PhysicalSize,
@@ -7,7 +7,7 @@ use winit::{
 };
 
 pub struct WindowManager {
-    window_table: HashMap<WindowId, Window>,
+    window_table: HashMap<WindowId, Arc<Window>>,
 }
 
 impl WindowManager {
@@ -25,11 +25,15 @@ impl WindowManager {
             .build(event_loop)
             .unwrap();
         let id = window.id();
-        self.window_table.insert(id, window);
+        self.window_table.insert(id, Arc::new(window));
         id
     }
 
-    pub fn try_get_window(&self, id: WindowId) -> Option<&Window> {
-        self.window_table.get(&id)
+    pub fn try_get_window(&self, id: WindowId) -> Option<Arc<Window>> {
+        let Some(window) = self.window_table.get(&id) else {
+            return None;
+        };
+
+        Some(window.clone())
     }
 }

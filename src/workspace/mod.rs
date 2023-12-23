@@ -73,6 +73,7 @@ impl<'a> Workspace<'a> {
     pub async fn spawn_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
+        let window_size = window.inner_size();
         self.renderer.register(id, &self.instance, window).await;
 
         let (tty_id, sender) = self.teletype_manager.create_teletype();
@@ -87,7 +88,7 @@ impl<'a> Workspace<'a> {
         self.active_window_id = Some(virtual_window_id);
 
         // 初期サイズ反映
-        self.resize(id, window.inner_size().width, window.inner_size().height);
+        self.resize(id, window_size.width, window_size.height);
     }
 
     pub fn update(&mut self) {
