@@ -166,6 +166,7 @@ impl<'a> Renderer<'a> {
             #[cfg(target_os = "windows")]
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![swapchain_format],
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -336,6 +337,7 @@ impl<'a> Renderer<'a> {
             #[cfg(target_os = "windows")]
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(device, &config);
 
