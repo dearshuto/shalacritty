@@ -13,15 +13,14 @@ crossfont = { version = "0.5.0", features = ["force_system_fontconfig"] }
 image = "0.24.7"
 nalgebra = "0.32.3"
 notify = { git = "https://github.com/notify-rs/notify.git", rev = "146790b" }
-raw-window-handle = "0.5.0"
+raw-window-handle = "0.6.0"
 serde = { version = "1.0.104", features = ["derive"] }
 toml = { version = "0.8.6" }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.4.1", features = ["v4", "macro-diagnostics"] }
 winit = "0.29.3"
 
-# 2023/12/23 時点の trunk
-wgpu = { git = "https://github.com/gfx-rs/wgpu.git", rev = "e1baa5a", features = [ "vulkan-portability"] }
+wgpu = { version = "0.19.0", features = [ "vulkan-portability"] }
 
 [build-dependencies]
 naga = { version = "0.13.0", features = ["glsl-in", "spv-out"] }
