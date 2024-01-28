@@ -148,12 +148,16 @@ impl<'a> Workspace<'a> {
         }
 
         // TODO: tty のリサイズ
-        self.sender.as_mut().unwrap().send(Msg::Resize(WindowSize {
-            num_lines: 64,
-            num_cols: 64,
-            cell_width: 8,
-            cell_height: 8,
-        }));
+        self.sender
+            .as_mut()
+            .unwrap()
+            .send(Msg::Resize(WindowSize {
+                num_lines: 64,
+                num_cols: 64,
+                cell_width: 8,
+                cell_height: 8,
+            }))
+            .unwrap();
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {
@@ -168,6 +172,10 @@ impl<'a> Workspace<'a> {
         if text.is_empty() {
             bytes.push(b'\x1b');
         }
-        self.sender.as_mut().unwrap().send(Msg::Input(bytes.into()));
+        self.sender
+            .as_mut()
+            .unwrap()
+            .send(Msg::Input(bytes.into()))
+            .unwrap();
     }
 }
