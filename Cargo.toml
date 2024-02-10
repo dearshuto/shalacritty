@@ -9,7 +9,7 @@ rust-version = "1.73"
 [dependencies]
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "v0.13.1" }
 bytemuck = { version = "*", features = ["derive"] }
-crossfont = { version = "0.5.0", features = ["force_system_fontconfig"] }
+crossfont = { version = "0.7.0", features = ["force_system_fontconfig"] }
 image = "0.24.7"
 nalgebra = "0.32.3"
 notify = { git = "https://github.com/notify-rs/notify.git", rev = "146790b" }
