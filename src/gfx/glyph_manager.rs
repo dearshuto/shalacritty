@@ -10,7 +10,7 @@ pub struct GlyphManager {
 
 impl GlyphManager {
     pub fn new() -> Self {
-        let mut rasterizer = crossfont::Rasterizer::new(1.0).unwrap();
+        let mut rasterizer = crossfont::Rasterizer::new().unwrap();
         let font_key = rasterizer
             .load_font(
                 &FontDesc::new(
