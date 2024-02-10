@@ -12,7 +12,7 @@ bytemuck = { version = "*", features = ["derive"] }
 crossfont = { version = "0.7.0", features = ["force_system_fontconfig"] }
 image = "0.24.7"
 nalgebra = "0.32.3"
-notify = { git = "https://github.com/notify-rs/notify.git", rev = "146790b" }
+notify = { version = "5.0.0-pre.16" }
 raw-window-handle = "0.6.0"
 serde = { version = "1.0.104", features = ["derive"] }
 toml = { version = "0.8.6" }
