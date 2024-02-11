@@ -11,7 +11,7 @@ use alacritty_terminal::{
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
-    gfx::{ContentPlotter, GlyphManager, Renderer},
+    gfx::{ContentPlotter, GlyphManager, GraphicsWgpu, Renderer},
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
     ConfigService,
@@ -25,7 +25,7 @@ pub struct Workspace<'a> {
     teletype_manager: TeletypeManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a>,
+    renderer: Renderer<'a, GraphicsWgpu<'a>>,
     window_tty_table: HashMap<WindowId, Vec<TeletypeId>>,
     sender: Option<EventLoopSender>,
 

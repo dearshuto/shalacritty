@@ -8,6 +8,7 @@ rust-version = "1.73"
 
 [dependencies]
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "v0.13.1" }
+ash = { version = "0.22.0" }
 bytemuck = { version = "*", features = ["derive"] }
 crossfont = { version = "0.7.0", features = ["force_system_fontconfig"] }
 image = "0.24.7"

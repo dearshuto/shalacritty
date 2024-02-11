@@ -11,6 +11,7 @@ use crate::ConfigService;
 use super::{
     content_plotter::Diff,
     detail::{BackgroundRenderer, CursorRenderer},
+    GraphicsWgpu, IGraphics,
 };
 
 #[repr(C)]
@@ -24,7 +25,12 @@ struct CharacterData {
 }
 
 #[allow(dead_code)]
-pub struct Renderer<'a> {
+pub struct Renderer<'a, TGraphics>
+where
+    TGraphics: IGraphics<'a>,
+{
+    graphics: TGraphics,
+
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
@@ -47,10 +53,42 @@ pub struct Renderer<'a> {
     config: Arc<ConfigService>,
 }
 
-impl<'a> Renderer<'a> {
-    #[allow(dead_code)]
+impl<'a> Renderer<'a, GraphicsWgpu<'a>> {
     pub fn new(config: Arc<ConfigService>) -> Self {
         Self {
+            graphics: GraphicsWgpu::new(),
+            device_table: Default::default(),
+            queue_table: Default::default(),
+            adapter_table: Default::default(),
+            surface_table: Default::default(),
+            pipelie_table: Default::default(),
+            vertex_buffer_table: Default::default(),
+            index_buffer_table: HashMap::default(),
+            bind_group_table: Default::default(),
+            character_storage_block_table: Default::default(),
+            sampler_table: HashMap::default(),
+            glyph_texture: None,
+
+            // カーソル
+            cursor_renderer: CursorRenderer::new(),
+
+            // 背景
+            background_renderer: BackgroundRenderer::new(),
+
+            // 設定
+            config,
+        }
+    }
+}
+
+impl<'a, TGraphics> Renderer<'a, TGraphics>
+where
+    TGraphics: IGraphics<'a>,
+{
+    #[allow(dead_code)]
+    pub fn new_with_graphics(config: Arc<ConfigService>, graphics: TGraphics) -> Self {
+        Self {
+            graphics,
             device_table: Default::default(),
             queue_table: Default::default(),
             adapter_table: Default::default(),
