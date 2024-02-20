@@ -27,6 +27,10 @@ impl App {
                 Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                     target.set_control_flow(ControlFlow::WaitUntil(Instant::now() + timer_length));
                     workspace.update();
+
+                    if workspace.is_empty() {
+                        target.exit();
+                    }
                 }
                 Event::WindowEvent {
                     window_id, event, ..

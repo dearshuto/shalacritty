@@ -1,6 +1,6 @@
-use alacritty_terminal::event_loop::EventLoopSender;
+use alacritty_terminal::event_loop::{EventLoopSender, State};
 use alacritty_terminal::term::RenderableContent;
-use alacritty_terminal::tty::{Options, Shell};
+use alacritty_terminal::tty::{Options, Pty, Shell};
 use alacritty_terminal::Term;
 use alacritty_terminal::{
     event::{EventListener, WindowSize},
@@ -10,6 +10,7 @@ use alacritty_terminal::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TeletypeId {
@@ -18,6 +19,7 @@ pub struct TeletypeId {
 
 pub struct TeletypeManager {
     terminal_table: HashMap<TeletypeId, Arc<FairMutex<Term<EventProxy>>>>,
+    io_handle_table: HashMap<TeletypeId, JoinHandle<(EventLoop<Pty, EventProxy>, State)>>,
     dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>,
     current_id: u64,
 }
@@ -26,8 +28,24 @@ impl TeletypeManager {
     pub fn new() -> Self {
         Self {
             terminal_table: Default::default(),
+            io_handle_table: HashMap::default(),
             dirty_table: Arc::new(Mutex::new(HashMap::default())),
             current_id: 0,
+        }
+    }
+
+    pub fn update(&mut self) {
+        let mut finished_id = Vec::default();
+        for (id, handle) in &self.io_handle_table {
+            if !handle.is_finished() {
+                continue;
+            }
+
+            finished_id.push(*id);
+        }
+
+        for id in finished_id {
+            self.io_handle_table.remove(&id);
         }
     }
 
@@ -81,7 +99,8 @@ impl TeletypeManager {
         let channel = event_loop.channel();
 
         // 起動
-        let _io_thread = event_loop.spawn();
+        let io_thread = event_loop.spawn();
+        self.io_handle_table.insert(id, io_thread);
         self.terminal_table.insert(id, terminal);
 
         (id, channel)
@@ -89,6 +108,10 @@ impl TeletypeManager {
 
     pub fn is_dirty(&self, id: TeletypeId) -> bool {
         *self.dirty_table.lock().unwrap().get(&id).unwrap()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.io_handle_table.is_empty()
     }
 
     pub fn clear_dirty(&mut self, id: TeletypeId) {
@@ -127,17 +150,19 @@ impl EventListener for EventProxy {
             alacritty_terminal::event::Event::Bell => {
                 // とりあえず未サポート
             }
+            alacritty_terminal::event::Event::Exit => {
+                // とくになにもしない
+            }
             _ => {
                 println!("{:?}", event)
-            }
-            // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
-            // alacritty_terminal::event::Event::Title(_) => todo!(),
-            // alacritty_terminal::event::Event::ResetTitle => todo!(),
-            // alacritty_terminal::event::Event::ClipboardStore(_, _) => todo!(),
-            // alacritty_terminal::event::Event::ClipboardLoad(_, _) => todo!(),
-            // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
-            // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
-            // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
+            } // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
+              // alacritty_terminal::event::Event::Title(_) => todo!(),
+              // alacritty_terminal::event::Event::ResetTitle => todo!(),
+              // alacritty_terminal::event::Event::ClipboardStore(_, _) => todo!(),
+              // alacritty_terminal::event::Event::ClipboardLoad(_, _) => todo!(),
+              // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
+              // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
+              // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
         }
     }
 }
