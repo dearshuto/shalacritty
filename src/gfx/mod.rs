@@ -2,6 +2,7 @@ mod content_plotter;
 mod detail;
 mod glyph_manager;
 mod glyph_writer;
+mod graphics_ash;
 mod graphics_wgpu;
 mod renderer;
 
