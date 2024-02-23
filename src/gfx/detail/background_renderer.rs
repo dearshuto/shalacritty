@@ -117,7 +117,8 @@ impl<'a> BackgroundRenderer<'a> {
         if self.texture_path_cache.is_some() {
             return;
         } else {
-            self.texture_path_cache = Some(Path::new(".").to_path_buf());
+            let path = image_path.as_ref().to_path_buf();
+            self.texture_path_cache = Some(path);
         }
 
         let mut instance = None;
