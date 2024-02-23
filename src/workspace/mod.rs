@@ -96,6 +96,12 @@ impl<'a> Workspace<'a> {
 
         // 表示する要素が更新されていたら描画する要素に反映する
         for (window_id, value) in &self.window_tty_table {
+            // 最描画要求
+            let Some(window) = self.window_manager.try_get_window(*window_id) else {
+                return;
+            };
+            window.request_redraw();
+
             for id in value {
                 // 変化がなければなにもしない
                 if !self.teletype_manager.is_dirty(*id) {
@@ -104,20 +110,15 @@ impl<'a> Workspace<'a> {
 
                 // レンダラーに反映
                 self.teletype_manager.get_content(*id, |c| {
+                    let background = self.config_service.read().unwrap().background;
                     let diff = self
                         .content_plotter
                         .calculate_diff(c, &mut self.glyph_manager);
-                    self.renderer.update(*window_id, diff);
+                    self.renderer.update(*window_id, diff, background);
                 });
 
                 // ダーティフラグを解除
                 self.teletype_manager.clear_dirty(*id);
-
-                // 最描画要求
-                let Some(window) = self.window_manager.try_get_window(*window_id) else {
-                    return;
-                };
-                window.request_redraw();
             }
         }
     }
@@ -140,10 +141,11 @@ impl<'a> Workspace<'a> {
             self.teletype_manager.is_dirty(*tty_id);
 
             self.teletype_manager.get_content(*tty_id, |c| {
+                let background = self.config_service.read().unwrap().background;
                 let diff = self
                     .content_plotter
                     .calculate_diff(c, &mut self.glyph_manager);
-                self.renderer.update(id, diff);
+                self.renderer.update(id, diff, background);
             });
         }
 

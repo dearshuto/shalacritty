@@ -45,6 +45,9 @@ pub struct Renderer<'a> {
 
     // 設定
     config: Arc<ConfigService>,
+
+    // 背景色
+    background_color: [f32; 4],
 }
 
 impl<'a> Renderer<'a> {
@@ -71,6 +74,9 @@ impl<'a> Renderer<'a> {
 
             // 設定
             config,
+
+            // 背景色
+            background_color: [0.3, 0.4, 0.5, 0.5],
         }
     }
 
@@ -346,7 +352,9 @@ impl<'a> Renderer<'a> {
         self.background_renderer.resize(id, queue, width, height);
     }
 
-    pub fn update(&mut self, id: WindowId, diff: Diff) {
+    pub fn update(&mut self, id: WindowId, diff: Diff, background_color: [f32; 4]) {
+        self.background_color = background_color;
+
         let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
@@ -445,7 +453,6 @@ impl<'a> Renderer<'a> {
 
         // 背景描画
         {
-            let config = self.config.read().unwrap();
             let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -453,10 +460,10 @@ impl<'a> Renderer<'a> {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: config.background[0] as f64,
-                            g: config.background[1] as f64,
-                            b: config.background[2] as f64,
-                            a: config.background[3] as f64,
+                            r: self.background_color[0] as f64,
+                            g: self.background_color[1] as f64,
+                            b: self.background_color[2] as f64,
+                            a: self.background_color[3] as f64,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
