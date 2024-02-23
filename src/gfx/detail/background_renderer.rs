@@ -143,6 +143,14 @@ impl<'a> BackgroundRenderer<'a> {
             return;
         };
 
+        // 背景画像を初期化できてなかったらなにもしない
+        let Some(path) = &self.texture_path_cache else {
+            return;
+        };
+        if !(path.is_file() && path.exists()) {
+            return;
+        }
+
         render_pass.set_pipeline(&instance.render_pipeline);
         render_pass.set_vertex_buffer(0, instance.vertex_buffer.slice(..));
         render_pass.set_index_buffer(instance.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
