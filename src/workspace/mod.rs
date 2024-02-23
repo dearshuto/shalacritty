@@ -92,6 +92,8 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn update(&mut self) {
+        self.teletype_manager.update();
+
         self.virtual_window_manager.uodate();
 
         // 表示する要素が更新されていたら描画する要素に反映する
@@ -174,10 +176,15 @@ impl<'a> Workspace<'a> {
         if text.is_empty() {
             bytes.push(b'\x1b');
         }
+
         self.sender
             .as_mut()
             .unwrap()
             .send(Msg::Input(bytes.into()))
             .unwrap();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.teletype_manager.is_empty()
     }
 }
