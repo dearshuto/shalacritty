@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use winit::{
-    event::{ElementState, Event, KeyEvent, StartCause, WindowEvent},
+    event::{ElementState, Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
@@ -46,8 +46,10 @@ impl App {
                             return;
                         }
 
-                        let text = Self::convert_key_to_str(event);
-                        workspace.send(window_id, &text);
+                        let Some(text) = event.text_with_all_modifiers() else {
+                            return;
+                        };
+                        workspace.send(window_id, text);
                     }
                     WindowEvent::CloseRequested => {
                         target.exit();
@@ -57,13 +59,5 @@ impl App {
                 _ => {}
             })
             .unwrap();
-    }
-
-    fn convert_key_to_str(key_event: KeyEvent) -> String {
-        let Some(text) = key_event.text_with_all_modifiers() else {
-            return "".to_string();
-        };
-
-        text.to_string()
     }
 }
