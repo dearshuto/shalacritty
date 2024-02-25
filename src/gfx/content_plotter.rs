@@ -48,6 +48,7 @@ impl GlyphTexturePatch {
     }
 }
 
+#[derive(Default)]
 pub struct Diff {
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     character_info_array: Vec<CharacterInfo>,

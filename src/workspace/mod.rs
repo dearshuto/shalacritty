@@ -11,7 +11,7 @@ use alacritty_terminal::{
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
-    gfx::{ContentPlotter, GlyphManager, Renderer},
+    gfx::{ContentPlotter, GlyphManager, Renderer, RendererUpdateParams},
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
     ConfigService,
@@ -47,7 +47,7 @@ impl<'a> Workspace<'a> {
         let teletype_manager = TeletypeManager::new();
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
-        let renderer = Renderer::new(Arc::clone(&config_service));
+        let renderer = Renderer::new();
 
         // ウィンドウを分割した仮想的な領域
         let mut virtual_window_manager = VirtualWindowManager::new();
@@ -112,11 +112,16 @@ impl<'a> Workspace<'a> {
 
                 // レンダラーに反映
                 self.teletype_manager.get_content(*id, |c| {
-                    let background = self.config_service.read().unwrap().background;
+                    let config = self.config_service.read().unwrap();
                     let diff = self
                         .content_plotter
                         .calculate_diff(c, &mut self.glyph_manager);
-                    self.renderer.update(*window_id, diff, background);
+                    let update_params = RendererUpdateParams::new()
+                        .with_diff(diff)
+                        .with_background_color(config.background)
+                        .with_image_alpha(config.image_alpha)
+                        .with_image_path(config.image.clone());
+                    self.renderer.update(*window_id, update_params);
                 });
 
                 // ダーティフラグを解除
@@ -143,11 +148,16 @@ impl<'a> Workspace<'a> {
             self.teletype_manager.is_dirty(*tty_id);
 
             self.teletype_manager.get_content(*tty_id, |c| {
-                let background = self.config_service.read().unwrap().background;
+                let config = self.config_service.read().unwrap();
                 let diff = self
                     .content_plotter
                     .calculate_diff(c, &mut self.glyph_manager);
-                self.renderer.update(id, diff, background);
+                let update_params = RendererUpdateParams::new()
+                    .with_diff(diff)
+                    .with_image_alpha(config.image_alpha)
+                    .with_image_path(config.image.clone())
+                    .with_background_color(config.background);
+                self.renderer.update(id, update_params);
             });
         }
 
