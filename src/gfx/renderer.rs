@@ -1,12 +1,15 @@
-use std::{collections::HashMap, num::NonZeroU64, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    num::NonZeroU64,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use wgpu::{include_spirv_raw, util::DeviceExt, WasmNotSendSync};
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::WindowId,
 };
-
-use crate::ConfigService;
 
 use super::{
     content_plotter::Diff,
@@ -21,6 +24,50 @@ struct CharacterData {
     fore_ground_color: [f32; 4],
     uv_bl: [f32; 2],
     uv_tr: [f32; 2],
+}
+
+pub struct RendererUpdateParams<TPath: AsRef<Path>> {
+    background_color: Option<[f32; 4]>,
+    diff: Diff,
+    image_path: Option<TPath>,
+    image_alpha: Option<f32>,
+}
+
+impl Default for RendererUpdateParams<PathBuf> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
+    pub fn new() -> Self {
+        Self {
+            background_color: None,
+            diff: Diff::default(),
+            image_path: None,
+            image_alpha: None,
+        }
+    }
+
+    pub fn with_diff(mut self, diff: Diff) -> Self {
+        self.diff = diff;
+        self
+    }
+
+    pub fn with_image_alpha(mut self, alpha: f32) -> Self {
+        self.image_alpha = Some(alpha);
+        self
+    }
+
+    pub fn with_background_color(mut self, color: [f32; 4]) -> Self {
+        self.background_color = Some(color);
+        self
+    }
+
+    pub fn with_image_path(mut self, path: TPath) -> Self {
+        self.image_path = Some(path);
+        self
+    }
 }
 
 #[allow(dead_code)]
@@ -43,16 +90,13 @@ pub struct Renderer<'a> {
     // 背景
     background_renderer: BackgroundRenderer<'a>,
 
-    // 設定
-    config: Arc<ConfigService>,
-
     // 背景色
     background_color: [f32; 4],
 }
 
 impl<'a> Renderer<'a> {
     #[allow(dead_code)]
-    pub fn new(config: Arc<ConfigService>) -> Self {
+    pub fn new() -> Self {
         Self {
             device_table: Default::default(),
             queue_table: Default::default(),
@@ -71,9 +115,6 @@ impl<'a> Renderer<'a> {
 
             // 背景
             background_renderer: BackgroundRenderer::new(),
-
-            // 設定
-            config,
 
             // 背景色
             background_color: [0.3, 0.4, 0.5, 0.5],
@@ -352,13 +393,19 @@ impl<'a> Renderer<'a> {
         self.background_renderer.resize(id, queue, width, height);
     }
 
-    pub fn update(&mut self, id: WindowId, diff: Diff, background_color: [f32; 4]) {
-        self.background_color = background_color;
+    pub fn update<TPath>(&mut self, id: WindowId, render_update_params: RendererUpdateParams<TPath>)
+    where
+        TPath: AsRef<Path>,
+    {
+        if let Some(background_color) = render_update_params.background_color {
+            self.background_color = background_color;
+        }
 
         let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
         let buffer = self.character_storage_block_table.get(&id).unwrap();
-        let data = diff
+        let data = render_update_params
+            .diff
             .character_info_array()
             .iter()
             .map(|info| {
@@ -384,7 +431,7 @@ impl<'a> Renderer<'a> {
             queue.write_buffer(buffer, 0, binary);
         }
         let texture = self.glyph_texture.as_ref().unwrap();
-        for texture_patch in diff.glyph_texture_patches() {
+        for texture_patch in render_update_params.diff.glyph_texture_patches() {
             let image_copy = wgpu::ImageCopyTexture {
                 texture,
                 mip_level: 0,
@@ -416,22 +463,25 @@ impl<'a> Renderer<'a> {
         let adapter = self.adapter_table.get(&id).unwrap();
         let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
-        let config = self.config.read().unwrap();
-        let image_path = &config.image;
-        let image_alpha = config.image_alpha;
-        if Path::new(image_path).exists() {
-            self.background_renderer.update(
-                id,
-                device,
-                queue,
-                swapchain_format,
-                image_path,
-                image_alpha,
-            );
+        if let (Some(image_path), Some(image_alpha)) = (
+            render_update_params.image_path,
+            render_update_params.image_alpha,
+        ) {
+            if image_path.as_ref().exists() {
+                self.background_renderer.update(
+                    id,
+                    device,
+                    queue,
+                    swapchain_format,
+                    image_path,
+                    image_alpha,
+                );
+            }
         }
 
         // カーソルレンダラーの更新
-        self.cursor_renderer.update(id, &diff, queue);
+        self.cursor_renderer
+            .update(id, &render_update_params.diff, queue);
     }
 
     pub fn render(&self, id: WindowId) {

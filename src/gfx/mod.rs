@@ -7,4 +7,4 @@ mod renderer;
 pub use content_plotter::ContentPlotter;
 pub use glyph_manager::GlyphManager;
 pub use glyph_writer::GlyphWriter;
-pub use renderer::Renderer;
+pub use renderer::{Renderer, RendererUpdateParams};
