@@ -48,9 +48,10 @@ impl GlyphManager {
         self.extract_alphabet();
     }
 
-    pub fn extract(&mut self, code: char) {
+    pub fn extract(&mut self, code: char) -> bool {
+        // すでに抽出済み
         if self.rasterized_glyph_table.contains_key(&code) {
-            return;
+            return true;
         }
 
         // 空白だけ特別扱い
@@ -67,18 +68,20 @@ impl GlyphManager {
                 buffer: BitmapBuffer::Rgb(buffer),
             };
             self.rasterized_glyph_table.insert(' ', space);
-            return;
+            return true;
         }
 
-        let rasterized_glyph = self
-            .rasterizer
-            .get_glyph(crossfont::GlyphKey {
-                character: code,
-                font_key: self.font_key,
-                size: crossfont::Size::new(32.0),
-            })
-            .unwrap();
+        // ラスタライズに失敗した
+        let Ok(rasterized_glyph) = self.rasterizer.get_glyph(crossfont::GlyphKey {
+            character: code,
+            font_key: self.font_key,
+            size: crossfont::Size::new(32.0),
+        }) else {
+            return false;
+        };
+
         self.rasterized_glyph_table.insert(code, rasterized_glyph);
+        true
     }
 
     pub fn get_rasterized_glyph(&self, code: char) -> &RasterizedGlyph {
@@ -89,10 +92,12 @@ impl GlyphManager {
         glyph
     }
 
-    pub fn acquire_rasterized_glyph(&mut self, code: char) -> &RasterizedGlyph {
-        self.extract(code);
+    pub fn acquire_rasterized_glyph(&mut self, code: char) -> Option<&RasterizedGlyph> {
+        if !self.extract(code) {
+            return None;
+        }
 
-        self.rasterized_glyph_table.get(&code).unwrap()
+        self.rasterized_glyph_table.get(&code)
     }
 }
 

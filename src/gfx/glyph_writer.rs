@@ -101,7 +101,10 @@ impl GlyphWriter {
                     ));
                 }
 
-                let glyph = glyph_manager.acquire_rasterized_glyph(*code);
+                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(*code) else {
+                    return None;
+                };
+
                 let offset_x = self.current_x * 64;
                 let offset_y = self.current_y * 64;
                 let character_data = CharacterCache {
@@ -125,9 +128,11 @@ impl GlyphWriter {
         // グリフのパッチ
         let glyph_image_patches = diff_items
             .iter()
-            .map(|(code, character_cache)| {
+            .filter_map(|(code, character_cache)| {
                 // グリフを取得
-                let glyph = glyph_manager.acquire_rasterized_glyph(*code);
+                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(*code) else {
+                    return None;
+                };
                 let buffer = match &glyph.buffer {
                     BitmapBuffer::Rgb(buffer) => {
                         buffer.chunks(3).map(|rgb| rgb[0]).collect::<Vec<u8>>()
@@ -135,13 +140,13 @@ impl GlyphWriter {
                     BitmapBuffer::Rgba(_) => todo!(),
                 };
 
-                GlyphImagePatch {
+                Some(GlyphImagePatch {
                     offset_x: character_cache.x,
                     offset_y: character_cache.y,
                     width: character_cache.width,
                     height: character_cache.height,
                     pixel_data: buffer.clone(),
-                }
+                })
             })
             .collect();
 
