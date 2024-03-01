@@ -1,13 +1,10 @@
-use std::{
-    borrow::Cow,
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, collections::HashMap, fs::File, path::Path};
 
 use image::{
     codecs::{jpeg::JpegDecoder, png::PngDecoder},
     DynamicImage, GenericImageView,
 };
+use uuid::Uuid;
 use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
@@ -41,95 +38,83 @@ struct Instance {
     height: u32,
 }
 
+#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq)]
+pub struct BackgroundId {
+    id: Uuid,
+}
+
 pub struct BackgroundRenderer<'a> {
-    instance: Option<Instance>,
-    // 背景に表示している画像
-    texture_path_cache: Option<PathBuf>,
+    // ウィンドウに表示している背景
+    window_background_table: HashMap<WindowId, Option<BackgroundId>>,
+
+    // 背景描画に必要なインスタンス
+    instance_table: HashMap<BackgroundId, Instance>,
+
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> BackgroundRenderer<'a> {
     pub fn new() -> Self {
         Self {
-            instance: None,
-            texture_path_cache: None,
+            window_background_table: HashMap::default(),
+            instance_table: HashMap::default(),
             _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn register(
-        &mut self,
-        _id: WindowId,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-    ) {
-        let instance =
-            create_instance::<PathBuf>(device, queue, format, CreateInstanceParams::New, 1.0);
-        self.instance = Some(instance);
+    pub fn resize(&mut self, _id: WindowId, queue: &wgpu::Queue, width: u32, height: u32) {
+        for instance in self.instance_table.values_mut() {
+            let width = width as f32;
+            let height = height as f32;
+            let image_width = instance.width as f32;
+            let image_height = instance.height as f32;
+
+            // 画像の UV 変換
+            let scale_x = width / image_width;
+            let scale_y = height / image_height;
+
+            // (1, 1) より外を参照してたらフィットするよう補正
+            // [0, 1] だったら補正は不要なので 1 で抑えておく
+            let factor = scale_x.max(scale_y).max(1.0);
+            let x = scale_x / factor;
+            let y = scale_y / factor;
+
+            // 画像の中心とターミナルの中心が一致するように並行移動
+            let t_x = 0.5 * (image_width - width).max(0.0) / width;
+            let t_y = 0.5 * (image_height - height).max(0.0) / height;
+            let constant_buffer_data = ConstantBufferData {
+                image_tansform0: [x, 0.0, x * t_x, 0.0],
+                image_tansform1: [0.0, y, y * t_y, 0.0],
+            };
+            let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
+            queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
+        }
     }
 
-    pub fn resize(&self, _id: WindowId, queue: &wgpu::Queue, width: u32, height: u32) {
-        let Some(instance) = &self.instance else {
-            return;
-        };
-
-        let width = width as f32;
-        let height = height as f32;
-        let image_width = instance.width as f32;
-        let image_height = instance.height as f32;
-
-        // 画像の UV 変換
-        let scale_x = width / image_width;
-        let scale_y = height / image_height;
-
-        // (1, 1) より外を参照してたらフィットするよう補正
-        // [0, 1] だったら補正は不要なので 1 で抑えておく
-        let factor = scale_x.max(scale_y).max(1.0);
-        let x = scale_x / factor;
-        let y = scale_y / factor;
-
-        // 画像の中心とターミナルの中心が一致するように並行移動
-        let t_x = 0.5 * (image_width - width).max(0.0) / width;
-        let t_y = 0.5 * (image_height - height).max(0.0) / height;
-        let constant_buffer_data = ConstantBufferData {
-            image_tansform0: [x, 0.0, x * t_x, 0.0],
-            image_tansform1: [0.0, y, y * t_y, 0.0],
-        };
-        let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
-        queue.write_buffer(
-            &self.instance.as_ref().unwrap().constant_buffer,
-            0,
-            constant_buffer_data,
-        );
-    }
-
-    pub fn update<TPath>(
+    pub fn register<TPath>(
         &mut self,
-        _id: WindowId,
+        window_id: WindowId,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         texture_format: wgpu::TextureFormat,
         image_path: TPath,
         alpha_enhance: f32,
-    ) where
+    ) -> BackgroundId
+    where
         TPath: AsRef<Path>,
     {
-        if self.texture_path_cache.is_some() {
-            return;
-        } else {
-            let path = image_path.as_ref().to_path_buf();
-            self.texture_path_cache = Some(path);
-        }
-
-        let mut instance = None;
-        std::mem::swap(&mut instance, &mut self.instance);
-
         let instance = create_instance(
             device,
             queue,
             texture_format,
-            CreateInstanceParams::WithCache(instance.unwrap(), image_path),
+            CreateInstanceParams::<TPath>::New,
+            alpha_enhance,
+        );
+        let instance = create_instance(
+            device,
+            queue,
+            texture_format,
+            CreateInstanceParams::WithCache(instance, image_path),
             alpha_enhance,
         );
         queue.write_buffer(
@@ -137,22 +122,26 @@ impl<'a> BackgroundRenderer<'a> {
             0,
             bytemuck::bytes_of(&MaterialData { alpha_enhance }),
         );
-        self.instance = Some(instance);
+
+        let id = BackgroundId { id: Uuid::new_v4() };
+        self.window_background_table.insert(window_id, Some(id));
+        self.instance_table.insert(id, instance);
+
+        id
     }
 
-    pub fn render(&'a self, _id: WindowId, mut render_pass: wgpu::RenderPass<'a>) {
-        let Some(instance) = &self.instance else {
+    pub fn render(&'a self, id: WindowId, mut render_pass: wgpu::RenderPass<'a>) {
+        let Some(background_id_opt) = self.window_background_table.get(&id) else {
             return;
         };
 
-        // 背景画像を初期化できてなかったらなにもしない
-        let Some(path) = &self.texture_path_cache else {
+        let Some(background_id) = background_id_opt else {
             return;
         };
-        if !(path.is_file() && path.exists()) {
-            return;
-        }
 
+        let Some(instance) = self.instance_table.get(background_id) else {
+            return;
+        };
         render_pass.set_pipeline(&instance.render_pipeline);
         render_pass.set_vertex_buffer(0, instance.vertex_buffer.slice(..));
         render_pass.set_index_buffer(instance.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

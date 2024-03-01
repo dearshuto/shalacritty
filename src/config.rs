@@ -8,7 +8,7 @@ use std::{
 use notify::Watcher;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub background: [f32; 4],
