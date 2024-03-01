@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use uuid::Uuid;
 use wgpu::{include_spirv_raw, util::DeviceExt, WasmNotSendSync};
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -24,6 +25,11 @@ struct CharacterData {
     fore_ground_color: [f32; 4],
     uv_bl: [f32; 2],
     uv_tr: [f32; 2],
+}
+
+#[derive(Debug, Hash, Clone, Copy)]
+pub struct BackgroundId {
+    id: Uuid,
 }
 
 pub struct RendererUpdateParams<TPath: AsRef<Path>> {
@@ -572,5 +578,13 @@ impl<'a> Renderer<'a> {
 
         queue.submit(Some(command_encoder.finish()));
         frame.present();
+    }
+
+    #[allow(dead_code)]
+    pub fn register_background<TPath>(&mut self, _path: TPath) -> BackgroundId
+    where
+        TPath: AsRef<Path>,
+    {
+        BackgroundId { id: Uuid::new_v4() }
     }
 }
