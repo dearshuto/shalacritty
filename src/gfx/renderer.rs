@@ -65,7 +65,6 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
     }
 }
 
-#[allow(dead_code)]
 pub struct Renderer<'a> {
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
@@ -86,7 +85,6 @@ pub struct Renderer<'a> {
 }
 
 impl<'a> Renderer<'a> {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             device_table: Default::default(),
