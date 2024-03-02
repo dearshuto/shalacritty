@@ -8,7 +8,7 @@ layout (binding = 0) uniform View {
 
 void main()
 {
-    int index = gl_InstanceIndex;
+    int index = int(gl_InstanceIndex);
     vec2 position = vec2(
         dot(u_Transform[index + 0].xyz, vec3(i_Position, 1.0)),
         dot(u_Transform[index + 1].xyz, vec3(i_Position, 1.0))

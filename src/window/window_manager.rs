@@ -19,9 +19,11 @@ impl WindowManager {
     }
 
     pub async fn create_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) -> WindowId {
+        // カラーターゲットの最大値を 2048x2048 に設定しているのでウィンドウサイズもそれを超えないようにしている
         let window = WindowBuilder::new()
             .with_transparent(true)
             .with_min_inner_size(PhysicalSize::new(300, 300))
+            .with_max_inner_size(PhysicalSize::new(2048, 2048))
             .build(event_loop)
             .unwrap();
         let id = window.id();

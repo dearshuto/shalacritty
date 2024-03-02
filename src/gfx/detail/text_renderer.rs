@@ -1,6 +1,6 @@
-use std::{collections::HashMap, marker::PhantomData, num::NonZeroU64};
+use std::{borrow::Cow, collections::HashMap, marker::PhantomData, num::NonZeroU64};
 
-use wgpu::{include_spirv_raw, util::DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
 use crate::gfx::content_plotter::Diff;
@@ -97,14 +97,15 @@ impl<'a> TextRenderer<'a> {
             }],
         }];
 
-        let vertex_shader_module_spirv = include_spirv_raw!("../char_rect.vs.spv");
-        let vertex_shader_module =
-            unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
+        let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../char_rect.vs.wgsl"))),
+        });
 
-        let pixel_shader_module_spirv = include_spirv_raw!("../char_rect.fs.spv");
-        let pixel_shader_module =
-            unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
-
+        let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../char_rect.fs.wgsl"))),
+        });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),

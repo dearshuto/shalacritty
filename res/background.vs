@@ -12,6 +12,5 @@ void main()
     gl_Position = vec4(i_Position, 0.0, 1.0);
 
     vec3 uv = vec3((i_Position + 1.0) / 2.0, 1.0);
-    // uv.y = 1.0 - uv.y;
     v_Uv = vec2(dot(u_ImageTransform[0].xyz, uv), dot(u_ImageTransform[1].xyz, uv));
 }
