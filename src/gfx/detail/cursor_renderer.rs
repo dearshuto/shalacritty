@@ -1,6 +1,6 @@
-use std::num::NonZeroU64;
+use std::borrow::Cow;
 
-use wgpu::{include_spirv_raw, util::DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
 use crate::gfx::content_plotter::Diff;
@@ -46,7 +46,7 @@ impl<'a> CursorRenderer<'a> {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(std::mem::size_of::<f32>() as u64 * 8),
+                    min_binding_size: None,
                 },
                 count: None,
             }],
@@ -58,13 +58,15 @@ impl<'a> CursorRenderer<'a> {
             push_constant_ranges: &[],
         });
 
-        let vertex_shader_module_spirv = include_spirv_raw!("rect.vs.spv");
-        let vertex_shader_module =
-            unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
+        let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rect.vs.wgsl"))),
+        });
 
-        let pixel_shader_module_spirv = include_spirv_raw!("rect.fs.spv");
-        let pixel_shader_module =
-            unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
+        let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rect.fs.wgsl"))),
+        });
 
         // 頂点アトリビュート
         let vertex_buffers = [wgpu::VertexBufferLayout {

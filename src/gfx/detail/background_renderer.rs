@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fs::File,
     path::{Path, PathBuf},
 };
@@ -7,7 +8,7 @@ use image::{
     codecs::{jpeg::JpegDecoder, png::PngDecoder},
     DynamicImage, GenericImageView,
 };
-use wgpu::{include_spirv_raw, util::DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
 #[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
@@ -180,13 +181,15 @@ where
 {
     match params {
         CreateInstanceParams::New => {
-            let vertex_shader_module_spirv = include_spirv_raw!("background.vs.spv");
-            let vertex_shader_module =
-                unsafe { device.create_shader_module_spirv(&vertex_shader_module_spirv) };
+            let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("background.vs.wgsl"))),
+            });
 
-            let pixel_shader_module_spirv = include_spirv_raw!("background.fs.spv");
-            let pixel_shader_module =
-                unsafe { device.create_shader_module_spirv(&pixel_shader_module_spirv) };
+            let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("background.fs.wgsl"))),
+            });
 
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

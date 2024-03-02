@@ -13,7 +13,7 @@ use winit::{
 
 use super::{
     content_plotter::Diff,
-    detail::{BackgroundRenderer, CursorRenderer, TextRenderer},
+    detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
 };
 
 #[derive(Debug, Hash, Clone, Copy)]
@@ -80,6 +80,9 @@ pub struct Renderer<'a> {
     // 背景
     background_renderer: BackgroundRenderer<'a>,
 
+    // スキャンバッファーに表示
+    scan_buffer_renderer: ScanBufferRenderer<'a>,
+
     // 背景色
     background_color: [f32; 4],
 }
@@ -100,6 +103,9 @@ impl<'a> Renderer<'a> {
 
             // 背景
             background_renderer: BackgroundRenderer::new(),
+
+            // スキャンバッファー描画
+            scan_buffer_renderer: ScanBufferRenderer::new(),
 
             // 背景色
             background_color: [0.3, 0.4, 0.5, 0.5],
@@ -127,7 +133,7 @@ impl<'a> Renderer<'a> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
+                    required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 },
                 None,
@@ -136,9 +142,10 @@ impl<'a> Renderer<'a> {
             .unwrap();
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
+
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format: swapchain_format,
             width: 640,
             height: 480,
@@ -168,6 +175,10 @@ impl<'a> Renderer<'a> {
         self.cursor_renderer
             .register(id, &device, &queue, config.format);
 
+        // スキャンバッファー描画
+        self.scan_buffer_renderer
+            .register(id, &device, swapchain_format);
+
         self.device_table.insert(id, device);
         self.queue_table.insert(id, queue);
         self.adapter_table.insert(id, adapter);
@@ -182,7 +193,7 @@ impl<'a> Renderer<'a> {
         let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format: swapchain_format,
             width: width as u32,
             height: height as u32,
@@ -201,6 +212,9 @@ impl<'a> Renderer<'a> {
         // 背景描画
         // TODO: プラグイン化
         self.background_renderer.resize(id, queue, width, height);
+
+        // スキャンバッファー描画
+        self.scan_buffer_renderer.resize(id, queue, width, height);
     }
 
     pub fn update<TPath>(&mut self, id: WindowId, render_update_params: RendererUpdateParams<TPath>)
@@ -248,16 +262,15 @@ impl<'a> Renderer<'a> {
         let surface = self.surface_table.get(&id).unwrap();
 
         let frame = surface.get_current_texture().unwrap();
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let view = self.scan_buffer_renderer.create_view(id);
 
         let mut command_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         // 背景描画
         {
-            let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -276,12 +289,21 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
+            render_pass.set_viewport(
+                0.0,
+                0.0,
+                frame.texture.size().width as f32,
+                frame.texture.size().height as f32,
+                0.0,
+                1.0,
+            );
             self.background_renderer.render(id, render_pass);
         }
 
         // カーソル描画
         {
-            let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -295,12 +317,20 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            render_pass.set_viewport(
+                0.0,
+                0.0,
+                frame.texture.size().width as f32,
+                frame.texture.size().height as f32,
+                0.0,
+                1.0,
+            );
             self.cursor_renderer.render(id, render_pass);
         }
 
         // 文字描画
         {
-            let render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -314,7 +344,48 @@ impl<'a> Renderer<'a> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            render_pass.set_viewport(
+                0.0,
+                0.0,
+                frame.texture.size().width as f32,
+                frame.texture.size().height as f32,
+                0.0,
+                1.0,
+            );
             self.text_renderer.render(id, render_pass);
+        }
+
+        // スキャンバッファーにコピー
+        // 1. ドットバイドット対応
+        // 2. 座標系調整
+        {
+            let scan_buffer_view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &scan_buffer_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_viewport(
+                0.0,
+                0.0,
+                frame.texture.size().width as f32,
+                frame.texture.size().height as f32,
+                0.0,
+                1.0,
+            );
+
+            self.scan_buffer_renderer.render(id, render_pass);
         }
 
         queue.submit(Some(command_encoder.finish()));
