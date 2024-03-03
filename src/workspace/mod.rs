@@ -16,7 +16,7 @@ use crate::{
     gfx::{ContentPlotter, GlyphManager, Renderer, RendererUpdateParams},
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
-    ConfigService,
+    Config, ConfigService,
 };
 
 pub struct Workspace<'a> {
@@ -39,6 +39,8 @@ pub struct Workspace<'a> {
 
     // 操作対象となっているウィンドウ
     active_window_id: Option<VirtualWindowId>,
+
+    old_config: Option<Config>,
 }
 
 impl<'a> Workspace<'a> {
@@ -69,6 +71,7 @@ impl<'a> Workspace<'a> {
             virtual_window_manager,
             virtual_window_tty_table: HashMap::default(),
             active_window_id: None,
+            old_config: None,
         }
     }
 
@@ -77,6 +80,8 @@ impl<'a> Workspace<'a> {
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();
         self.renderer.register(id, &self.instance, window).await;
+        self.renderer
+            .resize(id, window_size.width, window_size.height);
 
         let (tty_id, sender) = self.teletype_manager.create_teletype();
         self.window_tty_table.insert(id, vec![tty_id]);
@@ -106,6 +111,38 @@ impl<'a> Workspace<'a> {
             };
             window.request_redraw();
 
+            let (background, image_alpha, image_path) = if self.old_config.is_none() {
+                let config = self.config_service.read().unwrap();
+                self.old_config = Some(config.clone());
+
+                (
+                    Some(config.background),
+                    Some(config.image_alpha),
+                    Some(config.image.clone()),
+                )
+            } else {
+                let old_config = self.old_config.as_ref().unwrap();
+                let config = self.config_service.read().unwrap();
+                let background = if old_config.background == config.background {
+                    None
+                } else {
+                    Some(config.background)
+                };
+                let alpha = if old_config.image_alpha == config.image_alpha {
+                    None
+                } else {
+                    Some(config.image_alpha)
+                };
+                let image = if old_config.image == config.image {
+                    None
+                } else {
+                    Some(config.image.clone())
+                };
+                self.old_config = Some(config.clone());
+
+                (background, alpha, image)
+            };
+
             for id in value {
                 // 変化がなければなにもしない
                 if !self.teletype_manager.is_dirty(*id) {
@@ -114,15 +151,17 @@ impl<'a> Workspace<'a> {
 
                 // レンダラーに反映
                 self.teletype_manager.get_content(*id, |c| {
-                    let config = self.config_service.read().unwrap();
                     let diff = self
                         .content_plotter
                         .calculate_diff(c, &mut self.glyph_manager);
-                    let update_params = RendererUpdateParams::new()
-                        .with_diff(diff)
-                        .with_background_color(config.background)
-                        .with_image_alpha(config.image_alpha)
-                        .with_image_path(config.image.clone());
+                    let update_params = RendererUpdateParams::new(
+                        window.inner_size().width,
+                        window.inner_size().height,
+                    )
+                    .with_diff(diff)
+                    .with_background_color(background)
+                    .with_image_alpha(image_alpha)
+                    .with_image_path(image_path.clone());
                     self.renderer.update(*window_id, update_params);
                 });
 
@@ -150,15 +189,11 @@ impl<'a> Workspace<'a> {
             self.teletype_manager.is_dirty(*tty_id);
 
             self.teletype_manager.get_content(*tty_id, |c| {
-                let config = self.config_service.read().unwrap();
                 let diff = self
                     .content_plotter
                     .calculate_diff(c, &mut self.glyph_manager);
-                let update_params = RendererUpdateParams::new()
-                    .with_diff(diff)
-                    .with_image_alpha(config.image_alpha)
-                    .with_image_path(config.image.clone())
-                    .with_background_color(config.background);
+                let update_params =
+                    RendererUpdateParams::<String>::new(width, height).with_diff(diff);
                 self.renderer.update(id, update_params);
             });
         }

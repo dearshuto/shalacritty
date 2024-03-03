@@ -1,10 +1,5 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
-use uuid::Uuid;
 use wgpu::WasmNotSendSync;
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -16,27 +11,20 @@ use super::{
     detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
 };
 
-#[derive(Debug, Hash, Clone, Copy)]
-pub struct BackgroundId {
-    id: Uuid,
-}
-
 pub struct RendererUpdateParams<TPath: AsRef<Path>> {
+    width: u32,
+    height: u32,
     background_color: Option<[f32; 4]>,
     diff: Diff,
     image_path: Option<TPath>,
     image_alpha: Option<f32>,
 }
 
-impl Default for RendererUpdateParams<PathBuf> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
-    pub fn new() -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
         Self {
+            width,
+            height,
             background_color: None,
             diff: Diff::default(),
             image_path: None,
@@ -49,18 +37,18 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
         self
     }
 
-    pub fn with_image_alpha(mut self, alpha: f32) -> Self {
-        self.image_alpha = Some(alpha);
+    pub fn with_image_alpha(mut self, alpha: Option<f32>) -> Self {
+        self.image_alpha = alpha;
         self
     }
 
-    pub fn with_background_color(mut self, color: [f32; 4]) -> Self {
-        self.background_color = Some(color);
+    pub fn with_background_color(mut self, color: Option<[f32; 4]>) -> Self {
+        self.background_color = color;
         self
     }
 
-    pub fn with_image_path(mut self, path: TPath) -> Self {
-        self.image_path = Some(path);
+    pub fn with_image_path(mut self, path: Option<TPath>) -> Self {
+        self.image_path = path;
         self
     }
 }
@@ -166,11 +154,6 @@ impl<'a> Renderer<'a> {
             .register(id, &device, config.format)
             .await;
 
-        // 背景描画
-        // TODO: プラグイン化
-        self.background_renderer
-            .register(id, &device, &queue, config.format);
-
         // カーソル描画
         self.cursor_renderer
             .register(id, &device, &queue, config.format);
@@ -185,7 +168,7 @@ impl<'a> Renderer<'a> {
         self.surface_table.insert(id, surface);
     }
 
-    pub fn resize(&self, id: WindowId, width: u32, height: u32) {
+    pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
         let surface = self.surface_table.get(&id).unwrap();
@@ -225,31 +208,35 @@ impl<'a> Renderer<'a> {
             self.background_color = background_color;
         }
 
-        let device = self.device_table.get(&id).unwrap();
-        let queue = self.queue_table.get(&id).unwrap();
-        self.text_renderer
-            .update(queue, id, &render_update_params.diff);
-
-        // 背景レンダラーの更新
-        let surface = self.surface_table.get(&id).unwrap();
-        let adapter = self.adapter_table.get(&id).unwrap();
-        let swapchain_capabilities = surface.get_capabilities(adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
-        if let (Some(image_path), Some(image_alpha)) = (
+        if let (
+            Some(device),
+            Some(queue),
+            Some(surface),
+            Some(adapter),
+            Some(image_path),
+            Some(alpha),
+        ) = (
+            self.device_table.get(&id),
+            self.queue_table.get(&id),
+            self.surface_table.get(&id),
+            self.adapter_table.get(&id),
             render_update_params.image_path,
             render_update_params.image_alpha,
         ) {
-            if image_path.as_ref().exists() {
-                self.background_renderer.update(
-                    id,
-                    device,
-                    queue,
-                    swapchain_format,
-                    image_path,
-                    image_alpha,
-                );
-            }
+            let texture_format = surface.get_capabilities(adapter).formats[0];
+            self.background_renderer
+                .register(id, device, queue, texture_format, image_path, alpha);
+            self.background_renderer.resize(
+                id,
+                queue,
+                render_update_params.width,
+                render_update_params.height,
+            );
         }
+
+        let queue = self.queue_table.get(&id).unwrap();
+        self.text_renderer
+            .update(queue, id, &render_update_params.diff);
 
         // カーソルレンダラーの更新
         self.cursor_renderer
@@ -390,13 +377,5 @@ impl<'a> Renderer<'a> {
 
         queue.submit(Some(command_encoder.finish()));
         frame.present();
-    }
-
-    #[allow(dead_code)]
-    pub fn register_background<TPath>(&mut self, _path: TPath) -> BackgroundId
-    where
-        TPath: AsRef<Path>,
-    {
-        BackgroundId { id: Uuid::new_v4() }
     }
 }
