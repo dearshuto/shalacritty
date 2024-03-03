@@ -11,13 +11,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
-    pub background: [f32; 4],
-
-    #[serde(default)]
     pub image: String,
 
     #[serde(default = "default_image_alpha")]
     pub image_alpha: f32,
+
+    #[serde(default)]
+    pub background: Background,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Background {
+    #[serde(default)]
+    pub clear_color: [f32; 4],
+
+    #[serde(default)]
+    pub path: Vec<String>,
 }
 
 fn default_image_alpha() -> f32 {
