@@ -116,18 +116,19 @@ impl<'a> Workspace<'a> {
                 self.old_config = Some(config.clone());
 
                 (
-                    Some(config.background),
+                    Some(config.background.clear_color),
                     Some(config.image_alpha),
                     Some(config.image.clone()),
                 )
             } else {
                 let old_config = self.old_config.as_ref().unwrap();
                 let config = self.config_service.read().unwrap();
-                let background = if old_config.background == config.background {
-                    None
-                } else {
-                    Some(config.background)
-                };
+                let background =
+                    if old_config.background.clear_color == config.background.clear_color {
+                        None
+                    } else {
+                        Some(config.background.clear_color)
+                    };
                 let alpha = if old_config.image_alpha == config.image_alpha {
                     None
                 } else {
