@@ -7,6 +7,9 @@ use winit::{
 };
 
 pub struct WindowManager {
+    // 生成順にソート
+    ids: Vec<WindowId>,
+
     window_table: HashMap<WindowId, Arc<Window>>,
 }
 
@@ -14,6 +17,7 @@ impl WindowManager {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
+            ids: Vec::default(),
             window_table: Default::default(),
         }
     }
@@ -27,6 +31,7 @@ impl WindowManager {
             .build(event_loop)
             .unwrap();
         let id = window.id();
+        self.ids.push(id);
         self.window_table.insert(id, Arc::new(window));
         id
     }
@@ -37,5 +42,9 @@ impl WindowManager {
         };
 
         Some(window.clone())
+    }
+
+    pub fn ids(&self) -> &[WindowId] {
+        &self.ids
     }
 }

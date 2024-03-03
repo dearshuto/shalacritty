@@ -169,6 +169,40 @@ impl<'a> Workspace<'a> {
                 self.teletype_manager.clear_dirty(*id);
             }
         }
+
+        // TODO: ↑ は背景の変更だけにして処理を切り離したい
+        // tty の差分をレンダラーに反映
+        for window_id in self.window_manager.ids() {
+            let Some(window) = self.window_manager.try_get_window(*window_id) else {
+                continue;
+            };
+
+            let Some(teletype_ids) = self.window_tty_table.get(window_id) else {
+                continue;
+            };
+
+            for teletype_id in teletype_ids {
+                if !self.teletype_manager.is_dirty(*teletype_id) {
+                    continue;
+                }
+
+                // レンダラーに反映
+                self.teletype_manager.get_content(*teletype_id, |c| {
+                    let diff = self
+                        .content_plotter
+                        .calculate_diff(c, &mut self.glyph_manager);
+                    let update_params = RendererUpdateParams::<String>::new(
+                        window.inner_size().width,
+                        window.inner_size().height,
+                    )
+                    .with_diff(diff);
+                    self.renderer.update(*window_id, update_params);
+                });
+
+                // ダーティフラグを解除
+                self.teletype_manager.clear_dirty(*teletype_id);
+            }
+        }
     }
 
     pub fn render(&mut self, id: WindowId) {
