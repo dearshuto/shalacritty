@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, marker::PhantomData, num::NonZeroU64};
+use std::{borrow::Cow, collections::HashMap, marker::PhantomData};
 
 use wgpu::util::DeviceExt;
 use winit::window::WindowId;
@@ -56,9 +56,7 @@ impl<'a> TextRenderer<'a> {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new(
-                            std::mem::size_of::<CharacterData>() as u64 * 1024,
-                        ),
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -153,7 +151,7 @@ impl<'a> TextRenderer<'a> {
         // 文字ごとの情報
         let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: std::mem::size_of::<CharacterData>() as u64 * 4 * 1024,
+            size: std::mem::size_of::<CharacterData>() as u64 * 16 * 1024,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
