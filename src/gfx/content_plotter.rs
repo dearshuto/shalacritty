@@ -53,6 +53,7 @@ pub struct Diff {
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     character_info_array: Vec<CharacterInfo>,
     cursor: Option<RenderableCursor>,
+    item_count: i32,
 }
 
 impl Diff {
@@ -66,6 +67,10 @@ impl Diff {
 
     pub fn cursor(&self) -> Option<&RenderableCursor> {
         self.cursor.as_ref()
+    }
+
+    pub fn item_count(&self) -> i32 {
+        self.item_count
     }
 }
 
@@ -166,6 +171,7 @@ impl ContentPlotter {
             .collect::<Vec<CharacterInfo>>();
 
         // 差分検出
+        let item_count = items.len();
         let mut diff_items = Vec::default();
         (0..items.len()).for_each(|index| {
             let new_item = items[index];
@@ -190,6 +196,7 @@ impl ContentPlotter {
                 glyph_texture_patches: Vec::default(),
                 character_info_array: Vec::default(),
                 cursor: Some(renderable_content.cursor),
+                item_count: item_count as i32,
             };
         }
 
@@ -215,6 +222,7 @@ impl ContentPlotter {
             glyph_texture_patches,
             character_info_array: items,
             cursor: Some(renderable_content.cursor),
+            item_count: item_count as i32,
         }
     }
 

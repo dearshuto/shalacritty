@@ -24,6 +24,8 @@ pub struct TextRenderer<'a> {
     sampler_table: HashMap<WindowId, wgpu::Sampler>,
     glyph_texture: Option<wgpu::Texture>,
 
+    character_count: u32,
+
     _phantom_data: PhantomData<&'a ()>,
 }
 
@@ -37,6 +39,7 @@ impl<'a> TextRenderer<'a> {
             character_storage_block_table: HashMap::default(),
             sampler_table: HashMap::default(),
             glyph_texture: None,
+            character_count: 0,
             _phantom_data: Default::default(),
         }
     }
@@ -233,6 +236,10 @@ impl<'a> TextRenderer<'a> {
 
     pub fn update(&mut self, queue: &wgpu::Queue, id: WindowId, diff: &Diff) {
         let buffer = self.character_storage_block_table.get(&id).unwrap();
+
+        // 文字数
+        self.character_count = diff.item_count() as u32;
+
         let data = diff
             .character_info_array()
             .iter()
@@ -309,9 +316,6 @@ impl<'a> TextRenderer<'a> {
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
-
-        // TODO: 文字数は外部から受け取るようにする
-        // 4096 は 64x64 の領域に文字が入るようにしている
-        render_pass.draw_indexed(0..6, 0, 0..4096);
+        render_pass.draw_indexed(0..6, 0, 0..self.character_count);
     }
 }
