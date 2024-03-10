@@ -20,6 +20,7 @@ struct Instance {
 
 pub struct CursorRenderer<'a> {
     instance: Option<Instance>,
+    size: (u32, u32),
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
@@ -27,6 +28,7 @@ impl<'a> CursorRenderer<'a> {
     pub fn new() -> Self {
         Self {
             instance: None,
+            size: (128, 128),
             _marker: std::marker::PhantomData,
         }
     }
@@ -156,8 +158,8 @@ impl<'a> CursorRenderer<'a> {
         // [0, 1] に正規化
         let (x, y) = {
             (
-                cursor.point.column.0 as f32 / 64.0,
-                cursor.point.line.0 as f32 / 64.0,
+                cursor.point.column.0 as f32 / (self.size.0 as f32 / 16.0),
+                cursor.point.line.0 as f32 / (self.size.1 as f32 / 16.0),
             )
         };
 
@@ -179,6 +181,10 @@ impl<'a> CursorRenderer<'a> {
             0, /*offset*/
             bytemuck::cast_slice(&data),
         );
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.size = (width, height);
     }
 
     pub fn render(&'a self, _id: WindowId, mut render_pass: wgpu::RenderPass<'a>) {

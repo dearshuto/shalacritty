@@ -124,6 +124,17 @@ impl TeletypeManager {
         // let terminal = terminal.lock();
         func(terminal.renderable_content());
     }
+
+    pub fn resize(&mut self, id: TeletypeId, width: u32, height: u32) {
+        let Some(term) = self.terminal_table.get(&id) else {
+            return;
+        };
+
+        let line = height as usize / 16;
+        let columns = width as usize / 16;
+        term.lock()
+            .resize(SizeInfo::new_with(128 /*total*/, line, columns));
+    }
 }
 
 struct EventProxy {
@@ -176,24 +187,40 @@ impl Clone for EventProxy {
     }
 }
 
-struct SizeInfo;
+struct SizeInfo {
+    total_lines: usize,
+    screen_lines: usize,
+    columns: usize,
+}
 
 impl SizeInfo {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            total_lines: 64,
+            screen_lines: 64,
+            columns: 64,
+        }
+    }
+
+    pub fn new_with(t: usize, s: usize, c: usize) -> Self {
+        Self {
+            total_lines: t,
+            screen_lines: s,
+            columns: c,
+        }
     }
 }
 
 impl Dimensions for SizeInfo {
     fn total_lines(&self) -> usize {
-        64
+        self.total_lines
     }
 
     fn screen_lines(&self) -> usize {
-        64
+        self.screen_lines
     }
 
     fn columns(&self) -> usize {
-        64
+        self.columns
     }
 }
