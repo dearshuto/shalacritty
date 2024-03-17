@@ -154,7 +154,7 @@ impl<'a> TextRenderer<'a> {
         // 文字ごとの情報
         let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: std::mem::size_of::<CharacterData>() as u64 * 16 * 1024,
+            size: std::mem::size_of::<CharacterData>() as u64 * 32 * 1024,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
