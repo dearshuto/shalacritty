@@ -266,7 +266,7 @@ impl ContentPlotter {
             // NamedColor::BrightYellow => todo!(),
             NamedColor::BrightBlue => [0.0, 0.0, 1.0, 0.0],
             NamedColor::BrightMagenta => [1.0, 0.0, 1.0, 0.0],
-            // NamedColor::BrightCyan => todo!(),
+            NamedColor::BrightCyan => [0.0, 1.0, 1.0, 0.0],
             NamedColor::BrightWhite => [0.8, 0.8, 0.8, 0.0],
             NamedColor::Foreground => [1.0, 1.0, 1.0, 0.0],
             NamedColor::Background => [1.0, 1.0, 1.0, 0.0],
