@@ -185,6 +185,9 @@ impl EventListener for EventProxy {
             alacritty_terminal::event::Event::Exit => {
                 // とくになにもしない
             }
+            alacritty_terminal::event::Event::CursorBlinkingChange => {
+                // とくになにもしない
+            }
             _ => {
                 println!("{:?}", event)
             } // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
@@ -194,7 +197,6 @@ impl EventListener for EventProxy {
               // alacritty_terminal::event::Event::ClipboardLoad(_, _) => todo!(),
               // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
               // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
-              // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
         }
     }
 }
