@@ -152,9 +152,11 @@ impl<'a> Workspace<'a> {
 
                 // レンダラーに反映
                 self.teletype_manager.get_content(*id, |c| {
-                    let diff = self
-                        .content_plotter
-                        .calculate_diff(c, &mut self.glyph_manager);
+                    let diff = self.content_plotter.calculate_diff(
+                        c,
+                        &mut self.glyph_manager,
+                        (window.inner_size().width, window.inner_size().height),
+                    );
                     let update_params = RendererUpdateParams::new(
                         window.inner_size().width,
                         window.inner_size().height,
@@ -189,9 +191,11 @@ impl<'a> Workspace<'a> {
 
                 // レンダラーに反映
                 self.teletype_manager.get_content(*teletype_id, |c| {
-                    let diff = self
-                        .content_plotter
-                        .calculate_diff(c, &mut self.glyph_manager);
+                    let diff = self.content_plotter.calculate_diff(
+                        c,
+                        &mut self.glyph_manager,
+                        (window.inner_size().width, window.inner_size().height),
+                    );
                     let update_params = RendererUpdateParams::<String>::new(
                         window.inner_size().width,
                         window.inner_size().height,
@@ -224,26 +228,32 @@ impl<'a> Workspace<'a> {
             self.teletype_manager.is_dirty(*tty_id);
 
             self.teletype_manager.get_content(*tty_id, |c| {
-                let diff = self
-                    .content_plotter
-                    .calculate_diff(c, &mut self.glyph_manager);
+                let diff = self.content_plotter.calculate_diff(
+                    c,
+                    &mut self.glyph_manager,
+                    (width, height),
+                );
                 let update_params =
                     RendererUpdateParams::<String>::new(width, height).with_diff(diff);
                 self.renderer.update(id, update_params);
             });
-        }
 
-        // TODO: tty のリサイズ
-        self.sender
-            .as_mut()
-            .unwrap()
-            .send(Msg::Resize(WindowSize {
-                num_lines: 64,
-                num_cols: 64,
-                cell_width: 8,
-                cell_height: 8,
-            }))
-            .unwrap();
+            // tty のリサイズ
+            self.teletype_manager.resize(*tty_id, width, height);
+
+            let lines = height as u16 / 16;
+            let columns = width as u16 / 16;
+            self.sender
+                .as_mut()
+                .unwrap()
+                .send(Msg::Resize(WindowSize {
+                    num_lines: lines,
+                    num_cols: columns,
+                    cell_width: 8,
+                    cell_height: 8,
+                }))
+                .unwrap();
+        }
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {

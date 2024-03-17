@@ -95,6 +95,7 @@ impl ContentPlotter {
         &mut self,
         renderable_content: RenderableContent,
         glyph_manager: &mut GlyphManager,
+        size: (u32, u32),
     ) -> Diff {
         // グリフは全部作り直してる。差分検出したい
         let cells = renderable_content
@@ -127,8 +128,8 @@ impl ContentPlotter {
                 // フレームバッファーのサイズで変わる
                 // 文字間を開けて見栄えを整えるために文字サイズを 0.6 倍している
                 let normalized_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
-                    0.6f32 / 1600.0,
-                    0.6f32 / 1200.0,
+                    0.6f32 / size.0 as f32,
+                    0.6f32 / size.1 as f32,
                 ));
 
                 // [0, 1] => [-1, 1]
@@ -138,13 +139,13 @@ impl ContentPlotter {
                 // 画面上に配置
                 let offset_matrix = Matrix3::new_translation(
                     &(Vector2::new(
-                        cell.point.column.0 as f32 / 32.0,
-                        cell.point.line.0 as f32 / 32.0,
+                        cell.point.column.0 as f32 / (size.0 as f32 / 16.0),
+                        cell.point.line.0 as f32 / (size.1 as f32 / 16.0),
                     )),
                 );
 
-                let transform_matrix = offset_matrix
-                    * view_matrix
+                let transform_matrix = view_matrix
+                    * offset_matrix
                     * normalized_matrix
                     * local_pixel_translate_matrix
                     * local_pixel_scale_matrix;

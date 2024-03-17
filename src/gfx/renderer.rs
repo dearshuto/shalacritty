@@ -192,6 +192,9 @@ impl<'a> Renderer<'a> {
         };
         surface.configure(device, &config);
 
+        // カーソル
+        self.cursor_renderer.resize(width, height);
+
         // 背景描画
         // TODO: プラグイン化
         self.background_renderer.resize(id, queue, width, height);
