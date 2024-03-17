@@ -38,8 +38,8 @@ impl<'a> ScanBufferRenderer<'a> {
         let color_target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
-                width: 2048,
-                height: 2048,
+                width: 4096,
+                height: 4096,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -163,7 +163,7 @@ impl<'a> ScanBufferRenderer<'a> {
     }
 
     pub fn resize(&self, id: WindowId, queue: &wgpu::Queue, width: u32, height: u32) {
-        let (scale_x, scale_y) = (width as f32 / 2048.0, height as f32 / 2048.0);
+        let (scale_x, scale_y) = (width as f32 / 4096.0, height as f32 / 4096.0);
         let instance = self.instance_table.get(&id).unwrap();
         queue.write_buffer(
             &instance.constant_buffer,
