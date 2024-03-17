@@ -257,12 +257,10 @@ impl<'a> TextRenderer<'a> {
             })
             .collect::<Vec<(usize, CharacterData)>>();
 
-        if !data.is_empty() {
-            for (index, data) in data {
-                let offset = index * std::mem::size_of::<CharacterData>();
-                let binary = bytemuck::bytes_of(&data);
-                queue.write_buffer(buffer, offset as u64, binary);
-            }
+        for (index, data) in data {
+            let offset = index * std::mem::size_of::<CharacterData>();
+            let binary = bytemuck::bytes_of(&data);
+            queue.write_buffer(buffer, offset as u64, binary);
         }
 
         let texture = self.glyph_texture.as_ref().unwrap();
