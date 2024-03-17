@@ -15,6 +15,7 @@ pub struct CharacterInfo {
     pub fore_ground_color: [f32; 4],
     pub uv0: nalgebra::Vector2<f32>,
     pub uv1: nalgebra::Vector2<f32>,
+    pub index: usize,
 }
 
 #[derive(Debug)]
@@ -75,7 +76,7 @@ impl Diff {
 }
 
 pub struct ContentPlotter {
-    old_items: Vec<CharacterInfo>,
+    old_items: Vec<char>,
 
     // TODO: グリフ画像を生成する処理は外部からさせるようにしたい
     glyph_writer: GlyphWriter,
@@ -108,8 +109,17 @@ impl ContentPlotter {
         // 表示要素を描画に必要な情報に変換
         let items = cells
             .iter()
-            .map(|cell| {
+            .enumerate()
+            .filter_map(|(index, cell)| {
                 let code = cell.c;
+
+                // 差分検出
+                if let Some(old_code) = self.old_items.get(index) {
+                    if *old_code == code {
+                        return None;
+                    }
+                }
+
                 let glyph = glyph_manager.get_rasterized_glyph(code);
 
                 // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
@@ -161,48 +171,19 @@ impl ContentPlotter {
                     ],
                     Color::Indexed(i) => Self::convert_index_color(i),
                 };
-                CharacterInfo {
+                Some(CharacterInfo {
                     code,
                     transform: transform_matrix.transpose().remove_column(2),
                     fore_ground_color,
                     uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
                     uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
-                }
+                    index,
+                })
             })
             .collect::<Vec<CharacterInfo>>();
 
-        // 差分検出
-        let item_count = items.len();
-        let mut diff_items = Vec::default();
-        (0..items.len()).for_each(|index| {
-            let new_item = items[index];
-
-            // 古い要素がなかったら新規要素として追加
-            let Some(old_item) = self.old_items.get(index) else {
-                diff_items.push(new_item);
-                return;
-            };
-
-            // 差分がなければ何もしない
-            if old_item == &new_item {
-                return;
-            }
-
-            diff_items.push(new_item);
-        });
-
-        // 差分がなければ更新する要素はない
-        if diff_items.is_empty() {
-            return Diff {
-                glyph_texture_patches: Vec::default(),
-                character_info_array: Vec::default(),
-                cursor: Some(renderable_content.cursor),
-                item_count: item_count as i32,
-            };
-        }
-
         // 新たな値をキャッシュ。次の差分検出に使う。
-        self.old_items = items.clone();
+        self.old_items = cells.iter().map(|c| c.c).collect();
 
         // グリフ
         let glyph_texture_patches = glyph_patches
@@ -219,11 +200,12 @@ impl ContentPlotter {
             })
             .collect::<Vec<GlyphTexturePatch>>();
 
+        let item_count = cells.len() as i32;
         Diff {
             glyph_texture_patches,
             character_info_array: items,
             cursor: Some(renderable_content.cursor),
-            item_count: item_count as i32,
+            item_count,
         }
     }
 
