@@ -226,6 +226,12 @@ impl ContentPlotter {
             13 => Self::convert_named_color(NamedColor::Cyan),
             14 => Self::convert_named_color(NamedColor::White),
             15 => Self::convert_named_color(NamedColor::Green),
+            // わからん
+            48 => Self::convert_named_color(NamedColor::White),
+            81 => Self::convert_named_color(NamedColor::White),
+            149 => Self::convert_named_color(NamedColor::White),
+            208 => Self::convert_named_color(NamedColor::White),
+            243 => Self::convert_named_color(NamedColor::White),
             _ => {
                 println!("unknown index color: {}", i);
                 [0.0; 4]

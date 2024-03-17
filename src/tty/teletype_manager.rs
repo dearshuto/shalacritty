@@ -21,6 +21,7 @@ pub struct TeletypeManager {
     terminal_table: HashMap<TeletypeId, Arc<FairMutex<Term<EventProxy>>>>,
     io_handle_table: HashMap<TeletypeId, JoinHandle<(EventLoop<Pty, EventProxy>, State)>>,
     dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>,
+    ptr_write_table: Arc<Mutex<HashMap<TeletypeId, Vec<u8>>>>,
     current_id: u64,
 }
 
@@ -30,6 +31,7 @@ impl TeletypeManager {
             terminal_table: Default::default(),
             io_handle_table: HashMap::default(),
             dirty_table: Arc::new(Mutex::new(HashMap::default())),
+            ptr_write_table: Arc::new(Mutex::new(HashMap::default())),
             current_id: 0,
         }
     }
@@ -83,7 +85,8 @@ impl TeletypeManager {
         let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
 
         self.dirty_table.lock().unwrap().insert(id, true);
-        let event_proxy = EventProxy::new(id, self.dirty_table.clone());
+        let event_proxy =
+            EventProxy::new(id, self.dirty_table.clone(), self.ptr_write_table.clone());
         let terminal =
             alacritty_terminal::Term::new(Default::default(), &size, event_proxy.clone());
         let terminal = Arc::new(FairMutex::new(terminal));
@@ -108,6 +111,13 @@ impl TeletypeManager {
 
     pub fn is_dirty(&self, id: TeletypeId) -> bool {
         *self.dirty_table.lock().unwrap().get(&id).unwrap()
+    }
+
+    pub fn consume_ptr_write(&self) -> Vec<Vec<u8>> {
+        self.terminal_table
+            .keys()
+            .filter_map(|id| self.ptr_write_table.lock().unwrap().remove(&id))
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -140,11 +150,20 @@ impl TeletypeManager {
 struct EventProxy {
     id: TeletypeId,
     dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>,
+    ptr_write_table: Arc<Mutex<HashMap<TeletypeId, Vec<u8>>>>,
 }
 
 impl EventProxy {
-    pub fn new(id: TeletypeId, dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>) -> Self {
-        Self { dirty_table, id }
+    pub fn new(
+        id: TeletypeId,
+        dirty_table: Arc<Mutex<HashMap<TeletypeId, bool>>>,
+        ptr_write_table: Arc<Mutex<HashMap<TeletypeId, Vec<u8>>>>,
+    ) -> Self {
+        Self {
+            dirty_table,
+            id,
+            ptr_write_table,
+        }
     }
 }
 
@@ -155,8 +174,10 @@ impl EventListener for EventProxy {
                 self.dirty_table.lock().unwrap().insert(self.id, true);
             }
             alacritty_terminal::event::Event::PtyWrite(str) => {
-                // self.dirty_table.lock().unwrap().insert(self.id, true);
-                println!("{}", str);
+                self.ptr_write_table
+                    .lock()
+                    .unwrap()
+                    .insert(self.id, str.into_bytes());
             }
             alacritty_terminal::event::Event::Bell => {
                 // とりあえず未サポート
@@ -183,6 +204,7 @@ impl Clone for EventProxy {
         Self {
             id: self.id,
             dirty_table: Arc::clone(&self.dirty_table),
+            ptr_write_table: Arc::clone(&self.ptr_write_table),
         }
     }
 }
