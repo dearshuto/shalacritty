@@ -1,12 +1,13 @@
 use std::{borrow::Cow, collections::HashMap, marker::PhantomData};
 
+use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
 use crate::gfx::content_plotter::Diff;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Pod, Copy, Clone, Zeroable)]
 struct CharacterData {
     transform0: [f32; 4],
     transform1: [f32; 4],
@@ -243,26 +244,27 @@ impl<'a> TextRenderer<'a> {
             .iter()
             .map(|info| {
                 let t = info.transform;
-                CharacterData {
-                    transform0: [t[0], t[1], t[2], 0.0],
-                    transform1: [t[3], t[4], t[5], 0.0],
-                    fore_ground_color: info.fore_ground_color,
-                    uv_bl: [info.uv0[0], info.uv0[1]],
-                    uv_tr: [info.uv1[0], info.uv1[1]],
-                }
+                (
+                    info.index,
+                    CharacterData {
+                        transform0: [t[0], t[1], t[2], 0.0],
+                        transform1: [t[3], t[4], t[5], 0.0],
+                        fore_ground_color: info.fore_ground_color,
+                        uv_bl: [info.uv0[0], info.uv0[1]],
+                        uv_tr: [info.uv1[0], info.uv1[1]],
+                    },
+                )
             })
-            .collect::<Vec<CharacterData>>();
+            .collect::<Vec<(usize, CharacterData)>>();
 
         if !data.is_empty() {
-            let binary = unsafe {
-                std::slice::from_raw_parts(
-                    data.as_ptr() as *const _ as *const u8,
-                    std::mem::size_of::<CharacterData>() * data.len(),
-                )
-            };
-
-            queue.write_buffer(buffer, 0, binary);
+            for (index, data) in data {
+                let offset = index * std::mem::size_of::<CharacterData>();
+                let binary = bytemuck::bytes_of(&data);
+                queue.write_buffer(buffer, offset as u64, binary);
+            }
         }
+
         let texture = self.glyph_texture.as_ref().unwrap();
         for texture_patch in diff.glyph_texture_patches() {
             let image_copy = wgpu::ImageCopyTexture {
