@@ -75,8 +75,13 @@ impl Diff {
     }
 }
 
+struct CharacterInfoCache {
+    pub code: char,
+    pub color: Color,
+}
+
 pub struct ContentPlotter {
-    old_items: Vec<char>,
+    old_items: Vec<CharacterInfoCache>,
 
     // TODO: グリフ画像を生成する処理は外部からさせるようにしたい
     glyph_writer: GlyphWriter,
@@ -114,8 +119,8 @@ impl ContentPlotter {
                 let code = cell.c;
 
                 // 差分検出
-                if let Some(old_code) = self.old_items.get(index) {
-                    if *old_code == code {
+                if let Some(old_item) = self.old_items.get(index) {
+                    if old_item.code == cell.c && old_item.color == cell.fg {
                         return None;
                     }
                 }
@@ -183,7 +188,13 @@ impl ContentPlotter {
             .collect::<Vec<CharacterInfo>>();
 
         // 新たな値をキャッシュ。次の差分検出に使う。
-        self.old_items = cells.iter().map(|c| c.c).collect();
+        self.old_items = cells
+            .iter()
+            .map(|c| CharacterInfoCache {
+                code: c.c,
+                color: c.fg,
+            })
+            .collect();
 
         // グリフ
         let glyph_texture_patches = glyph_patches
