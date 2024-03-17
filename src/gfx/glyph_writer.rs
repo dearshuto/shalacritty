@@ -137,7 +137,7 @@ impl GlyphWriter {
                     BitmapBuffer::Rgb(buffer) => {
                         buffer.chunks(3).map(|rgb| rgb[0]).collect::<Vec<u8>>()
                     }
-                    BitmapBuffer::Rgba(_) => todo!(),
+                    BitmapBuffer::Rgba(_) => Vec::default(),
                 };
 
                 Some(GlyphImagePatch {

@@ -267,6 +267,13 @@ impl<'a> TextRenderer<'a> {
 
         let texture = self.glyph_texture.as_ref().unwrap();
         for texture_patch in diff.glyph_texture_patches() {
+            if texture_patch.width() == 0
+                || texture.height() == 0
+                || texture_patch.pixels().is_empty()
+            {
+                continue;
+            }
+
             let image_copy = wgpu::ImageCopyTexture {
                 texture,
                 mip_level: 0,

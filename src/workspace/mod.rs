@@ -4,7 +4,7 @@ mod virtual_window_manager;
 
 pub use virtual_window_manager::{VirtualWindowId, VirtualWindowManager};
 
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use alacritty_terminal::{
     event::WindowSize,
@@ -100,6 +100,14 @@ impl<'a> Workspace<'a> {
 
     pub fn update(&mut self) {
         self.teletype_manager.update();
+
+        for ptr_write in self.teletype_manager.consume_ptr_write() {
+            self.sender
+                .as_mut()
+                .unwrap()
+                .send(Msg::Input(Cow::Owned(ptr_write)))
+                .unwrap();
+        }
 
         self.virtual_window_manager.uodate();
 
