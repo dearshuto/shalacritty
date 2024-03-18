@@ -12,6 +12,7 @@ struct CharacterData {
     transform0: [f32; 4],
     transform1: [f32; 4],
     fore_ground_color: [f32; 4],
+    background_color: [f32; 4],
     uv_bl: [f32; 2],
     uv_tr: [f32; 2],
 }
@@ -250,6 +251,7 @@ impl<'a> TextRenderer<'a> {
                         transform0: [t[0], t[1], t[2], 0.0],
                         transform1: [t[3], t[4], t[5], 0.0],
                         fore_ground_color: info.fore_ground_color,
+                        background_color: info.back_ground_color,
                         uv_bl: [info.uv0[0], info.uv0[1]],
                         uv_tr: [info.uv1[0], info.uv1[1]],
                     },
