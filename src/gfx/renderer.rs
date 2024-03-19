@@ -291,33 +291,6 @@ impl<'a> Renderer<'a> {
             self.background_renderer.render(id, render_pass);
         }
 
-        // カーソル描画
-        {
-            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            render_pass.set_viewport(
-                0.0,
-                0.0,
-                frame.texture.size().width as f32,
-                frame.texture.size().height as f32,
-                0.0,
-                1.0,
-            );
-            self.cursor_renderer.render(id, render_pass);
-        }
-
         // 文字描画
         {
             let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -343,6 +316,33 @@ impl<'a> Renderer<'a> {
                 1.0,
             );
             self.text_renderer.render(id, render_pass);
+        }
+
+        // カーソル描画
+        {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_viewport(
+                0.0,
+                0.0,
+                frame.texture.size().width as f32,
+                frame.texture.size().height as f32,
+                0.0,
+                1.0,
+            );
+            self.cursor_renderer.render(id, render_pass);
         }
 
         // スキャンバッファーにコピー
