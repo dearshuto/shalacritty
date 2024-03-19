@@ -1,5 +1,6 @@
 use alacritty_terminal::{
     grid::Indexed,
+    index::{Column, Line, Point},
     term::{cell::Cell, RenderableContent, RenderableCursor},
     vte::ansi::{Color, NamedColor},
 };
@@ -78,6 +79,7 @@ impl Diff {
 struct CharacterInfoCache {
     pub code: char,
     pub color: Color,
+    pub point: Point<Line, Column>,
 }
 
 pub struct ContentPlotter {
@@ -120,7 +122,10 @@ impl ContentPlotter {
 
                 // 差分検出
                 if let Some(old_item) = self.old_items.get(index) {
-                    if old_item.code == cell.c && old_item.color == cell.fg {
+                    if old_item.code == cell.c
+                        && old_item.color == cell.fg
+                        && old_item.point == cell.point
+                    {
                         return None;
                     }
                 }
@@ -193,6 +198,7 @@ impl ContentPlotter {
             .map(|c| CharacterInfoCache {
                 code: c.c,
                 color: c.fg,
+                point: c.point,
             })
             .collect();
 
