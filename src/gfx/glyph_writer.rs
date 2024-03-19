@@ -76,20 +76,18 @@ impl GlyphWriter {
         }
     }
 
-    pub fn execute(
-        &mut self,
-        codes: &[char],
-        glyph_manager: &mut GlyphManager,
-    ) -> Vec<GlyphImagePatch> {
+    pub fn execute<T>(&mut self, codes: T, glyph_manager: &mut GlyphManager) -> Vec<GlyphImagePatch>
+    where
+        T: Iterator<Item = char>,
+    {
         let diff_items = codes
-            .iter()
             .filter_map(|code| {
-                if self.character_data.contains_key(code) {
+                if self.character_data.contains_key(&code) {
                     return None;
                 };
 
                 // 空白はグリフが存在しないので特別扱い
-                if *code == ' ' {
+                if code == ' ' {
                     return Some((
                         ' ',
                         CharacterCache {
@@ -101,7 +99,7 @@ impl GlyphWriter {
                     ));
                 }
 
-                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(*code) else {
+                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(code) else {
                     return None;
                 };
 
@@ -116,7 +114,7 @@ impl GlyphWriter {
                 // x がはじまで到達したら、y は次の行に移動して x は先頭に戻る
                 self.current_y += (self.current_x + 1) / 64;
                 self.current_x = (self.current_x + 1) % 64;
-                Some((*code, character_data))
+                Some((code, character_data))
             })
             .collect::<Vec<(char, CharacterCache)>>();
 
