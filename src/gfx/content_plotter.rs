@@ -109,9 +109,9 @@ impl ContentPlotter {
         let cells = renderable_content
             .display_iter
             .collect::<Vec<Indexed<&Cell>>>();
-        let codes = cells.iter().map(|c| c.c).collect::<Vec<char>>();
 
-        let glyph_patches = self.glyph_writer.execute(&codes, glyph_manager);
+        let codes = cells.iter().map(|c| c.c);
+        let glyph_patches = self.glyph_writer.execute(codes, glyph_manager);
 
         // 表示要素を描画に必要な情報に変換
         let items = cells
