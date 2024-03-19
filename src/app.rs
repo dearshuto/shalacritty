@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use winit::{
     event::{ElementState, Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
+    keyboard::NamedKey,
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
@@ -46,10 +47,26 @@ impl App {
                             return;
                         }
 
-                        let Some(text) = event.text_with_all_modifiers() else {
+                        if let Some(text) = event.text_with_all_modifiers() {
+                            workspace.send(window_id, text);
                             return;
                         };
-                        workspace.send(window_id, text);
+
+                        if let Some(name_key) = match event.logical_key {
+                            winit::keyboard::Key::Named(key) => match key {
+                                NamedKey::ArrowUp => Some("ArrowUp"),
+                                NamedKey::ArrowDown => Some("ArrowDown"),
+                                NamedKey::ArrowRight => Some("ArrowRight"),
+                                NamedKey::ArrowLeft => Some("ArrowLeft"),
+                                _ => None,
+                            },
+                            // winit::keyboard::Key::Character(_) => {}
+                            // winit::keyboard::Key::Unidentified(_) => {}
+                            // winit::keyboard::Key::Dead(_) => {}
+                            _ => None,
+                        } {
+                            workspace.send(window_id, name_key);
+                        }
                     }
                     WindowEvent::CloseRequested => {
                         target.exit();

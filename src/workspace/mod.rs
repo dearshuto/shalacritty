@@ -279,12 +279,16 @@ impl<'a> Workspace<'a> {
 
         let send_data: std::borrow::Cow<[u8]> = match text {
             // 上
+            "ArrowUp" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
             "\u{f700}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
             // 下
+            "ArrowDown" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
             "\u{f701}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
             // 左
+            "ArrowLeft" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
             "\u{f702}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
             // 右
+            "ArrowRight" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
             "\u{f703}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
             _ => std::borrow::Cow::Owned(bytes),
         };
