@@ -5,13 +5,24 @@ use alacritty_terminal::{
     event_loop::{EventLoopSender, Msg},
 };
 
-use crate::tty::{TeletypeId, TeletypeManager};
-
-use super::multiplexers::IShellManager;
+use crate::{
+    multiplexers::IShellManager,
+    tty::{TeletypeId, TeletypeManager},
+};
 
 pub struct MultiplexersAdapter {
     teletype_manager: TeletypeManager,
     event_loop_sender_table: HashMap<TeletypeId, EventLoopSender>,
+}
+
+impl MultiplexersAdapter {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self {
+            teletype_manager: TeletypeManager::new(),
+            event_loop_sender_table: HashMap::default(),
+        }
+    }
 }
 
 impl IShellManager for MultiplexersAdapter {

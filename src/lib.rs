@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod gfx;
+mod multiplexers;
 mod tty;
 mod window;
 mod workspace;
