@@ -30,7 +30,6 @@ pub struct TileManager<TShellManager: IShellManager> {
 }
 
 impl<TShellManager: IShellManager> TileManager<TShellManager> {
-    #[allow(dead_code)]
     pub fn new(mut shell_manager: TShellManager) -> (Self, TileId) {
         let id = shell_manager.spawn();
         let root_tile_id = TileId {
