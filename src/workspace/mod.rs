@@ -1,8 +1,5 @@
+mod detail;
 mod multiplexers;
-mod multiplexers_adapter;
-mod virtual_window_manager;
-
-pub use virtual_window_manager::{VirtualWindowId, VirtualWindowManager};
 
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
@@ -14,9 +11,15 @@ use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
     gfx::{ContentPlotter, GlyphManager, Renderer, RendererUpdateParams},
+
+    // 本体は detail 以下にはアクセスさせたくない
+    // multiplexers モジュールへの移植途中の互換性保持として直接参照している
+    multiplexers::detail::{VirtualWindowId, VirtualWindowManager},
+
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
-    Config, ConfigService,
+    Config,
+    ConfigService,
 };
 
 pub struct Workspace<'a> {
