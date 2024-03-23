@@ -1,5 +1,4 @@
 mod detail;
-mod multiplexers;
 
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
@@ -14,13 +13,18 @@ use crate::{
 
     // 本体は detail 以下にはアクセスさせたくない
     // multiplexers モジュールへの移植途中の互換性保持として直接参照している
-    multiplexers::detail::{VirtualWindowId, VirtualWindowManager},
+    multiplexers::{
+        detail::{VirtualWindowId, VirtualWindowManager},
+        TileManager,
+    },
 
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
     Config,
     ConfigService,
 };
+
+use self::detail::MultiplexersAdapter;
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -43,6 +47,8 @@ pub struct Workspace<'a> {
     // 操作対象となっているウィンドウ
     active_window_id: Option<VirtualWindowId>,
 
+    tile_manager: TileManager<MultiplexersAdapter>,
+
     old_config: Option<Config>,
 }
 
@@ -61,6 +67,8 @@ impl<'a> Workspace<'a> {
         let id = virtual_window_manager.spawn_virtual_window(64, 64);
         let _virtual_window = virtual_window_manager.try_get_window(id);
 
+        let (tile_manager, _id) = TileManager::new(MultiplexersAdapter::new());
+
         Self {
             instance,
             config_service,
@@ -74,6 +82,7 @@ impl<'a> Workspace<'a> {
             virtual_window_manager,
             virtual_window_tty_table: HashMap::default(),
             active_window_id: None,
+            tile_manager,
             old_config: None,
         }
     }
@@ -103,6 +112,7 @@ impl<'a> Workspace<'a> {
 
     pub fn update(&mut self) {
         self.teletype_manager.update();
+        self.tile_manager.update();
 
         for ptr_write in self.teletype_manager.consume_ptr_write() {
             self.sender
