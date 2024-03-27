@@ -3,6 +3,7 @@ mod config;
 mod gfx;
 mod multiplexers;
 mod tty;
+mod util;
 mod window;
 mod workspace;
 
