@@ -7,6 +7,8 @@ use alacritty_terminal::{
 
 use nalgebra::{Matrix3, Vector2};
 
+use crate::util::{DiffCalculator, IDiffCalculator};
+
 use super::{GlyphManager, GlyphWriter};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -76,6 +78,7 @@ impl Diff {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CharacterInfoCache {
     pub code: char,
     pub color: Color,
@@ -83,19 +86,21 @@ struct CharacterInfoCache {
 }
 
 pub struct ContentPlotter {
-    old_items: Vec<CharacterInfoCache>,
-
     // TODO: グリフ画像を生成する処理は外部からさせるようにしたい
     glyph_writer: GlyphWriter,
+
+    // 差分検出
+    diff_calculator: DiffCalculator<CharacterInfoCache>,
 }
 
 impl ContentPlotter {
     pub fn new() -> Self {
         let glyph_writer = GlyphWriter::new();
+        let diff_calculator = DiffCalculator::new();
 
         Self {
-            old_items: Vec::default(),
             glyph_writer,
+            diff_calculator,
         }
     }
 
@@ -110,26 +115,26 @@ impl ContentPlotter {
             .display_iter
             .collect::<Vec<Indexed<&Cell>>>();
 
-        let codes = cells.iter().map(|c| c.c);
-        let glyph_patches = self.glyph_writer.execute(codes, glyph_manager);
+        // 差分検出
+        let items = cells.iter().map(|c| CharacterInfoCache {
+            code: c.c,
+            color: c.fg,
+            point: c.point,
+        });
+        let diff = self.diff_calculator.calculate(items);
+
+        // 差分をグリフ化
+        let glyph_patches = self
+            .glyph_writer
+            .execute(diff.items().iter().map(|c| c.code), glyph_manager);
 
         // 表示要素を描画に必要な情報に変換
-        let items = cells
-            .iter()
-            .enumerate()
-            .filter_map(|(index, cell)| {
-                let code = cell.c;
+        let items = (0..diff.items().len())
+            .map(|index| {
+                let item = &diff.items()[index];
+                let item_index = diff.indicies()[index];
 
-                // 差分検出
-                if let Some(old_item) = self.old_items.get(index) {
-                    if old_item.code == cell.c
-                        && old_item.color == cell.fg
-                        && old_item.point == cell.point
-                    {
-                        return None;
-                    }
-                }
-
+                let code = item.code;
                 let glyph = glyph_manager.get_rasterized_glyph(code);
 
                 // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
@@ -159,8 +164,8 @@ impl ContentPlotter {
                 // 画面上に配置
                 let offset_matrix = Matrix3::new_translation(
                     &(Vector2::new(
-                        cell.point.column.0 as f32 / (size.0 as f32 / 16.0),
-                        cell.point.line.0 as f32 / (size.1 as f32 / 16.0),
+                        item.point.column.0 as f32 / (size.0 as f32 / 16.0),
+                        item.point.line.0 as f32 / (size.1 as f32 / 16.0),
                     )),
                 );
 
@@ -171,7 +176,7 @@ impl ContentPlotter {
                     * local_pixel_scale_matrix;
 
                 let character = self.glyph_writer.get_clip_rect(code);
-                let fore_ground_color = match cell.fg {
+                let fore_ground_color = match item.color {
                     Color::Named(c) => Self::convert_named_color(c),
                     Color::Spec(rgb) => [
                         rgb.r as f32 / 255.0,
@@ -181,26 +186,16 @@ impl ContentPlotter {
                     ],
                     Color::Indexed(i) => Self::convert_index_color(i),
                 };
-                Some(CharacterInfo {
+                CharacterInfo {
                     code,
                     transform: transform_matrix.transpose().remove_column(2),
                     fore_ground_color,
                     uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
                     uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
-                    index,
-                })
+                    index: item_index,
+                }
             })
             .collect::<Vec<CharacterInfo>>();
-
-        // 新たな値をキャッシュ。次の差分検出に使う。
-        self.old_items = cells
-            .iter()
-            .map(|c| CharacterInfoCache {
-                code: c.c,
-                color: c.fg,
-                point: c.point,
-            })
-            .collect();
 
         // グリフ
         let glyph_texture_patches = glyph_patches
