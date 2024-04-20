@@ -428,9 +428,9 @@ fn create_bind_group(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
     });
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -446,7 +446,7 @@ fn create_bind_group(
                 resource: wgpu::BindingResource::TextureView(&texture.create_view(
                     &wgpu::TextureViewDescriptor {
                         label: None,
-                        format: Some(wgpu::TextureFormat::Rgba8Unorm),
+                        format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
                         dimension: Some(wgpu::TextureViewDimension::D2),
                         aspect: wgpu::TextureAspect::All,
                         base_mip_level: 0,
