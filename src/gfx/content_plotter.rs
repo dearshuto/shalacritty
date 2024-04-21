@@ -1,7 +1,7 @@
 use alacritty_terminal::{
     grid::Indexed,
     index::{Column, Line, Point},
-    term::{cell::Cell, RenderableContent, RenderableCursor},
+    term::cell::Cell,
     vte::ansi::{Color, NamedColor},
 };
 
@@ -56,7 +56,7 @@ impl GlyphTexturePatch {
 pub struct Diff {
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     character_info_array: Vec<CharacterInfo>,
-    cursor: Option<RenderableCursor>,
+    cursor: Option<Point>,
     item_count: i32,
 }
 
@@ -69,7 +69,7 @@ impl Diff {
         &self.character_info_array
     }
 
-    pub fn cursor(&self) -> Option<&RenderableCursor> {
+    pub fn cursor(&self) -> Option<&Point> {
         self.cursor.as_ref()
     }
 
@@ -106,15 +106,11 @@ impl ContentPlotter {
 
     pub fn calculate_diff(
         &mut self,
-        renderable_content: RenderableContent,
+        cells: &[Indexed<&Cell>],
+        cursor_point: &Point,
         glyph_manager: &mut GlyphManager,
         size: (u32, u32),
     ) -> Diff {
-        // グリフは全部作り直してる。差分検出したい
-        let cells = renderable_content
-            .display_iter
-            .collect::<Vec<Indexed<&Cell>>>();
-
         // 差分検出
         let items = cells.iter().map(|c| CharacterInfoCache {
             code: c.c,
@@ -216,7 +212,7 @@ impl ContentPlotter {
         Diff {
             glyph_texture_patches,
             character_info_array: items,
-            cursor: Some(renderable_content.cursor),
+            cursor: Some(cursor_point.clone()),
             item_count,
         }
     }
