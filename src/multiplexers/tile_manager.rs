@@ -63,7 +63,22 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        // 描画領域を計算
         self.virtual_window_manager.resize(width, height);
+
+        // 描画領域をシェルに反映
+        for (tile_id, shell_id) in &self.tile_shell_table {
+            let virtual_window_id = tile_id.internal;
+            let Some((width, height)) = self
+                .virtual_window_manager
+                .try_get_actual_size(virtual_window_id)
+            else {
+                continue;
+            };
+
+            self.shell_manager
+                .resize(*shell_id, width as i32, height as i32);
+        }
     }
 
     #[allow(dead_code)]
