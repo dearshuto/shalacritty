@@ -22,7 +22,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Background {
-    #[serde(default)]
+    #[serde(default = "default_clear_color")]
     pub clear_color: [f32; 4],
 
     #[serde(default)]
@@ -31,6 +31,10 @@ pub struct Background {
 
 fn default_image_alpha() -> f32 {
     1.0
+}
+
+fn default_clear_color() -> [f32; 4] {
+    [0.0, 0.0, 0.0, 1.0]
 }
 
 pub struct ConfigService {
