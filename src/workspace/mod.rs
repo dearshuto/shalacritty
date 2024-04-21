@@ -252,6 +252,11 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn send(&mut self, _id: WindowId, text: &str) {
+        // 将来的に乗り換え予定
+        // この行以外は不要になる
+        self.tile_manager.send_input(text);
+
+        // multiplexers_adapter にコピった実装があるので統一すべし
         let mut bytes = Vec::with_capacity(text.len() + 1);
         bytes.extend_from_slice(text.as_bytes());
         if text.is_empty() {
@@ -279,9 +284,6 @@ impl<'a> Workspace<'a> {
             .unwrap()
             .send(Msg::Input(send_data))
             .unwrap();
-
-        // 将来的に乗り換え予定
-        self.tile_manager.send_input(text);
     }
 
     pub fn is_empty(&self) -> bool {
