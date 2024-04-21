@@ -53,7 +53,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         (instance, tile_id)
     }
 
-    #[allow(dead_code)]
     pub fn update(&mut self) {
         // まだ動いてるやつだけ残す
         self.id_set.retain(|id| self.shell_manager.is_running(*id));
