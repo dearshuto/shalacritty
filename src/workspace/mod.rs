@@ -165,22 +165,25 @@ impl<'a> Workspace<'a> {
         let image_path = self.config_diff.consume_background_path_migrated();
         let image_alpha = self.config_diff.consume_image_alpha();
 
-        // 表示する要素が更新されていたら描画する要素に反映する
-        for (window_id, value) in &self.window_tty_table {
+        for window_id in self.window_manager.ids() {
             // 最描画要求
             let Some(window) = self.window_manager.try_get_window(*window_id) else {
                 return;
             };
-            window.request_redraw();
 
-            for id in value {
-                // 変化がなければなにもしない
-                if !self.teletype_manager.is_dirty(*id) && !is_config_dirty {
-                    continue;
-                }
+            let Some(tty_ids) = self.window_tty_table.get(window_id) else {
+                continue;
+            };
 
+            // 差分がなかったらなにもしない
+            let is_tty_dirty = tty_ids.iter().all(|id| self.teletype_manager.is_dirty(*id));
+            if !is_tty_dirty && !is_config_dirty {
+                continue;
+            }
+
+            for tty_id in tty_ids {
                 // レンダラーに反映
-                self.teletype_manager.get_content(*id, |c| {
+                self.teletype_manager.get_content(*tty_id, |c| {
                     let cells = c.display_iter.collect::<Vec<Indexed<&Cell>>>();
                     let diff = self.content_plotter.calculate_diff(
                         &cells,
@@ -200,46 +203,10 @@ impl<'a> Workspace<'a> {
                 });
 
                 // ダーティフラグを解除
-                self.teletype_manager.clear_dirty(*id);
+                self.teletype_manager.clear_dirty(*tty_id);
             }
-        }
 
-        // TODO: ↑ は背景の変更だけにして処理を切り離したい
-        // tty の差分をレンダラーに反映
-        for window_id in self.window_manager.ids() {
-            let Some(window) = self.window_manager.try_get_window(*window_id) else {
-                continue;
-            };
-
-            let Some(teletype_ids) = self.window_tty_table.get(window_id) else {
-                continue;
-            };
-
-            for teletype_id in teletype_ids {
-                if !self.teletype_manager.is_dirty(*teletype_id) {
-                    continue;
-                }
-
-                // レンダラーに反映
-                self.teletype_manager.get_content(*teletype_id, |c| {
-                    let cells = c.display_iter.collect::<Vec<Indexed<&Cell>>>();
-                    let diff = self.content_plotter.calculate_diff(
-                        &cells,
-                        &c.cursor.point,
-                        &mut self.glyph_manager,
-                        (window.inner_size().width, window.inner_size().height),
-                    );
-                    let update_params = RendererUpdateParams::<String>::new(
-                        window.inner_size().width,
-                        window.inner_size().height,
-                    )
-                    .with_diff(diff);
-                    self.renderer.update(*window_id, update_params);
-                });
-
-                // ダーティフラグを解除
-                self.teletype_manager.clear_dirty(*teletype_id);
-            }
+            window.request_redraw();
         }
     }
 
