@@ -182,10 +182,7 @@ impl VirtualWindowManager {
     }
 
     pub fn try_get_actual_size(&self, id: VirtualWindowId) -> Option<(u32, u32)> {
-        let Some((width, height)) = self.actual_size_table.get(&id) else {
-            return None;
-        };
-
+        let (width, height) = self.actual_size_table.get(&id)?;
         Some((*width, *height))
     }
 }
