@@ -39,13 +39,15 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             internal: VirtualWindowId::default(),
         };
 
+        let shell_id = shell_manager.spawn();
+
         let instance = Self {
             shell_manager,
             virtual_window_manager: VirtualWindowManager::new(),
             hierarchy_table: HashMap::from([(root_tile_id, vec![tile_id])]),
             root_tile_id,
-            id_set: HashSet::default(),
-            active_shell_id: None,
+            id_set: HashSet::from([shell_id]),
+            active_shell_id: Some(shell_id),
             tile_shell_table: HashMap::from([(tile_id, id)]),
         };
         (instance, tile_id)
