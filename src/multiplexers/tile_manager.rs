@@ -105,6 +105,14 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.shell_manager.send_input(*active_shell_id, input);
     }
 
+    pub fn enumerate_content(
+        &self,
+        id: TileId,
+    ) -> impl Iterator<Item = TShellManager::Content> + '_ {
+        let shell_id = self.tile_shell_table.get(&id).unwrap();
+        self.shell_manager.enumerate_content(*shell_id)
+    }
+
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.id_set.is_empty()

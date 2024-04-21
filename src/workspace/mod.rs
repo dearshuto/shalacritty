@@ -1,7 +1,11 @@
 mod detail;
 mod diff_calculator;
 
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use alacritty_terminal::{
     event::WindowSize,
@@ -16,7 +20,7 @@ use crate::{
     // multiplexers モジュールへの移植途中の互換性保持として直接参照している
     multiplexers::{
         detail::{VirtualWindowId, VirtualWindowManager},
-        TileManager,
+        TileId, TileManager,
     },
 
     tty::{TeletypeId, TeletypeManager},
@@ -45,6 +49,9 @@ pub struct Workspace<'a> {
     // VirtualWindow -> Tty
     virtual_window_tty_table: HashMap<VirtualWindowId, TeletypeId>,
 
+    // WindowId -> TileId
+    tile_id_set: HashSet<TileId>,
+
     // 操作対象となっているウィンドウ
     active_window_id: Option<VirtualWindowId>,
 
@@ -68,7 +75,7 @@ impl<'a> Workspace<'a> {
         let id = virtual_window_manager.spawn_virtual_window(64, 64);
         let _virtual_window = virtual_window_manager.try_get_window(id);
 
-        let (tile_manager, _id) = TileManager::new(MultiplexersAdapter::new());
+        let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
 
         Self {
             instance,
@@ -82,6 +89,7 @@ impl<'a> Workspace<'a> {
             sender: None,
             virtual_window_manager,
             virtual_window_tty_table: HashMap::default(),
+            tile_id_set: HashSet::from([tile_id]),
             active_window_id: None,
             tile_manager,
             old_config: None,
@@ -124,6 +132,27 @@ impl<'a> Workspace<'a> {
         }
 
         self.virtual_window_manager.uodate();
+
+        // 将来的にこれに載せ替える
+        for window_id in self.window_manager.ids() {
+            for tile_id in &self.tile_id_set {
+                let Some(window) = self.window_manager.try_get_window(*window_id) else {
+                    continue;
+                };
+
+                let _contents = self.tile_manager.enumerate_content(*tile_id);
+                let _update_params = RendererUpdateParams::<String>::new(
+                    window.inner_size().width,
+                    window.inner_size().height,
+                )
+                // .with_diff(diff)
+                // .with_background_color(background)
+                // .with_image_alpha(image_alpha)
+                // .with_image_path(image_path.clone())
+                ;
+                // self.renderer.update(*window_id, update_params);
+            }
+        }
 
         // 表示する要素が更新されていたら描画する要素に反映する
         for (window_id, value) in &self.window_tty_table {
