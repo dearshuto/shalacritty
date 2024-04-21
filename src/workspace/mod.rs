@@ -27,11 +27,10 @@ use crate::{
 
     tty::{TeletypeId, TeletypeManager},
     window::WindowManager,
-    Config,
     ConfigService,
 };
 
-use self::detail::MultiplexersAdapter;
+use self::detail::{ConfigDiff, MultiplexersAdapter};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -59,7 +58,8 @@ pub struct Workspace<'a> {
 
     tile_manager: TileManager<MultiplexersAdapter>,
 
-    old_config: Option<Config>,
+    // 設定の差分
+    config_diff: ConfigDiff,
 }
 
 impl<'a> Workspace<'a> {
@@ -94,7 +94,7 @@ impl<'a> Workspace<'a> {
             tile_id_set: HashSet::from([tile_id]),
             active_window_id: None,
             tile_manager,
-            old_config: None,
+            config_diff: ConfigDiff::new(),
         }
     }
 
@@ -122,6 +122,10 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn update(&mut self) {
+        // 設定の差分検出
+        self.config_diff
+            .update(&self.config_service.read().unwrap());
+
         self.teletype_manager.update();
         self.tile_manager.update();
 
@@ -156,6 +160,11 @@ impl<'a> Workspace<'a> {
             }
         }
 
+        let is_config_dirty = self.config_diff.is_dirty();
+        let background = self.config_diff.consume_clear_color();
+        let image_path = self.config_diff.consume_background_path_migrated();
+        let image_alpha = self.config_diff.consume_image_alpha();
+
         // 表示する要素が更新されていたら描画する要素に反映する
         for (window_id, value) in &self.window_tty_table {
             // 最描画要求
@@ -164,42 +173,9 @@ impl<'a> Workspace<'a> {
             };
             window.request_redraw();
 
-            let (background, image_alpha, image_path) = if self.old_config.is_none() {
-                let config = self.config_service.read().unwrap();
-                self.old_config = Some(config.clone());
-
-                (
-                    Some(config.background.clear_color),
-                    Some(config.image_alpha),
-                    Some(config.image.clone()),
-                )
-            } else {
-                let old_config = self.old_config.as_ref().unwrap();
-                let config = self.config_service.read().unwrap();
-                let background =
-                    if old_config.background.clear_color == config.background.clear_color {
-                        None
-                    } else {
-                        Some(config.background.clear_color)
-                    };
-                let alpha = if old_config.image_alpha == config.image_alpha {
-                    None
-                } else {
-                    Some(config.image_alpha)
-                };
-                let image = if old_config.image == config.image {
-                    None
-                } else {
-                    Some(config.image.clone())
-                };
-                self.old_config = Some(config.clone());
-
-                (background, alpha, image)
-            };
-
             for id in value {
                 // 変化がなければなにもしない
-                if !self.teletype_manager.is_dirty(*id) {
+                if !self.teletype_manager.is_dirty(*id) && !is_config_dirty {
                     continue;
                 }
 
