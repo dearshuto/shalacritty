@@ -103,6 +103,11 @@ impl<'a> BackgroundRenderer<'a> {
     where
         TPath: AsRef<Path>,
     {
+        // 存在しないファイルだったらスカす
+        if !image_path.as_ref().is_file() {
+            return BackgroundId { id: Uuid::new_v4() };
+        }
+
         let instance = create_instance(
             device,
             queue,
