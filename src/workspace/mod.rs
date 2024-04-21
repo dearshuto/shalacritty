@@ -312,6 +312,9 @@ impl<'a> Workspace<'a> {
             .unwrap()
             .send(Msg::Input(send_data))
             .unwrap();
+
+        // 将来的に乗り換え予定
+        self.tile_manager.send_input(text);
     }
 
     pub fn is_empty(&self) -> bool {

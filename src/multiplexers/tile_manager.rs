@@ -82,7 +82,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         tile_id
     }
 
-    #[allow(dead_code)]
     pub fn send_input(&mut self, input: &str) {
         let Some(active_shell_id) = &self.active_shell_id else {
             return;
