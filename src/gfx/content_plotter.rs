@@ -104,20 +104,26 @@ impl ContentPlotter {
         }
     }
 
-    pub fn calculate_diff(
+    pub fn calculate_diff<TCells>(
         &mut self,
-        cells: &[Indexed<&Cell>],
+        cells: TCells,
         cursor_point: &Point,
         glyph_manager: &mut GlyphManager,
         size: (u32, u32),
-    ) -> Diff {
+    ) -> Diff
+    where
+        TCells: Iterator<Item = Indexed<Cell>>,
+    {
         // 差分検出
-        let items = cells.iter().map(|c| CharacterInfoCache {
-            code: c.c,
-            color: c.fg,
-            point: c.point,
-        });
-        let diff = self.diff_calculator.calculate(items);
+        let items = cells
+            .map(|c| CharacterInfoCache {
+                code: c.c,
+                color: c.fg,
+                point: c.point,
+            })
+            .collect::<Vec<CharacterInfoCache>>();
+        let item_count = items.len();
+        let diff = self.diff_calculator.calculate(items.into_iter());
 
         // 差分をグリフ化
         let glyph_patches = self
@@ -208,12 +214,11 @@ impl ContentPlotter {
             })
             .collect::<Vec<GlyphTexturePatch>>();
 
-        let item_count = cells.len() as i32;
         Diff {
             glyph_texture_patches,
             character_info_array: items,
             cursor: Some(cursor_point.clone()),
-            item_count,
+            item_count: item_count as i32,
         }
     }
 

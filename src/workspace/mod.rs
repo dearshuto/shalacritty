@@ -11,7 +11,6 @@ use alacritty_terminal::{
     event::WindowSize,
     event_loop::{EventLoopSender, Msg},
     grid::Indexed,
-    term::cell::Cell,
 };
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
@@ -184,9 +183,12 @@ impl<'a> Workspace<'a> {
             for tty_id in tty_ids {
                 // レンダラーに反映
                 self.teletype_manager.get_content(*tty_id, |c| {
-                    let cells = c.display_iter.collect::<Vec<Indexed<&Cell>>>();
+                    let cells = c.display_iter.map(|c| Indexed {
+                        point: c.point,
+                        cell: c.cell.clone(),
+                    });
                     let diff = self.content_plotter.calculate_diff(
-                        &cells,
+                        cells,
                         &c.cursor.point,
                         &mut self.glyph_manager,
                         (window.inner_size().width, window.inner_size().height),
