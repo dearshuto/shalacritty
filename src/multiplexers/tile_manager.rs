@@ -61,7 +61,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         // TODO: 終了している仮想ウィンドウを除外する
     }
 
-    #[allow(dead_code)]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.virtual_window_manager.resize(width, height);
     }
