@@ -158,8 +158,8 @@ impl<'a> CursorRenderer<'a> {
         // [0, 1] に正規化
         let (x, y) = {
             (
-                cursor.point.column.0 as f32 / (self.size.0 as f32 / 16.0),
-                cursor.point.line.0 as f32 / (self.size.1 as f32 / 16.0),
+                cursor.column.0 as f32 / (self.size.0 as f32 / 16.0),
+                cursor.line.0 as f32 / (self.size.1 as f32 / 16.0),
             )
         };
 
