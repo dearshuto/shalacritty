@@ -37,13 +37,14 @@ impl IShellManager for MultiplexersAdapter {
     }
 
     fn send_input(&mut self, id: Self::Id, _input: &str) {
-        let Some(event_loop_sender) = self.event_loop_sender_table.get(&id) else {
+        let Some(_event_loop_sender) = self.event_loop_sender_table.get(&id) else {
             return;
         };
 
-        event_loop_sender
-            .send(Msg::Input(Cow::Borrowed(&[])))
-            .unwrap();
+        // 本来はここで入力を橋渡しする
+        // event_loop_sender
+        //     .send(Msg::Input(Cow::Borrowed(&[])))
+        //     .unwrap();
     }
 
     fn resize(&mut self, id: Self::Id, _width: i32, _height: i32) {
