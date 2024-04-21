@@ -16,7 +16,6 @@ pub struct MultiplexersAdapter {
 }
 
 impl MultiplexersAdapter {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             teletype_manager: TeletypeManager::new(),
