@@ -3,6 +3,8 @@ use std::{borrow::Cow, collections::HashMap};
 use alacritty_terminal::{
     event::WindowSize,
     event_loop::{EventLoopSender, Msg},
+    grid::Indexed,
+    term::cell::Cell,
 };
 
 use crate::{
@@ -26,6 +28,7 @@ impl MultiplexersAdapter {
 
 impl IShellManager for MultiplexersAdapter {
     type Id = TeletypeId;
+    type Content = Indexed<Cell>;
 
     fn spawn(&mut self) -> Self::Id {
         let (id, event_loop_sender) = self.teletype_manager.create_teletype();
@@ -60,5 +63,19 @@ impl IShellManager for MultiplexersAdapter {
 
     fn is_running(&self, id: Self::Id) -> bool {
         self.event_loop_sender_table.contains_key(&id)
+    }
+
+    fn enumerate_content(&self, id: Self::Id) -> impl Iterator<Item = Self::Content> {
+        let mut contents = Vec::new();
+        self.teletype_manager.get_content(id, |c| {
+            contents = c
+                .display_iter
+                .map(|c| Indexed {
+                    point: c.point,
+                    cell: c.cell.clone(),
+                })
+                .collect();
+        });
+        contents.into_iter()
     }
 }
