@@ -36,15 +36,35 @@ impl IShellManager for MultiplexersAdapter {
         id
     }
 
-    fn send_input(&mut self, id: Self::Id, _input: &str) {
-        let Some(_event_loop_sender) = self.event_loop_sender_table.get(&id) else {
+    fn send_input(&mut self, id: Self::Id, input: &str) {
+        let Some(event_loop_sender) = self.event_loop_sender_table.get(&id) else {
             return;
         };
 
-        // 本来はここで入力を橋渡しする
-        // event_loop_sender
-        //     .send(Msg::Input(Cow::Borrowed(&[])))
-        //     .unwrap();
+        // workspace/mod.rs からコピった実装なのでここに集約すべし
+        let mut bytes = Vec::with_capacity(input.len() + 1);
+        bytes.extend_from_slice(input.as_bytes());
+        if input.is_empty() {
+            bytes.push(b'\x1b');
+        }
+
+        let send_data: std::borrow::Cow<[u8]> = match input {
+            // 上
+            "ArrowUp" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
+            "\u{f700}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
+            // 下
+            "ArrowDown" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
+            "\u{f701}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
+            // 左
+            "ArrowLeft" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
+            "\u{f702}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
+            // 右
+            "ArrowRight" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
+            "\u{f703}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
+            _ => std::borrow::Cow::Owned(bytes),
+        };
+
+        event_loop_sender.send(Msg::Input(send_data)).unwrap();
     }
 
     fn resize(&mut self, id: Self::Id, _width: i32, _height: i32) {
