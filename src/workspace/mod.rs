@@ -284,21 +284,6 @@ impl<'a> Workspace<'a> {
         };
 
         for tty_id in tty_ids {
-            self.teletype_manager.is_dirty(*tty_id);
-
-            self.teletype_manager.get_content(*tty_id, |c| {
-                let cells = c.display_iter.collect::<Vec<Indexed<&Cell>>>();
-                let diff = self.content_plotter.calculate_diff(
-                    &cells,
-                    &c.cursor.point,
-                    &mut self.glyph_manager,
-                    (width, height),
-                );
-                let update_params =
-                    RendererUpdateParams::<String>::new(width, height).with_diff(diff);
-                self.renderer.update(id, update_params);
-            });
-
             // tty のリサイズ
             self.teletype_manager.resize(*tty_id, width, height);
 
