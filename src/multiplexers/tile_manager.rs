@@ -31,15 +31,13 @@ pub struct TileManager<TShellManager: IShellManager> {
 
 impl<TShellManager: IShellManager> TileManager<TShellManager> {
     pub fn new(mut shell_manager: TShellManager) -> (Self, TileId) {
-        let id = shell_manager.spawn();
+        let shell_id = shell_manager.spawn();
         let root_tile_id = TileId {
             internal: VirtualWindowId::default(),
         };
         let tile_id = TileId {
             internal: VirtualWindowId::default(),
         };
-
-        let shell_id = shell_manager.spawn();
 
         let instance = Self {
             shell_manager,
@@ -48,7 +46,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             root_tile_id,
             id_set: HashSet::from([shell_id]),
             active_shell_id: Some(shell_id),
-            tile_shell_table: HashMap::from([(tile_id, id)]),
+            tile_shell_table: HashMap::from([(tile_id, shell_id)]),
         };
         (instance, tile_id)
     }
