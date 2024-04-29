@@ -177,6 +177,58 @@ impl VirtualWindowManager {
         }
     }
 
+    /// 既存の仮想ウィンドウを横方向に分割して下側に新たなウィンドウを作成します
+    pub fn split_horizontal(&mut self, id: VirtualWindowId) -> VirtualWindowId {
+        // こうなってるのを
+        // 親 - 分割対象
+        //
+        // こうする
+        // 親 - 新親 -- 分割対象
+        //           └ 新規
+        let Some(window) = self.virtual_window_table.get_mut(&id) else {
+            panic!()
+        };
+        let (width, height) = (window.width, window.height);
+
+        // 分割対象のサイズを半分にする
+        window.height = height / 2;
+
+        // 新たな親となるウィンドウの ID
+        let new_parent_window_id = VirtualWindowId::default();
+
+        // 分割対象の親を付け替える
+        for (id, children) in &mut self.hierarchy_table {
+            let Some(position) = children.iter().position(|child_id| *child_id == *id) else {
+                continue;
+            };
+
+            children.remove(position);
+            children.push(new_parent_window_id);
+            break;
+        }
+
+        // 新規に誕生したウィンドウ
+        // 分割前の半分のサイズ
+        let new_window_id = VirtualWindowId::default();
+        let new_window = VirtualWindow::new(width, height / 2);
+        self.virtual_window_table.insert(new_window_id, new_window);
+        self.hierarchy_table.insert(new_window_id, Vec::default());
+        self.actual_size_table
+            .insert(new_window_id, (width, height / 2));
+
+        // 新親
+        // 子供に分割対象のウィンドウと新規追加のウィンドウをもつ
+        let new_parent_window = VirtualWindow::new(width, height);
+        self.virtual_window_table
+            .insert(new_parent_window_id, new_parent_window);
+        self.hierarchy_table
+            .insert(new_parent_window_id, vec![id, new_window_id]);
+        self.actual_size_table
+            .insert(new_parent_window_id, (width, height));
+
+        new_window_id
+    }
+
     pub fn try_get_window(&self, id: VirtualWindowId) -> Option<&VirtualWindow> {
         self.virtual_window_table.get(&id)
     }
@@ -248,5 +300,20 @@ mod tests {
         let (width, height) = manager.try_get_actual_size(child_id1).unwrap();
         assert_eq!(width, 640);
         assert_eq!(height, 240);
+    }
+
+    // 横方向に画面分割
+    #[test]
+    fn split_horizontal() {
+        let mut manager = VirtualWindowManager::new();
+        let id = manager.spawn_virtual_window(640, 480);
+        let new_window_id = manager.split_horizontal(id);
+
+        manager.uodate();
+        assert_eq!(manager.try_get_actual_size(id).unwrap(), (640, 240));
+        assert_eq!(
+            manager.try_get_actual_size(new_window_id).unwrap(),
+            (640, 240)
+        );
     }
 }
