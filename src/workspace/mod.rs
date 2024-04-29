@@ -73,8 +73,7 @@ impl<'a> Workspace<'a> {
 
         // ウィンドウを分割した仮想的な領域
         let mut virtual_window_manager = VirtualWindowManager::new();
-        let id = virtual_window_manager.spawn_virtual_window(64, 64);
-        let _virtual_window = virtual_window_manager.try_get_window(id);
+        let _id = virtual_window_manager.spawn_virtual_window(64, 64);
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
 
