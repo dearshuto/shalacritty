@@ -55,7 +55,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         // まだ動いてるやつだけ残す
         self.id_set.retain(|id| self.shell_manager.is_running(*id));
 
-        self.virtual_window_manager.uodate();
+        self.virtual_window_manager.update();
 
         // TODO: 終了している仮想ウィンドウを除外する
     }

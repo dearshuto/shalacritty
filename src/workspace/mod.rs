@@ -136,7 +136,7 @@ impl<'a> Workspace<'a> {
                 .unwrap();
         }
 
-        self.virtual_window_manager.uodate();
+        self.virtual_window_manager.update();
 
         // 将来的にこれに載せ替える
         for window_id in self.window_manager.ids() {
