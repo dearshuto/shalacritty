@@ -198,8 +198,8 @@ impl VirtualWindowManager {
         let new_parent_window_id = VirtualWindowId::default();
 
         // 分割対象の親を付け替える
-        for (id, children) in &mut self.hierarchy_table {
-            let Some(position) = children.iter().position(|child_id| *child_id == *id) else {
+        for children in self.hierarchy_table.values_mut() {
+            let Some(position) = children.iter().position(|child_id| *child_id == id) else {
                 continue;
             };
 
