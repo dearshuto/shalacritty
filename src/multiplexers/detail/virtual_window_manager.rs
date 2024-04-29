@@ -94,11 +94,12 @@ impl VirtualWindowManager {
             panic!();
         };
 
-        let Some((_parent_width, parent_height)) = actual_size_table.get(&id) else {
+        let Some((parent_width, parent_height)) = actual_size_table.get(&id) else {
             return;
         };
 
-        let mut h = *parent_height;
+        let (parent_width, parent_height) = (*parent_width, *parent_height);
+        let mut h = parent_height;
         for child_id in children {
             let Some((width, height)) = actual_size_table.get_mut(child_id) else {
                 continue;
@@ -115,7 +116,8 @@ impl VirtualWindowManager {
                 child_window.height.min(h)
             };
 
-            *width = child_window.width;
+            // 現状だと横方向の分割にしか対応してないので横幅は親に追従しておけばよい
+            *width = parent_width;
             *height = new_actual_height;
             h -= new_actual_height;
         }
@@ -309,6 +311,21 @@ mod tests {
         assert_eq!(
             manager.try_get_actual_size(new_window_id).unwrap(),
             (640, 240)
+        );
+    }
+
+    #[test]
+    fn split_horizontal_resize() {
+        let mut manager = VirtualWindowManager::new();
+        let id = manager.spawn_virtual_window(640, 480);
+        let new_window_id = manager.split_horizontal(id);
+
+        manager.resize(320, 480);
+        manager.update();
+        assert_eq!(manager.try_get_actual_size(id).unwrap(), (320, 240));
+        assert_eq!(
+            manager.try_get_actual_size(new_window_id).unwrap(),
+            (320, 240)
         );
     }
 }
