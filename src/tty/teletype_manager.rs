@@ -1,4 +1,5 @@
 use alacritty_terminal::event_loop::{EventLoopSender, State};
+use alacritty_terminal::index::Point;
 use alacritty_terminal::term::RenderableContent;
 use alacritty_terminal::tty::{Options, Pty, Shell};
 use alacritty_terminal::Term;
@@ -120,8 +121,15 @@ impl TeletypeManager {
             .collect()
     }
 
+    // シェルが勝手に閉じた場合に対応するためにこの関数を参照した方がよい
+    // ただ現状は上手に使えてないので allow している
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.io_handle_table.is_empty()
+    }
+
+    pub fn contains(&self, id: TeletypeId) -> bool {
+        self.io_handle_table.contains_key(&id)
     }
 
     pub fn clear_dirty(&mut self, id: TeletypeId) {
@@ -133,6 +141,11 @@ impl TeletypeManager {
         // let terminal = terminal.unwrap();
         // let terminal = terminal.lock();
         func(terminal.renderable_content());
+    }
+
+    pub fn get_cursor(&self, id: TeletypeId) -> Point {
+        let terminal = self.terminal_table.get(&id).unwrap().lock();
+        terminal.renderable_content().cursor.point
     }
 
     pub fn resize(&mut self, id: TeletypeId, width: u32, height: u32) {
