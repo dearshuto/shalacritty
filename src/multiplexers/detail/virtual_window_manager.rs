@@ -57,7 +57,8 @@ impl VirtualWindowManager {
         }
     }
 
-    pub fn uodate(&mut self) {
+    // タイポ修正の互換性維持
+    pub fn update(&mut self) {
         let Some(parent_ids) = self.hierarchy_table.get(&self.root_window_id) else {
             panic!();
         };
@@ -249,7 +250,7 @@ mod tests {
     fn parents() {
         let mut manager = VirtualWindowManager::new();
         let id = manager.spawn_virtual_window(640, 480);
-        manager.uodate();
+        manager.update();
 
         let (width, height) = manager.try_get_actual_size(id).unwrap();
         assert_eq!(width, 640);
@@ -264,7 +265,7 @@ mod tests {
         let child_id = manager
             .spawn_virtual_window_with_parent(640, 480, id)
             .unwrap();
-        manager.uodate();
+        manager.update();
 
         let (width, height) = manager.try_get_actual_size(id).unwrap();
         assert_eq!(width, 640);
@@ -287,7 +288,7 @@ mod tests {
             .spawn_virtual_window_with_parent(640, 240, id)
             .unwrap();
 
-        manager.uodate();
+        manager.update();
 
         let (width, height) = manager.try_get_actual_size(id).unwrap();
         assert_eq!(width, 640);
@@ -309,7 +310,7 @@ mod tests {
         let id = manager.spawn_virtual_window(640, 480);
         let new_window_id = manager.split_horizontal(id);
 
-        manager.uodate();
+        manager.update();
         assert_eq!(manager.try_get_actual_size(id).unwrap(), (640, 240));
         assert_eq!(
             manager.try_get_actual_size(new_window_id).unwrap(),
