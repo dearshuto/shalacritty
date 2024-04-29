@@ -13,10 +13,8 @@ impl Default for VirtualWindowId {
     }
 }
 
-pub struct VirtualWindow {
-    #[allow(dead_code)]
+struct VirtualWindow {
     pub width: u32,
-    #[allow(dead_code)]
     pub height: u32,
 }
 
@@ -228,10 +226,6 @@ impl VirtualWindowManager {
             .insert(new_parent_window_id, (width, height));
 
         new_window_id
-    }
-
-    pub fn try_get_window(&self, id: VirtualWindowId) -> Option<&VirtualWindow> {
-        self.virtual_window_table.get(&id)
     }
 
     pub fn try_get_actual_size(&self, id: VirtualWindowId) -> Option<(u32, u32)> {
