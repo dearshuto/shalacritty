@@ -3,7 +3,11 @@ mod diff_calculator;
 
 use std::{collections::HashSet, sync::Arc};
 
-use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::{
+    grid::Indexed,
+    index::{Column, Line, Point},
+    term::cell::Cell,
+};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
@@ -91,15 +95,21 @@ impl<'a> Workspace<'a> {
                 // 差分がなかったらなにもしない
                 // どうする？
 
-                let content = self.tile_manager.enumerate_content(*tile_id);
+                // グリフの抽出
+                let contents: Vec<Indexed<Cell>> =
+                    self.tile_manager.enumerate_content(*tile_id).collect();
+                for content in &contents {
+                    self.glyph_manager.extract(content.c);
+                }
+
                 let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position(*tile_id);
                 let diff = self.content_plotter.calculate_diff(
-                    content,
+                    contents.into_iter(),
                     &Point {
                         column: Column::from(cursor_x as usize),
                         line: Line::from(cursor_y as usize),
                     },
-                    &mut self.glyph_manager,
+                    &self.glyph_manager,
                     (window.inner_size().width, window.inner_size().height),
                 );
                 let update_params = RendererUpdateParams::new(

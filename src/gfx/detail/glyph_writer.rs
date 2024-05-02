@@ -76,7 +76,7 @@ impl GlyphWriter {
         }
     }
 
-    pub fn execute<T>(&mut self, codes: T, glyph_manager: &mut GlyphManager) -> Vec<GlyphImagePatch>
+    pub fn execute<T>(&mut self, codes: T, glyph_manager: &GlyphManager) -> Vec<GlyphImagePatch>
     where
         T: Iterator<Item = char>,
     {
