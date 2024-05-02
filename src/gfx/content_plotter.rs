@@ -108,7 +108,7 @@ impl ContentPlotter {
         &mut self,
         cells: TCells,
         cursor_point: &Point,
-        glyph_manager: &mut GlyphManager,
+        glyph_manager: &GlyphManager,
         size: (u32, u32),
     ) -> Diff
     where

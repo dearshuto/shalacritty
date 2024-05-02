@@ -84,19 +84,12 @@ impl GlyphManager {
         true
     }
 
+    // 実運用を考えたらノーチェックでグリフを取得する関数は不要かも？
     pub fn get_rasterized_glyph(&self, code: char) -> &RasterizedGlyph {
-        let Some(glyph) = self.rasterized_glyph_table.get(&code) else {
-            return self.rasterized_glyph_table.get(&' ').unwrap();
-        };
-
-        glyph
+        self.acquire_rasterized_glyph(code).unwrap()
     }
 
-    pub fn acquire_rasterized_glyph(&mut self, code: char) -> Option<&RasterizedGlyph> {
-        if !self.extract(code) {
-            return None;
-        }
-
+    pub fn acquire_rasterized_glyph(&self, code: char) -> Option<&RasterizedGlyph> {
         self.rasterized_glyph_table.get(&code)
     }
 }
