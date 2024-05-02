@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crossfont::BitmapBuffer;
 
-use super::GlyphManager;
+use crate::gfx::GlyphManager;
 
 #[derive(Clone, Copy)]
 struct CharacterCache {

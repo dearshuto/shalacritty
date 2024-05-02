@@ -9,7 +9,7 @@ use nalgebra::{Matrix3, Vector2};
 
 use crate::util::{DiffCalculator, IDiffCalculator};
 
-use super::{GlyphManager, GlyphWriter};
+use super::{detail::GlyphWriter, GlyphManager};
 
 #[derive(PartialEq, Clone, Copy)]
 pub struct CharacterInfo {
