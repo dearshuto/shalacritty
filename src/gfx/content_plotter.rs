@@ -9,7 +9,7 @@ use nalgebra::{Matrix3, Vector2};
 
 use crate::util::{DiffCalculator, IDiffCalculator};
 
-use super::{detail::GlyphWriter, GlyphManager};
+use super::{detail::GlyphImagePatch, GlyphManager};
 
 #[derive(PartialEq, Clone, Copy)]
 pub struct CharacterInfo {
@@ -52,19 +52,26 @@ impl GlyphTexturePatch {
     }
 }
 
+impl From<GlyphImagePatch> for GlyphTexturePatch {
+    fn from(value: GlyphImagePatch) -> Self {
+        Self {
+            offset_x: value.offset_x(),
+            offset_y: value.offset_y(),
+            width: value.width(),
+            height: value.height(),
+            pixels: value.pixels().to_vec(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Diff {
-    glyph_texture_patches: Vec<GlyphTexturePatch>,
     character_info_array: Vec<CharacterInfo>,
     cursor: Option<Point>,
     item_count: i32,
 }
 
 impl Diff {
-    pub fn glyph_texture_patches(&self) -> &[GlyphTexturePatch] {
-        &self.glyph_texture_patches
-    }
-
     pub fn character_info_array(&self) -> &[CharacterInfo] {
         &self.character_info_array
     }
@@ -86,22 +93,15 @@ struct CharacterInfoCache {
 }
 
 pub struct ContentPlotter {
-    // TODO: グリフ画像を生成する処理は外部からさせるようにしたい
-    glyph_writer: GlyphWriter,
-
     // 差分検出
     diff_calculator: DiffCalculator<CharacterInfoCache>,
 }
 
 impl ContentPlotter {
     pub fn new() -> Self {
-        let glyph_writer = GlyphWriter::new();
         let diff_calculator = DiffCalculator::new();
 
-        Self {
-            glyph_writer,
-            diff_calculator,
-        }
+        Self { diff_calculator }
     }
 
     pub fn calculate_diff<TCells>(
@@ -124,11 +124,6 @@ impl ContentPlotter {
             .collect::<Vec<CharacterInfoCache>>();
         let item_count = items.len();
         let diff = self.diff_calculator.calculate(items.into_iter());
-
-        // 差分をグリフ化
-        let glyph_patches = self
-            .glyph_writer
-            .execute(diff.items().iter().map(|c| c.code), glyph_manager);
 
         // 表示要素を描画に必要な情報に変換
         let items = (0..diff.items().len())
@@ -177,7 +172,7 @@ impl ContentPlotter {
                     * local_pixel_translate_matrix
                     * local_pixel_scale_matrix;
 
-                let character = self.glyph_writer.get_clip_rect(code);
+                let character = glyph_manager.get_clip_rect(code);
                 let fore_ground_color = match item.color {
                     Color::Named(c) => Self::convert_named_color(c),
                     Color::Spec(rgb) => [
@@ -199,23 +194,7 @@ impl ContentPlotter {
             })
             .collect::<Vec<CharacterInfo>>();
 
-        // グリフ
-        let glyph_texture_patches = glyph_patches
-            .iter()
-            .map(|glyph_patch| {
-                //
-                GlyphTexturePatch {
-                    offset_x: glyph_patch.offset_x(),
-                    offset_y: glyph_patch.offset_y(),
-                    width: glyph_patch.width(),
-                    height: glyph_patch.height(),
-                    pixels: glyph_patch.pixels().to_vec(),
-                }
-            })
-            .collect::<Vec<GlyphTexturePatch>>();
-
         Diff {
-            glyph_texture_patches,
             character_info_array: items,
             cursor: Some(cursor_point.clone()),
             item_count: item_count as i32,

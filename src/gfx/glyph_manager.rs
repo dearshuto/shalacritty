@@ -4,16 +4,49 @@ use crossfont::{BitmapBuffer, RasterizedGlyph};
 
 use super::detail::FontEngine;
 
+use super::{
+    content_plotter::GlyphTexturePatch,
+    detail::{CharacterData, GlyphWriter, IGlyphManager},
+};
+
+pub struct CharacterClipRect {
+    pub uv_begin: [f32; 2],
+    pub uv_end: [f32; 2],
+}
+
+impl From<CharacterData> for CharacterClipRect {
+    fn from(value: CharacterData) -> Self {
+        CharacterClipRect {
+            uv_begin: value.uv_begin,
+            uv_end: value.uv_end,
+        }
+    }
+}
+
+struct GlyphTable {
+    rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
+}
+
+impl IGlyphManager for GlyphTable {
+    fn acquire_rasterized_glyph(&self, code: char) -> Option<&RasterizedGlyph> {
+        self.rasterized_glyph_table.get(&code)
+    }
+}
+
 pub struct GlyphManager {
     font_engine: FontEngine,
-    rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
+    glyph_writer: GlyphWriter,
+    glyph_table: GlyphTable,
 }
 
 impl GlyphManager {
     pub fn new() -> Self {
         Self {
             font_engine: FontEngine::new(),
-            rasterized_glyph_table: HashMap::default(),
+            glyph_table: GlyphTable {
+                rasterized_glyph_table: HashMap::new(),
+            },
+            glyph_writer: GlyphWriter::new(),
         }
     }
 
@@ -30,10 +63,10 @@ impl GlyphManager {
         self.extract_alphabet();
     }
 
-    pub fn extract(&mut self, code: char) -> bool {
+    pub fn extract(&mut self, code: char) -> Option<GlyphTexturePatch> {
         // すでに抽出済み
-        if self.rasterized_glyph_table.contains_key(&code) {
-            return true;
+        if self.glyph_table.rasterized_glyph_table.contains_key(&code) {
+            return None;
         }
 
         // 空白だけ特別扱い
@@ -49,17 +82,47 @@ impl GlyphManager {
                 advance: (0, 0),
                 buffer: BitmapBuffer::Rgb(buffer),
             };
-            self.rasterized_glyph_table.insert(' ', space);
-            return true;
+            self.glyph_table.rasterized_glyph_table.insert(' ', space);
+            let mut glyph_texture_patches = self
+                .glyph_writer
+                .execute([' '].into_iter(), &self.glyph_table);
+
+            return Some(glyph_texture_patches.remove(0).into());
         }
 
         // ラスタライズに失敗した
         let Ok(rasterized_glyph) = self.font_engine.rasterize(code, 32.0) else {
-            return false;
+            return None;
         };
 
-        self.rasterized_glyph_table.insert(code, rasterized_glyph);
-        true
+        self.glyph_table
+            .rasterized_glyph_table
+            .insert(code, rasterized_glyph);
+
+        let mut glyph_texture_patches = self
+            .glyph_writer
+            .execute([code].into_iter(), &self.glyph_table);
+
+        Some(glyph_texture_patches.remove(0).into())
+    }
+
+    pub fn extract_range<TIterator>(
+        &mut self,
+        codes: TIterator,
+    ) -> impl Iterator<Item = GlyphTexturePatch>
+    where
+        TIterator: Iterator<Item = char>,
+    {
+        let mut glyph_texture_patches = Vec::default();
+        for code in codes {
+            let Some(patch) = self.extract(code) else {
+                continue;
+            };
+
+            glyph_texture_patches.push(patch);
+        }
+
+        glyph_texture_patches.into_iter()
     }
 
     // 実運用を考えたらノーチェックでグリフを取得する関数は不要かも？
@@ -68,7 +131,11 @@ impl GlyphManager {
     }
 
     pub fn acquire_rasterized_glyph(&self, code: char) -> Option<&RasterizedGlyph> {
-        self.rasterized_glyph_table.get(&code)
+        self.glyph_table.rasterized_glyph_table.get(&code)
+    }
+
+    pub fn get_clip_rect(&self, code: char) -> CharacterClipRect {
+        self.glyph_writer.get_clip_rect(code).into()
     }
 }
 

@@ -7,7 +7,7 @@ use winit::{
 };
 
 use super::{
-    content_plotter::Diff,
+    content_plotter::{Diff, GlyphTexturePatch},
     detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
 };
 
@@ -16,6 +16,7 @@ pub struct RendererUpdateParams<TPath: AsRef<Path>> {
     height: u32,
     background_color: Option<[f32; 4]>,
     diff: Diff,
+    glyph_texture_patches: Vec<GlyphTexturePatch>,
     image_path: Option<TPath>,
     image_alpha: Option<f32>,
 }
@@ -27,6 +28,7 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
             height,
             background_color: None,
             diff: Diff::default(),
+            glyph_texture_patches: Vec::default(),
             image_path: None,
             image_alpha: None,
         }
@@ -34,6 +36,11 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
 
     pub fn with_diff(mut self, diff: Diff) -> Self {
         self.diff = diff;
+        self
+    }
+
+    pub fn with_glyph_texture_patches(mut self, patches: Vec<GlyphTexturePatch>) -> Self {
+        self.glyph_texture_patches = patches;
         self
     }
 
@@ -238,8 +245,12 @@ impl<'a> Renderer<'a> {
         }
 
         let queue = self.queue_table.get(&id).unwrap();
-        self.text_renderer
-            .update(queue, id, &render_update_params.diff);
+        self.text_renderer.update(
+            queue,
+            id,
+            &render_update_params.diff,
+            &render_update_params.glyph_texture_patches,
+        );
 
         // カーソルレンダラーの更新
         self.cursor_renderer

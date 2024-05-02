@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
-use crate::gfx::content_plotter::Diff;
+use crate::gfx::{content_plotter::Diff, GlyphTexturePatch};
 
 #[repr(C)]
 #[derive(Debug, Pod, Copy, Clone, Zeroable)]
@@ -233,7 +233,13 @@ impl<'a> TextRenderer<'a> {
         self.glyph_texture = Some(texture);
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, id: WindowId, diff: &Diff) {
+    pub fn update(
+        &mut self,
+        queue: &wgpu::Queue,
+        id: WindowId,
+        diff: &Diff,
+        glyph_texture_patches: &[GlyphTexturePatch],
+    ) {
         let buffer = self.character_storage_block_table.get(&id).unwrap();
 
         // 文字数
@@ -264,7 +270,7 @@ impl<'a> TextRenderer<'a> {
         }
 
         let texture = self.glyph_texture.as_ref().unwrap();
-        for texture_patch in diff.glyph_texture_patches() {
+        for texture_patch in glyph_texture_patches {
             if texture_patch.width() == 0
                 || texture.height() == 0
                 || texture_patch.pixels().is_empty()
