@@ -1,36 +1,18 @@
 use std::collections::HashMap;
 
-use crossfont::{BitmapBuffer, FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
+use crossfont::{BitmapBuffer, RasterizedGlyph};
+
+use super::detail::FontEngine;
 
 pub struct GlyphManager {
-    rasterizer: crossfont::Rasterizer,
-    font_key: crossfont::FontKey,
+    font_engine: FontEngine,
     rasterized_glyph_table: HashMap<char, RasterizedGlyph>,
 }
 
 impl GlyphManager {
     pub fn new() -> Self {
-        let mut rasterizer = crossfont::Rasterizer::new().unwrap();
-        let font_key = rasterizer
-            .load_font(
-                &FontDesc::new(
-                    #[cfg(not(any(target_os = "macos", windows)))]
-                    "monospace",
-                    #[cfg(target_os = "macos")]
-                    "Menlo",
-                    #[cfg(target_os = "windows")]
-                    "Consolas",
-                    Style::Description {
-                        slant: Slant::Normal,
-                        weight: Weight::Normal,
-                    },
-                ),
-                crossfont::Size::new(32.0),
-            )
-            .unwrap();
         Self {
-            rasterizer,
-            font_key,
+            font_engine: FontEngine::new(),
             rasterized_glyph_table: HashMap::default(),
         }
     }
@@ -72,11 +54,7 @@ impl GlyphManager {
         }
 
         // ラスタライズに失敗した
-        let Ok(rasterized_glyph) = self.rasterizer.get_glyph(crossfont::GlyphKey {
-            character: code,
-            font_key: self.font_key,
-            size: crossfont::Size::new(32.0),
-        }) else {
+        let Ok(rasterized_glyph) = self.font_engine.rasterize(code, 32.0) else {
             return false;
         };
 
