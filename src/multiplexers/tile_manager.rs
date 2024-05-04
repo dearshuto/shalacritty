@@ -125,8 +125,20 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         &self,
         id: TileId,
     ) -> impl Iterator<Item = TShellManager::Content> + '_ {
-        let shell_id = self.tile_shell_table.get(&id).unwrap();
-        self.shell_manager.enumerate_content(*shell_id)
+        let child_virtual_window_ids = self.virtual_window_manager.find_children(id.internal);
+        let mut ids = vec![id.internal];
+        ids.extend(child_virtual_window_ids);
+
+        let mut contents = Vec::default();
+        for virtual_window_id in ids {
+            let tile_id = TileId {
+                internal: virtual_window_id,
+            };
+            let shell_id = self.tile_shell_table.get(&tile_id).unwrap();
+            let content = self.shell_manager.enumerate_content(*shell_id);
+            contents.extend(content);
+        }
+        contents.into_iter()
     }
 
     pub fn get_cursor_position(&self, id: TileId) -> (u32, u32) {

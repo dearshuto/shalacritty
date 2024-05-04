@@ -233,7 +233,6 @@ impl VirtualWindowManager {
         Some((*width, *height))
     }
 
-    #[allow(dead_code)]
     pub fn find_children(&self, id: VirtualWindowId) -> &[VirtualWindowId] {
         self.hierarchy_table.get(&id).unwrap()
     }
