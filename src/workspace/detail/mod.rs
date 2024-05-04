@@ -1,6 +1,6 @@
-mod multiplexers_adapter;
 mod config_diff;
+mod multiplexers_adapter;
 
-#[allow(unused_imports)]
-pub use multiplexers_adapter::MultiplexersAdapter;
 pub use config_diff::ConfigDiff;
+#[allow(unused_imports)]
+pub use multiplexers_adapter::{ContentAdapter, MultiplexersAdapter};

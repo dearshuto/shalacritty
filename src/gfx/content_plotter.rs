@@ -1,7 +1,5 @@
 use alacritty_terminal::{
-    grid::Indexed,
     index::{Column, Line, Point},
-    term::cell::Cell,
     vte::ansi::{Color, NamedColor},
 };
 
@@ -10,6 +8,17 @@ use nalgebra::{Matrix3, Vector2};
 use crate::util::{DiffCalculator, IDiffCalculator};
 
 use super::{detail::GlyphImagePatch, GlyphManager};
+
+pub trait IContent {
+    type TColor;
+    type TPosition;
+
+    fn code(&self) -> char;
+
+    fn color_fg(&self) -> Self::TColor;
+
+    fn position(&self) -> Self::TPosition;
+}
 
 #[derive(PartialEq, Clone, Copy)]
 pub struct CharacterInfo {
@@ -104,7 +113,7 @@ impl ContentPlotter {
         Self { diff_calculator }
     }
 
-    pub fn calculate_diff<TCells>(
+    pub fn calculate_diff<TCells, TContent>(
         &mut self,
         cells: TCells,
         cursor_point: &Point,
@@ -112,14 +121,15 @@ impl ContentPlotter {
         size: (u32, u32),
     ) -> Diff
     where
-        TCells: Iterator<Item = Indexed<Cell>>,
+        TCells: Iterator<Item = TContent>,
+        TContent: IContent<TColor = Color, TPosition = Point>,
     {
         // 差分検出
         let items = cells
             .map(|c| CharacterInfoCache {
-                code: c.c,
-                color: c.fg,
-                point: c.point,
+                code: c.code(),
+                color: c.color_fg(),
+                point: c.position(),
             })
             .collect::<Vec<CharacterInfoCache>>();
         let item_count = items.len();

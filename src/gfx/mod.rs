@@ -3,6 +3,6 @@ mod detail;
 mod glyph_manager;
 mod renderer;
 
-pub use content_plotter::{ContentPlotter, GlyphTexturePatch};
+pub use content_plotter::{ContentPlotter, GlyphTexturePatch, IContent};
 pub use glyph_manager::GlyphManager;
 pub use renderer::{Renderer, RendererUpdateParams};
