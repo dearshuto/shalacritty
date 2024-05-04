@@ -1,27 +1,22 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use alacritty_terminal::{
-    event::WindowSize,
-    event_loop::{EventLoopSender, Msg},
-    grid::Indexed,
-    term::cell::Cell,
-};
+use alacritty_terminal::{event::WindowSize, event_loop::Msg, grid::Indexed, term::cell::Cell};
 
 use crate::{
     multiplexers::IShellManager,
-    tty::{TeletypeId, TeletypeManager},
+    tty::{TeletypeHandle, TeletypeId, TeletypeManager},
 };
 
 pub struct MultiplexersAdapter {
     teletype_manager: TeletypeManager,
-    event_loop_sender_table: HashMap<TeletypeId, EventLoopSender>,
+    teletype_handle_table: HashMap<TeletypeId, TeletypeHandle>,
 }
 
 impl MultiplexersAdapter {
     pub fn new() -> Self {
         Self {
             teletype_manager: TeletypeManager::new(),
-            event_loop_sender_table: HashMap::default(),
+            teletype_handle_table: HashMap::default(),
         }
     }
 }
@@ -32,27 +27,26 @@ impl IShellManager for MultiplexersAdapter {
 
     fn update(&mut self) {
         for ptr_write in self.teletype_manager.consume_ptr_write() {
-            for sender in self.event_loop_sender_table.values() {
-                sender
-                    .send(Msg::Input(Cow::Owned(ptr_write.clone())))
-                    .unwrap();
+            for sender in self.teletype_handle_table.values() {
+                sender.send(Msg::Input(Cow::Owned(ptr_write.clone())));
             }
         }
 
         self.teletype_manager.update();
 
-        self.event_loop_sender_table
+        self.teletype_handle_table
             .retain(|id, _| self.teletype_manager.contains(*id));
     }
 
     fn spawn(&mut self) -> Self::Id {
-        let (id, event_loop_sender) = self.teletype_manager.create_teletype();
-        self.event_loop_sender_table.insert(id, event_loop_sender);
+        let handle = self.teletype_manager.create_teletype();
+        let id = handle.id();
+        self.teletype_handle_table.insert(id, handle);
         id
     }
 
     fn send_input(&mut self, id: Self::Id, input: &str) {
-        let Some(event_loop_sender) = self.event_loop_sender_table.get(&id) else {
+        let Some(handle) = self.teletype_handle_table.get(&id) else {
             return;
         };
 
@@ -79,39 +73,34 @@ impl IShellManager for MultiplexersAdapter {
             _ => std::borrow::Cow::Owned(bytes),
         };
 
-        event_loop_sender.send(Msg::Input(send_data)).unwrap();
+        handle.send(Msg::Input(send_data));
     }
 
     fn resize(&mut self, id: Self::Id, width: i32, height: i32) {
         self.teletype_manager
             .resize(id, width as u32, height as u32);
 
-        let Some(event_loop_sender) = self.event_loop_sender_table.get(&id) else {
+        let Some(handle) = self.teletype_handle_table.get(&id) else {
             return;
         };
 
         let lines = height as u16 / 16;
         let columns = width as u16 / 16;
-        event_loop_sender
-            .send(Msg::Resize(WindowSize {
-                num_lines: lines,
-                num_cols: columns,
-                cell_width: 8,
-                cell_height: 8,
-            }))
-            .unwrap();
+        handle.send(Msg::Resize(WindowSize {
+            num_lines: lines,
+            num_cols: columns,
+            cell_width: 8,
+            cell_height: 8,
+        }));
     }
 
     fn is_running(&self, id: Self::Id) -> bool {
-        self.event_loop_sender_table.contains_key(&id)
+        self.teletype_handle_table.contains_key(&id)
     }
 
-    fn is_dirty(&self, id: Self::Id) -> bool {
-        self.teletype_manager.is_dirty(id)
-    }
-
-    fn clear_dirty(&mut self, id: Self::Id) {
-        self.teletype_manager.clear_dirty(id)
+    fn consume_dirty(&mut self, id: Self::Id) -> Option<bool> {
+        let handle = self.teletype_handle_table.get_mut(&id)?;
+        handle.consume_dirty()
     }
 
     fn enumerate_content(&self, id: Self::Id) -> impl Iterator<Item = Self::Content> {

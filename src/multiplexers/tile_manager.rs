@@ -149,4 +149,9 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     pub fn is_empty(&self) -> bool {
         self.id_set.is_empty()
     }
+
+    pub fn consume_dirty(&mut self, id: TileId) -> Option<bool> {
+        let shell_id = self.tile_shell_table.get(&id).unwrap();
+        self.shell_manager.consume_dirty(*shell_id)
+    }
 }

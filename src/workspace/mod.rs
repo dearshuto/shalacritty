@@ -80,7 +80,7 @@ impl<'a> Workspace<'a> {
 
         self.tile_manager.update();
 
-        let _is_config_dirty = self.config_diff.is_dirty();
+        let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
         let image_alpha = self.config_diff.consume_image_alpha();
@@ -93,7 +93,15 @@ impl<'a> Workspace<'a> {
 
             for tile_id in &self.tile_id_set {
                 // 差分がなかったらなにもしない
-                // どうする？
+                let is_tty_dirty = if let Some(is_dirty) = self.tile_manager.consume_dirty(*tile_id)
+                {
+                    is_dirty
+                } else {
+                    false
+                };
+                if !is_tty_dirty && !is_config_dirty {
+                    continue;
+                }
 
                 let contents: Vec<Indexed<Cell>> =
                     self.tile_manager.enumerate_content(*tile_id).collect();
