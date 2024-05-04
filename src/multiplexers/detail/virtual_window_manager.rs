@@ -145,9 +145,7 @@ impl VirtualWindowManager {
         parent_id: VirtualWindowId,
     ) -> Option<VirtualWindowId> {
         // 存在しない親を指定してないかチェック
-        let Some(children) = self.hierarchy_table.get_mut(&parent_id) else {
-            return None;
-        };
+        let children = self.hierarchy_table.get_mut(&parent_id)?;
 
         // ウィンドウのインスタンスを作成
         let id = VirtualWindowId::default();
