@@ -232,6 +232,11 @@ impl VirtualWindowManager {
         let (width, height) = self.actual_size_table.get(&id)?;
         Some((*width, *height))
     }
+
+    #[allow(dead_code)]
+    pub fn find_children(&self, id: VirtualWindowId) -> &[VirtualWindowId] {
+        self.hierarchy_table.get(&id).unwrap()
+    }
 }
 
 #[cfg(test)]
