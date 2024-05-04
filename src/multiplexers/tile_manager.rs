@@ -7,7 +7,7 @@ use super::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileId {
-    internal: uuid::Uuid,
+    internal: VirtualWindowId,
 }
 
 #[allow(dead_code)]
@@ -22,9 +22,6 @@ pub struct TileManager<TShellManager: IShellManager> {
     // 親ウィンドウ -> 子ウィンドウ
     hierarchy_table: HashMap<TileId, Vec<TileId>>,
 
-    // タイル -> 仮想ウィンドウ
-    tile_virtual_window_table: HashMap<TileId, VirtualWindowId>,
-
     root_tile_id: TileId,
 
     id_set: HashSet<TShellManager::Id>,
@@ -36,13 +33,14 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     pub fn new(mut shell_manager: TShellManager) -> (Self, TileId) {
         let shell_id = shell_manager.spawn();
         let root_tile_id = TileId {
-            internal: uuid::Uuid::new_v4(),
+            internal: VirtualWindowId::default(),
         };
 
         let mut virtual_window_manager = VirtualWindowManager::new();
         let virtual_window_id = virtual_window_manager.spawn_virtual_window(1280, 960);
+
         let tile_id = TileId {
-            internal: uuid::Uuid::new_v4(),
+            internal: virtual_window_id,
         };
 
         virtual_window_manager.update();
@@ -55,7 +53,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             id_set: HashSet::from([shell_id]),
             active_shell_id: Some(shell_id),
             tile_shell_table: HashMap::from([(tile_id, shell_id)]),
-            tile_virtual_window_table: HashMap::from([(tile_id, virtual_window_id)]),
         };
         (instance, tile_id)
     }
@@ -78,13 +75,11 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
         // 描画領域をシェルに反映
         for (tile_id, shell_id) in &self.tile_shell_table {
-            let Some(virtual_window_id) = self.tile_virtual_window_table.get(tile_id) else {
-                continue;
-            };
+            let virtual_window_id = tile_id.internal;
 
             let Some((width, height)) = self
                 .virtual_window_manager
-                .try_get_actual_size(*virtual_window_id)
+                .try_get_actual_size(virtual_window_id)
             else {
                 continue;
             };
@@ -96,15 +91,13 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
     #[allow(dead_code)]
     pub fn split_horizontal(&mut self, id: TileId) -> TileId {
-        let Some(virtual_window_id) = self.tile_virtual_window_table.get(&id) else {
-            panic!()
-        };
+        let virtual_window_id = id.internal;
 
         // 仮想ウィンドウを分割
         // 更新処理はここじゃなくてもよいかも？
         let new_virtual_window_id = self
             .virtual_window_manager
-            .split_horizontal(*virtual_window_id);
+            .split_horizontal(virtual_window_id);
         self.virtual_window_manager.update();
 
         // 新規に追加した仮想ウィンドウに割り当てるシェルを起動
@@ -113,10 +106,8 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         // 分割した下側
         // TileId を新たに発行して分割したウィンドウに紐付ける
         let tile_id = TileId {
-            internal: uuid::Uuid::new_v4(),
+            internal: new_virtual_window_id,
         };
-        self.tile_virtual_window_table
-            .insert(tile_id, new_virtual_window_id);
         self.tile_shell_table.insert(tile_id, shell_id);
 
         tile_id
