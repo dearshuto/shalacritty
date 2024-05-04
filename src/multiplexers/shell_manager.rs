@@ -14,9 +14,7 @@ pub trait IShellManager {
 
     fn is_running(&self, id: Self::Id) -> bool;
 
-    fn is_dirty(&self, id: Self::Id) -> bool;
-
-    fn clear_dirty(&mut self, id: Self::Id);
+    fn consume_dirty(&mut self, id: Self::Id) -> Option<bool>;
 
     fn enumerate_content(&self, id: Self::Id) -> impl Iterator<Item = Self::Content>;
 
