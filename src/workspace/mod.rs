@@ -3,21 +3,19 @@ mod diff_calculator;
 
 use std::{collections::HashSet, sync::Arc};
 
-use alacritty_terminal::{
-    grid::Indexed,
-    index::{Column, Line, Point},
-    term::cell::Cell,
-};
+use alacritty_terminal::index::{Column, Line, Point};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
-    gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
+    gfx::{
+        ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
+    },
     multiplexers::{TileId, TileManager},
     window::WindowManager,
     ConfigService,
 };
 
-use self::detail::{ConfigDiff, MultiplexersAdapter};
+use self::detail::{ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -103,7 +101,7 @@ impl<'a> Workspace<'a> {
                     continue;
                 }
 
-                let contents: Vec<Indexed<Cell>> =
+                let contents: Vec<ContentAdapter> =
                     self.tile_manager.enumerate_content(*tile_id).collect();
 
                 // グリフの抽出
@@ -112,7 +110,7 @@ impl<'a> Workspace<'a> {
                     .extract_range(
                         contents
                             .iter()
-                            .map(|c| c.c)
+                            .map(|c| c.code())
                             .collect::<Vec<char>>()
                             .into_iter(),
                     )

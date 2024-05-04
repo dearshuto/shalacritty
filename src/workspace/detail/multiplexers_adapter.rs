@@ -1,11 +1,47 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use alacritty_terminal::{event::WindowSize, event_loop::Msg, grid::Indexed, term::cell::Cell};
+use alacritty_terminal::{
+    event::WindowSize, event_loop::Msg, grid::Indexed, index::Point, term::cell::Cell,
+    vte::ansi::Color,
+};
 
 use crate::{
+    gfx::IContent,
     multiplexers::IShellManager,
     tty::{TeletypeHandle, TeletypeId, TeletypeManager},
 };
+
+pub struct ContentAdapter {
+    cell: Indexed<Cell>,
+}
+
+impl IContent for ContentAdapter {
+    type TColor = Color;
+    type TPosition = Point;
+
+    fn code(&self) -> char {
+        self.cell.c
+    }
+
+    fn color_fg(&self) -> Self::TColor {
+        self.cell.fg
+    }
+
+    fn position(&self) -> Self::TPosition {
+        self.cell.point
+    }
+}
+
+impl From<Indexed<&Cell>> for ContentAdapter {
+    fn from(value: Indexed<&Cell>) -> Self {
+        Self {
+            cell: Indexed {
+                point: value.point,
+                cell: value.cell.clone(),
+            },
+        }
+    }
+}
 
 pub struct MultiplexersAdapter {
     teletype_manager: TeletypeManager,
@@ -23,7 +59,7 @@ impl MultiplexersAdapter {
 
 impl IShellManager for MultiplexersAdapter {
     type Id = TeletypeId;
-    type Content = Indexed<Cell>;
+    type Content = ContentAdapter;
 
     fn update(&mut self) {
         for ptr_write in self.teletype_manager.consume_ptr_write() {
@@ -106,13 +142,7 @@ impl IShellManager for MultiplexersAdapter {
     fn enumerate_content(&self, id: Self::Id) -> impl Iterator<Item = Self::Content> {
         let mut contents = Vec::new();
         self.teletype_manager.get_content(id, |c| {
-            contents = c
-                .display_iter
-                .map(|c| Indexed {
-                    point: c.point,
-                    cell: c.cell.clone(),
-                })
-                .collect();
+            contents = c.display_iter.map(|c| c.into()).collect();
         });
         contents.into_iter()
     }
