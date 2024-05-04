@@ -233,8 +233,26 @@ impl VirtualWindowManager {
         Some((*width, *height))
     }
 
-    pub fn find_children(&self, id: VirtualWindowId) -> &[VirtualWindowId] {
-        self.hierarchy_table.get(&id).unwrap()
+    pub fn find_children(&self, id: VirtualWindowId) -> Vec<VirtualWindowId> {
+        let mut ids = Vec::new();
+
+        let mut stack = self.hierarchy_table.get(&id).unwrap().to_vec();
+        while let Some(id) = stack.pop() {
+            // 末端じゃなければ葉ではないので検索を続ける
+            let Some(next_children) = self.hierarchy_table.get(&id) else {
+                continue;
+            };
+
+            if !next_children.is_empty() {
+                stack.extend(next_children);
+                continue;
+            }
+
+            // 末端だった
+            ids.push(id);
+        }
+
+        ids
     }
 }
 
