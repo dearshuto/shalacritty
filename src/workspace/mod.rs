@@ -89,55 +89,50 @@ impl<'a> Workspace<'a> {
                 return;
             };
 
-            for tile_id in &self.tile_id_set {
-                // 差分がなかったらなにもしない
-                let is_tty_dirty = if let Some(is_dirty) = self.tile_manager.consume_dirty(*tile_id)
-                {
-                    is_dirty
-                } else {
-                    false
-                };
-                if !is_tty_dirty && !is_config_dirty {
-                    continue;
-                }
+            let is_tty_dirty = self
+                .tile_id_set
+                .iter()
+                .filter_map(|id| self.tile_manager.consume_dirty(*id))
+                .any(|x| x);
 
-                let contents: Vec<ContentAdapter> =
-                    self.tile_manager.enumerate_content(*tile_id).collect();
-
-                // グリフの抽出
-                let glyph_texture_patches: Vec<GlyphTexturePatch> = self
-                    .glyph_manager
-                    .extract_range(
-                        contents
-                            .iter()
-                            .map(|c| c.code())
-                            .collect::<Vec<char>>()
-                            .into_iter(),
-                    )
-                    .collect();
-
-                let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position(*tile_id);
-                let diff = self.content_plotter.calculate_diff(
-                    contents.into_iter(),
-                    &Point {
-                        column: Column::from(cursor_x as usize),
-                        line: Line::from(cursor_y as usize),
-                    },
-                    &self.glyph_manager,
-                    (window.inner_size().width, window.inner_size().height),
-                );
-                let update_params = RendererUpdateParams::new(
-                    window.inner_size().width,
-                    window.inner_size().height,
-                )
-                .with_diff(diff)
-                .with_glyph_texture_patches(glyph_texture_patches)
-                .with_background_color(background)
-                .with_image_alpha(image_alpha)
-                .with_image_path(image_path.clone());
-                self.renderer.update(*window_id, update_params);
+            // 差分がなかったらなにもしない
+            if !is_tty_dirty && !is_config_dirty {
+                continue;
             }
-            // self.tile_manager.clear_dirty();
+
+            let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
+
+            // グリフの抽出
+            let glyph_texture_patches: Vec<GlyphTexturePatch> = self
+                .glyph_manager
+                .extract_range(
+                    contents
+                        .iter()
+                        .map(|c| c.code())
+                        .collect::<Vec<char>>()
+                        .into_iter(),
+                )
+                .collect();
+
+            let tile_id = self.tile_id_set.iter().next().unwrap();
+            let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position(*tile_id);
+            let diff = self.content_plotter.calculate_diff(
+                contents.into_iter(),
+                &Point {
+                    column: Column::from(cursor_x as usize),
+                    line: Line::from(cursor_y as usize),
+                },
+                &self.glyph_manager,
+                (window.inner_size().width, window.inner_size().height),
+            );
+            let update_params =
+                RendererUpdateParams::new(window.inner_size().width, window.inner_size().height)
+                    .with_diff(diff)
+                    .with_glyph_texture_patches(glyph_texture_patches)
+                    .with_background_color(background)
+                    .with_image_alpha(image_alpha)
+                    .with_image_path(image_path.clone());
+            self.renderer.update(*window_id, update_params);
 
             window.request_redraw();
         }
