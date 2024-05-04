@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crossfont::BitmapBuffer;
-
-use crate::gfx::GlyphManager;
+use crossfont::{BitmapBuffer, RasterizedGlyph};
 
 #[derive(Clone, Copy)]
 struct CharacterCache {
@@ -47,6 +45,10 @@ impl GlyphImagePatch {
     }
 }
 
+pub trait IGlyphManager {
+    fn acquire_rasterized_glyph(&self, code: char) -> Option<&RasterizedGlyph>;
+}
+
 pub struct GlyphWriter {
     image_width: u32,
     image_height: u32,
@@ -76,7 +78,11 @@ impl GlyphWriter {
         }
     }
 
-    pub fn execute<T>(&mut self, codes: T, glyph_manager: &GlyphManager) -> Vec<GlyphImagePatch>
+    pub fn execute<T, U: IGlyphManager>(
+        &mut self,
+        codes: T,
+        glyph_manager: &U,
+    ) -> Vec<GlyphImagePatch>
     where
         T: Iterator<Item = char>,
     {
@@ -99,9 +105,7 @@ impl GlyphWriter {
                     ));
                 }
 
-                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(code) else {
-                    return None;
-                };
+                let glyph = glyph_manager.acquire_rasterized_glyph(code)?;
 
                 let offset_x = self.current_x * 64;
                 let offset_y = self.current_y * 64;
@@ -128,9 +132,7 @@ impl GlyphWriter {
             .iter()
             .filter_map(|(code, character_cache)| {
                 // グリフを取得
-                let Some(glyph) = glyph_manager.acquire_rasterized_glyph(*code) else {
-                    return None;
-                };
+                let glyph = glyph_manager.acquire_rasterized_glyph(*code)?;
                 let buffer = match &glyph.buffer {
                     BitmapBuffer::Rgb(buffer) => {
                         buffer.chunks(3).map(|rgb| rgb[0]).collect::<Vec<u8>>()
@@ -190,25 +192,56 @@ impl GlyphWriter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use bmp::Image;
+    use crossfont::RasterizedGlyph;
 
-    use crate::gfx::GlyphManager;
+    use crate::gfx::detail::FontEngine;
 
-    use super::GlyphWriter;
+    use super::{GlyphWriter, IGlyphManager};
+
+    struct GlyphTable {
+        table: HashMap<char, RasterizedGlyph>,
+    }
+    impl GlyphTable {
+        pub fn new<T>(codes: T) -> Self
+        where
+            T: Iterator<Item = char>,
+        {
+            let mut font_engine = FontEngine::new();
+            let table = codes
+                .map(|code| {
+                    let glyph = font_engine.rasterize(code, 32.0).unwrap();
+                    (code, glyph)
+                })
+                .collect();
+
+            Self { table }
+        }
+    }
+    impl IGlyphManager for GlyphTable {
+        fn acquire_rasterized_glyph(&self, code: char) -> Option<&RasterizedGlyph> {
+            self.table.get(&code)
+        }
+    }
 
     // グリフ抽出の検証
     #[test]
     fn export() {
-        let mut glyph_manager = GlyphManager::new();
-        glyph_manager.extract_alphabet();
-
+        let codes = ' '..='~';
+        let glyph_table = GlyphTable::new(codes.clone());
         let mut glyph_writer = GlyphWriter::new();
-        let image_patches = glyph_writer.execute(' '..='~', &mut glyph_manager);
+        let image_patches = glyph_writer.execute(codes, &glyph_table);
 
         let mut image = Image::new(glyph_writer.width(), glyph_writer.height());
         for image_patch in image_patches {
             for y in 0..image_patch.height {
                 for x in 0..image_patch.width {
+                    if image_patch.pixels().is_empty() {
+                        // 空白グリフ対策。そもそも空白はテストから除外してもいいかも。
+                        continue;
+                    }
                     let src_index = x + y * image_patch.width();
                     let data = image_patch.pixels()[src_index as usize];
                     let dst_x = image_patch.offset_x + x;
@@ -231,9 +264,10 @@ mod tests {
 
     #[test]
     fn patch() {
-        let mut glyph_manager = GlyphManager::new();
+        let codes = 'a'..'d';
+        let glyph_table = GlyphTable::new(codes.clone());
         let mut glyph_writer = GlyphWriter::new();
-        let image_patches = glyph_writer.execute('a'..'d', &mut glyph_manager);
+        let image_patches = glyph_writer.execute(codes, &glyph_table);
 
         for image_patch in image_patches {
             let mut image = Image::new(image_patch.width, image_patch.height);

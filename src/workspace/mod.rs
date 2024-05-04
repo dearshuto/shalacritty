@@ -11,7 +11,7 @@ use alacritty_terminal::{
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
-    gfx::{ContentPlotter, GlyphManager, Renderer, RendererUpdateParams},
+    gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
     multiplexers::{TileId, TileManager},
     window::WindowManager,
     ConfigService,
@@ -95,12 +95,20 @@ impl<'a> Workspace<'a> {
                 // 差分がなかったらなにもしない
                 // どうする？
 
-                // グリフの抽出
                 let contents: Vec<Indexed<Cell>> =
                     self.tile_manager.enumerate_content(*tile_id).collect();
-                for content in &contents {
-                    self.glyph_manager.extract(content.c);
-                }
+
+                // グリフの抽出
+                let glyph_texture_patches: Vec<GlyphTexturePatch> = self
+                    .glyph_manager
+                    .extract_range(
+                        contents
+                            .iter()
+                            .map(|c| c.c)
+                            .collect::<Vec<char>>()
+                            .into_iter(),
+                    )
+                    .collect();
 
                 let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position(*tile_id);
                 let diff = self.content_plotter.calculate_diff(
@@ -117,6 +125,7 @@ impl<'a> Workspace<'a> {
                     window.inner_size().height,
                 )
                 .with_diff(diff)
+                .with_glyph_texture_patches(glyph_texture_patches)
                 .with_background_color(background)
                 .with_image_alpha(image_alpha)
                 .with_image_path(image_path.clone());
