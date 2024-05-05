@@ -174,6 +174,15 @@ impl TeletypeManager {
         term.lock()
             .resize(SizeInfo::new_with(128 /*total*/, line, columns));
     }
+
+    pub fn size(&self, id: TeletypeId) -> Option<(u32, u32)> {
+        let term = self.terminal_table.get(&id)?;
+
+        let binding = term.lock();
+        let column = binding.columns();
+        let lines = binding.screen_lines();
+        Some((column as u32, lines as u32))
+    }
 }
 
 struct EventProxy {
