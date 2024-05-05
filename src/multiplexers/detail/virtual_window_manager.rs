@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VirtualWindowId {
@@ -233,11 +233,16 @@ impl VirtualWindowManager {
         Some((*width, *height))
     }
 
-    pub fn find_children(&self, id: VirtualWindowId) -> Vec<VirtualWindowId> {
+    pub fn find_children(&self, _id: VirtualWindowId) -> Vec<VirtualWindowId> {
         let mut ids = Vec::new();
 
-        let mut stack = self.hierarchy_table.get(&id).unwrap().to_vec();
-        while let Some(id) = stack.pop() {
+        let mut stack = VecDeque::<VirtualWindowId>::from(
+            self.hierarchy_table
+                .get(&self.root_window_id)
+                .unwrap()
+                .clone(),
+        );
+        while let Some(id) = stack.pop_front() {
             // 末端じゃなければ葉ではないので検索を続ける
             let Some(next_children) = self.hierarchy_table.get(&id) else {
                 continue;
@@ -347,5 +352,18 @@ mod tests {
             manager.try_get_actual_size(new_window_id).unwrap(),
             (320, 240)
         );
+    }
+
+    // 子要素の走査で順序が保持されていることをテスト
+    #[test]
+    fn find_children() {
+        let mut manager = VirtualWindowManager::new();
+        let id = manager.spawn_virtual_window(640, 480);
+        let new_window_id = manager.split_horizontal(id);
+
+        manager.update();
+
+        let children = manager.find_children(id);
+        assert_eq!(children, vec![id, new_window_id]);
     }
 }
