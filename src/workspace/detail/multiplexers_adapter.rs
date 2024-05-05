@@ -1,21 +1,39 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use alacritty_terminal::{
-    event::WindowSize, event_loop::Msg, grid::Indexed, index::Point, term::cell::Cell,
+    event::WindowSize,
+    event_loop::Msg,
+    grid::Indexed,
+    index::{Column, Line, Point},
+    term::cell::Cell,
     vte::ansi::Color,
 };
 
 use crate::{
-    gfx::IContent,
     multiplexers::IShellManager,
     tty::{TeletypeHandle, TeletypeId, TeletypeManager},
 };
+
+pub struct PositionAdapter {
+    point: Point,
+}
+
+impl crate::multiplexers::IPosition for PositionAdapter {
+    fn new(x: u32, y: u32) -> Self {
+        Self {
+            point: Point {
+                column: Column::from(x as usize),
+                line: Line::from(y as usize),
+            },
+        }
+    }
+}
 
 pub struct ContentAdapter {
     cell: Indexed<Cell>,
 }
 
-impl IContent for ContentAdapter {
+impl crate::gfx::IContent for ContentAdapter {
     type TColor = Color;
     type TPosition = Point;
 
@@ -29,6 +47,15 @@ impl IContent for ContentAdapter {
 
     fn position(&self) -> Self::TPosition {
         self.cell.point
+    }
+}
+
+impl crate::multiplexers::IContent for ContentAdapter {
+    type TPosition = PositionAdapter;
+    fn with_offset(mut self, offset: &Self::TPosition) -> Self {
+        self.cell.point.column += offset.point.column;
+        self.cell.point.line += offset.point.line;
+        self
     }
 }
 
@@ -60,6 +87,7 @@ impl MultiplexersAdapter {
 impl IShellManager for MultiplexersAdapter {
     type Id = TeletypeId;
     type Content = ContentAdapter;
+    type Position = PositionAdapter;
 
     fn update(&mut self) {
         for ptr_write in self.teletype_manager.consume_ptr_write() {

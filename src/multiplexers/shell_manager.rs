@@ -1,8 +1,18 @@
 use std::hash::Hash;
 
+pub trait IPosition {
+    fn new(x: u32, y: u32) -> Self;
+}
+
+pub trait IContent {
+    type TPosition: IPosition;
+    fn with_offset(self, offset: &Self::TPosition) -> Self;
+}
+
 pub trait IShellManager {
     type Id: Hash + Eq + Copy;
-    type Content;
+    type Content: IContent<TPosition = Self::Position>;
+    type Position: IPosition;
 
     fn update(&mut self);
 

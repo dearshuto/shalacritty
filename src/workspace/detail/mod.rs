@@ -3,4 +3,4 @@ mod multiplexers_adapter;
 
 pub use config_diff::ConfigDiff;
 #[allow(unused_imports)]
-pub use multiplexers_adapter::{ContentAdapter, MultiplexersAdapter};
+pub use multiplexers_adapter::{ContentAdapter, MultiplexersAdapter, PositionAdapter};

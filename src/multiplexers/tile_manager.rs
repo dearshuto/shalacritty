@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::multiplexers::shell_manager::IPosition;
+use crate::multiplexers::IContent;
+
 use super::{
     detail::{VirtualWindowId, VirtualWindowManager},
     IShellManager,
@@ -102,6 +105,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
         // 新規に追加した仮想ウィンドウに割り当てるシェルを起動
         let shell_id = self.shell_manager.spawn();
+        self.active_shell_id = Some(shell_id);
 
         // 分割した下側
         // TileId を新たに発行して分割したウィンドウに紐付ける
@@ -130,21 +134,40 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.shell_manager.send_input(*shell_id, input);
     }
 
-    pub fn enumerate_content(
-        &self,
-        id: TileId,
-    ) -> impl Iterator<Item = TShellManager::Content> + '_ {
-        let child_virtual_window_ids = self.virtual_window_manager.find_children(id.internal);
-        let mut ids = vec![id.internal];
-        ids.extend(child_virtual_window_ids);
+    pub fn enumerate_content(&self) -> impl Iterator<Item = TShellManager::Content> + '_ {
+        let id = self.root_tile_id.internal;
+        let child_virtual_window_ids = self.virtual_window_manager.find_children(id);
 
         let mut contents = Vec::default();
-        for virtual_window_id in ids {
+        for (index, virtual_window_id) in child_virtual_window_ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (index, *id))
+        {
             let tile_id = TileId {
                 internal: virtual_window_id,
             };
-            let shell_id = self.tile_shell_table.get(&tile_id).unwrap();
-            let content = self.shell_manager.enumerate_content(*shell_id);
+            let Some(shell_id) = self.tile_shell_table.get(&tile_id) else {
+                continue;
+            };
+
+            let height = (0..index)
+                .map(|_| {
+                    let tile_id = TileId {
+                        internal: child_virtual_window_ids[0],
+                    };
+                    let Some(shell_id) = self.tile_shell_table.get(&tile_id) else {
+                        return 0;
+                    };
+
+                    self.shell_manager.size(*shell_id).unwrap().1
+                })
+                .sum();
+
+            let content = self.shell_manager.enumerate_content(*shell_id).map(|c| {
+                let offset = TShellManager::Position::new(0, height);
+                c.with_offset(&offset)
+            });
             contents.extend(content);
         }
         contents.into_iter()
