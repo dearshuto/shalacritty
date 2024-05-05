@@ -121,6 +121,15 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.shell_manager.send_input(*active_shell_id, input);
     }
 
+    #[allow(dead_code)]
+    pub fn send_input_specified(&mut self, input: &str, id: TileId) {
+        let Some(shell_id) = self.tile_shell_table.get(&id) else {
+            return;
+        };
+
+        self.shell_manager.send_input(*shell_id, input);
+    }
+
     pub fn enumerate_content(
         &self,
         id: TileId,
