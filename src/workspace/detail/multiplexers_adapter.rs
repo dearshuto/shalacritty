@@ -130,6 +130,10 @@ impl IShellManager for MultiplexersAdapter {
         }));
     }
 
+    fn size(&mut self, id: Self::Id) -> Option<(u32, u32)> {
+        self.teletype_manager.size(id)
+    }
+
     fn is_running(&self, id: Self::Id) -> bool {
         self.teletype_handle_table.contains_key(&id)
     }
