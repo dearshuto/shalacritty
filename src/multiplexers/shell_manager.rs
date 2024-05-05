@@ -12,7 +12,7 @@ pub trait IShellManager {
 
     fn resize(&mut self, id: Self::Id, width: i32, height: i32);
 
-    fn size(&mut self, id: Self::Id) -> Option<(u32, u32)>;
+    fn size(&self, id: Self::Id) -> Option<(u32, u32)>;
 
     fn is_running(&self, id: Self::Id) -> bool;
 
