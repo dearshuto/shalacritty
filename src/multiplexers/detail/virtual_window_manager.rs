@@ -228,6 +228,29 @@ impl VirtualWindowManager {
         new_window_id
     }
 
+    #[allow(dead_code)]
+    pub fn remove(&mut self, id: VirtualWindowId) {
+        self.virtual_window_table.remove(&id);
+        self.actual_size_table.remove(&id);
+        self.virtual_window_table.remove(&id);
+
+        // 階層を消去して...
+        let Some(removed_children) = self.hierarchy_table.remove(&id) else {
+            return;
+        };
+
+        // 新たな親に付け替える
+        for children in self.hierarchy_table.values_mut() {
+            let Some(index) = children.iter().position(|x| *x == id) else {
+                continue;
+            };
+
+            children.remove(index);
+            children.extend(removed_children);
+            break;
+        }
+    }
+
     pub fn try_get_actual_size(&self, id: VirtualWindowId) -> Option<(u32, u32)> {
         let (width, height) = self.actual_size_table.get(&id)?;
         Some((*width, *height))
@@ -365,5 +388,19 @@ mod tests {
 
         let children = manager.find_children(id);
         assert_eq!(children, vec![id, new_window_id]);
+    }
+
+    // 子要素の走査で順序が保持されていることをテスト
+    #[test]
+    fn remove() {
+        let mut manager = VirtualWindowManager::new();
+        let id = manager.spawn_virtual_window(640, 480);
+        let new_window_id = manager.split_horizontal(id);
+        manager.remove(new_window_id);
+
+        manager.update();
+
+        let children = manager.find_children(id);
+        assert_eq!(children, vec![id]);
     }
 }
