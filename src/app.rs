@@ -1,18 +1,19 @@
 use std::time::{Duration, Instant};
 
 use winit::{
-    event::{ElementState, Event, StartCause, WindowEvent},
+    event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    keyboard::NamedKey,
+    keyboard::ModifiersState,
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-use crate::workspace::Workspace;
+use crate::workspace::{Input, Modifier, Workspace};
 
 pub struct App;
 
 impl App {
     pub async fn run() {
+        let mut modifier = Modifier::empty();
         let event_loop = EventLoopBuilder::new().build().unwrap();
 
         // ひとつだけウィンドウを起動しておく
@@ -43,29 +44,26 @@ impl App {
                         workspace.render(window_id);
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
-                        if event.state != ElementState::Pressed {
+                        if !event.state.is_pressed() {
                             return;
                         }
 
-                        if let Some(text) = event.text_with_all_modifiers() {
-                            workspace.send(window_id, text);
+                        let Some(text) = event.text_with_all_modifiers() else {
                             return;
                         };
 
-                        if let Some(name_key) = match event.logical_key {
-                            winit::keyboard::Key::Named(key) => match key {
-                                NamedKey::ArrowUp => Some("ArrowUp"),
-                                NamedKey::ArrowDown => Some("ArrowDown"),
-                                NamedKey::ArrowRight => Some("ArrowRight"),
-                                NamedKey::ArrowLeft => Some("ArrowLeft"),
-                                _ => None,
-                            },
-                            // winit::keyboard::Key::Character(_) => {}
-                            // winit::keyboard::Key::Unidentified(_) => {}
-                            // winit::keyboard::Key::Dead(_) => {}
-                            _ => None,
-                        } {
-                            workspace.send(window_id, name_key);
+                        let input = Input {
+                            modifiers: modifier,
+                            text,
+                        };
+
+                        workspace.send_input(window_id, &input);
+                    }
+                    WindowEvent::ModifiersChanged(modifiers) => {
+                        if modifiers.state().contains(ModifiersState::CONTROL) {
+                            modifier = Modifier::CONTROL;
+                        } else {
+                            modifier = Modifier::empty();
                         }
                     }
                     WindowEvent::CloseRequested => {
