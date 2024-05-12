@@ -105,6 +105,7 @@ impl<'a> ScanBufferRenderer<'a> {
                 }),
                 entry_point: "main",
                 buffers: &[],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -119,6 +120,7 @@ impl<'a> ScanBufferRenderer<'a> {
                     blend: None,
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
