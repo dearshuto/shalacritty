@@ -15,7 +15,7 @@ use crate::{
     ConfigService,
 };
 
-use self::detail::{ConfigDiff, ContentAdapter, MultiplexersAdapter};
+use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -154,13 +154,39 @@ impl<'a> Workspace<'a> {
         window.request_redraw();
     }
 
-    pub fn send(&mut self, _id: WindowId, text: &str) {
-        // 将来的に乗り換え予定
-        // この行以外は不要になる
-        self.tile_manager.send_input(text);
+    pub fn send_input(&mut self, _id: WindowId, text: &str) {
+        let action = Self::detect_action(text);
+        match action {
+            Action::Input(str) => self.tile_manager.send_input(str),
+            Action::SplitHorizontal => {
+                let id = self.tile_id_set.iter().next().unwrap();
+                let new_id = self.tile_manager.split_horizontal(*id);
+                self.tile_id_set.insert(new_id);
+            }
+            Action::ActivateTab(_) => todo!(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
         self.tile_manager.is_empty()
+    }
+
+    fn detect_action(input: &str) -> Action {
+        // Ctrl+1
+        if input == String::from_utf8(vec![49]).unwrap() {
+            return Action::ActivateTab(1);
+        }
+
+        // Ctrl+2
+        if input == String::from_utf8(vec![50]).unwrap() {
+            return Action::ActivateTab(2);
+        }
+
+        // Ctrl+h で画面分割
+        if input == String::from_utf8(vec![8]).unwrap() {
+            return Action::SplitHorizontal;
+        }
+
+        Action::Input(input)
     }
 }

@@ -48,7 +48,7 @@ impl App {
                         }
 
                         if let Some(text) = event.text_with_all_modifiers() {
-                            workspace.send(window_id, text);
+                            workspace.send_input(window_id, text);
                             return;
                         };
 
@@ -65,7 +65,7 @@ impl App {
                             // winit::keyboard::Key::Dead(_) => {}
                             _ => None,
                         } {
-                            workspace.send(window_id, name_key);
+                            workspace.send_input(window_id, name_key);
                         }
                     }
                     WindowEvent::CloseRequested => {

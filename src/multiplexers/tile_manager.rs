@@ -4,7 +4,7 @@ use crate::multiplexers::shell_manager::IPosition;
 use crate::multiplexers::IContent;
 
 use super::{
-    detail::{VirtualWindowId, VirtualWindowManager},
+    detail::{TabId, VirtualWindowId, VirtualWindowManager},
     IShellManager,
 };
 
@@ -29,6 +29,8 @@ pub struct TileManager<TShellManager: IShellManager> {
 
     id_set: HashSet<TShellManager::Id>,
 
+    active_tab_id: TabId,
+
     active_shell_id: Option<TShellManager::Id>,
 }
 
@@ -40,7 +42,8 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         };
 
         let mut virtual_window_manager = VirtualWindowManager::new();
-        let virtual_window_id = virtual_window_manager.spawn_virtual_window(1280, 960);
+        let tab_id = virtual_window_manager.spawn_virtual_window(1280, 960);
+        let virtual_window_id = *virtual_window_manager.find_children(tab_id).get(0).unwrap();
 
         let tile_id = TileId {
             internal: virtual_window_id,
@@ -54,6 +57,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             hierarchy_table: HashMap::from([(root_tile_id, vec![tile_id])]),
             root_tile_id,
             id_set: HashSet::from([shell_id]),
+            active_tab_id: tab_id,
             active_shell_id: Some(shell_id),
             tile_shell_table: HashMap::from([(tile_id, shell_id)]),
         };
@@ -135,8 +139,9 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     }
 
     pub fn enumerate_content(&self) -> impl Iterator<Item = TShellManager::Content> + '_ {
-        let id = self.root_tile_id.internal;
-        let child_virtual_window_ids = self.virtual_window_manager.find_children(id);
+        let child_virtual_window_ids = self
+            .virtual_window_manager
+            .find_children(self.active_tab_id);
 
         let mut contents = Vec::default();
         for (index, virtual_window_id) in child_virtual_window_ids

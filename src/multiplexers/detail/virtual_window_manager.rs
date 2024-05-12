@@ -13,6 +13,19 @@ impl Default for VirtualWindowId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TabId {
+    internal: uuid::Uuid,
+}
+
+impl Default for TabId {
+    fn default() -> Self {
+        Self {
+            internal: uuid::Uuid::new_v4(),
+        }
+    }
+}
+
 struct VirtualWindow {
     pub width: u32,
     pub height: u32,
@@ -36,6 +49,9 @@ pub struct VirtualWindowManager {
 
     // 各ウィンドウの実際のサイズ
     actual_size_table: HashMap<VirtualWindowId, (u32, u32)>,
+
+    // タブ -> 仮想ウィンドウ
+    tab_window_table: HashMap<TabId, VirtualWindowId>,
 }
 
 impl VirtualWindowManager {
@@ -52,6 +68,7 @@ impl VirtualWindowManager {
             virtual_window_table: HashMap::new(),
             hierarchy_table,
             actual_size_table,
+            tab_window_table: HashMap::default(),
         }
     }
 
@@ -132,10 +149,32 @@ impl VirtualWindowManager {
         }
     }
 
-    pub fn spawn_virtual_window(&mut self, width: u32, height: u32) -> VirtualWindowId {
-        // デフォルトはルートを親としてウィンドウを作成
-        self.spawn_virtual_window_with_parent(width, height, self.root_window_id)
-            .unwrap()
+    pub fn spawn_virtual_window(&mut self, width: u32, height: u32) -> TabId {
+        // ルート直下に追加するとタブも作成する
+        //
+        // こうなってるのを
+        // 親 - タブ - ウィンドウ
+        //    |     └ ウィンドウ
+        //    └ タブ - ウィンドウ
+        //
+        // こうする
+        // 親 - タブ - ウィンドウ
+        //    |     └ ウィンドウ
+        //    └ タブ - ウィンドウ
+        //    |
+        //    └ 新タブ - 新ウィンドウ
+        let tab_root_id = self
+            .spawn_virtual_window_with_parent(width, height, self.root_window_id)
+            .unwrap();
+
+        let _new_window_id = self
+            .spawn_virtual_window_with_parent(width, height, tab_root_id)
+            .unwrap();
+
+        let tab_id = TabId::default();
+        self.tab_window_table.insert(tab_id, tab_root_id);
+
+        tab_id
     }
 
     pub fn spawn_virtual_window_with_parent(
@@ -256,15 +295,14 @@ impl VirtualWindowManager {
         Some((*width, *height))
     }
 
-    pub fn find_children(&self, _id: VirtualWindowId) -> Vec<VirtualWindowId> {
+    pub fn find_children(&self, id: TabId) -> Vec<VirtualWindowId> {
+        let Some(virtual_window_id) = self.tab_window_table.get(&id) else {
+            return Vec::default();
+        };
+
         let mut ids = Vec::new();
 
-        let mut stack = VecDeque::<VirtualWindowId>::from(
-            self.hierarchy_table
-                .get(&self.root_window_id)
-                .unwrap()
-                .clone(),
-        );
+        let mut stack = VecDeque::<VirtualWindowId>::from(vec![*virtual_window_id]);
         while let Some(id) = stack.pop_front() {
             // 末端じゃなければ葉ではないので検索を続ける
             let Some(next_children) = self.hierarchy_table.get(&id) else {
@@ -293,7 +331,8 @@ mod tests {
     #[test]
     fn parents() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         manager.update();
 
         let (width, height) = manager.try_get_actual_size(id).unwrap();
@@ -305,7 +344,8 @@ mod tests {
     #[test]
     fn single_child() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let child_id = manager
             .spawn_virtual_window_with_parent(640, 480, id)
             .unwrap();
@@ -324,7 +364,8 @@ mod tests {
     #[test]
     fn children() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let child_id0 = manager
             .spawn_virtual_window_with_parent(640, 240, id)
             .unwrap();
@@ -351,7 +392,8 @@ mod tests {
     #[test]
     fn split_horizontal() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.update();
@@ -365,7 +407,8 @@ mod tests {
     #[test]
     fn split_horizontal_resize() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.resize(320, 480);
@@ -381,12 +424,13 @@ mod tests {
     #[test]
     fn find_children() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.update();
 
-        let children = manager.find_children(id);
+        let children = manager.find_children(tab_id);
         assert_eq!(children, vec![id, new_window_id]);
     }
 
@@ -394,13 +438,14 @@ mod tests {
     #[test]
     fn remove() {
         let mut manager = VirtualWindowManager::new();
-        let id = manager.spawn_virtual_window(640, 480);
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).get(0).unwrap();
         let new_window_id = manager.split_horizontal(id);
         manager.remove(new_window_id);
 
         manager.update();
 
-        let children = manager.find_children(id);
+        let children = manager.find_children(tab_id);
         assert_eq!(children, vec![id]);
     }
 }
