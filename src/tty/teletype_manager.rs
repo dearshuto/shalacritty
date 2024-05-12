@@ -96,6 +96,7 @@ impl TeletypeManager {
             shell: Some(Shell::new("cmd.exe".to_string(), Vec::default())),
             working_directory: None,
             hold: true,
+            env: HashMap::default(),
         };
         let window_size = WindowSize {
             num_lines: 64,
@@ -118,7 +119,8 @@ impl TeletypeManager {
             pty,
             true, /*hold*/
             true, /*ref_test*/
-        );
+        )
+        .unwrap();
         // コマンドを送信するにはこれを返り値として渡す
         let channel = event_loop.channel();
 

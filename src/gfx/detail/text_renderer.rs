@@ -115,6 +115,7 @@ impl<'a> TextRenderer<'a> {
                 module: &vertex_shader_module,
                 entry_point: "main",
                 buffers: &vertex_buffers,
+                compilation_options: Default::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -134,6 +135,7 @@ impl<'a> TextRenderer<'a> {
                     }),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
         });

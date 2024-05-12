@@ -251,6 +251,7 @@ where
                     module: &vertex_shader_module,
                     entry_point: "main",
                     buffers: &vertex_buffers,
+                    compilation_options: Default::default(),
                 },
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
@@ -270,6 +271,7 @@ where
                         }),
                         write_mask: wgpu::ColorWrites::all(),
                     })],
+                    compilation_options: Default::default(),
                 }),
                 multiview: None,
             });

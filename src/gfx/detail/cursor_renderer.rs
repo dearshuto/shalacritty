@@ -88,6 +88,7 @@ impl<'a> CursorRenderer<'a> {
                 module: &vertex_shader_module,
                 entry_point: "main",
                 buffers: &vertex_buffers,
+                compilation_options: Default::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -100,6 +101,7 @@ impl<'a> CursorRenderer<'a> {
                     blend: None,
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
         });
