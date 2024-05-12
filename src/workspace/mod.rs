@@ -33,6 +33,8 @@ pub struct Workspace<'a> {
 
     // 設定の差分
     config_diff: ConfigDiff,
+
+    is_force_dirty: bool,
 }
 
 impl<'a> Workspace<'a> {
@@ -56,6 +58,7 @@ impl<'a> Workspace<'a> {
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
+            is_force_dirty: false,
         }
     }
 
@@ -89,15 +92,16 @@ impl<'a> Workspace<'a> {
                 return;
             };
 
-            let is_tty_dirty = self
-                .tile_id_set
-                .iter()
-                .filter_map(|id| self.tile_manager.consume_dirty(*id))
-                .any(|x| x);
+            // 強制更新のフラグが立ってたらダーティーフラグは見ない
+            if self.is_force_dirty {
+                self.is_force_dirty = false;
+            } else {
+                let is_tty_dirty = self.tile_manager.consume_dirty().unwrap();
 
-            // 差分がなかったらなにもしない
-            if !is_tty_dirty && !is_config_dirty {
-                continue;
+                // 差分がなかったらなにもしない
+                if !is_tty_dirty && !is_config_dirty {
+                    continue;
+                }
             }
 
             let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
@@ -114,8 +118,7 @@ impl<'a> Workspace<'a> {
                 )
                 .collect();
 
-            let tile_id = self.tile_id_set.iter().next().unwrap();
-            let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position(*tile_id);
+            let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
             let diff = self.content_plotter.calculate_diff(
                 contents.into_iter(),
                 &Point {
@@ -163,7 +166,14 @@ impl<'a> Workspace<'a> {
                 let new_id = self.tile_manager.split_horizontal(*id);
                 self.tile_id_set.insert(new_id);
             }
-            Action::ActivateTab(_) => todo!(),
+            Action::NewTab => {
+                self.is_force_dirty = true;
+                self.tile_manager.activate_tab(99)
+            }
+            Action::ActivateTab(index) => {
+                self.is_force_dirty = true;
+                self.tile_manager.activate_tab(index)
+            }
         }
     }
 
@@ -174,17 +184,22 @@ impl<'a> Workspace<'a> {
     fn detect_action(input: &str) -> Action {
         // Ctrl+1
         if input == String::from_utf8(vec![49]).unwrap() {
-            return Action::ActivateTab(1);
+            return Action::ActivateTab(0);
         }
 
         // Ctrl+2
         if input == String::from_utf8(vec![50]).unwrap() {
-            return Action::ActivateTab(2);
+            return Action::ActivateTab(1);
         }
 
         // Ctrl+h で画面分割
         if input == String::from_utf8(vec![8]).unwrap() {
             return Action::SplitHorizontal;
+        }
+
+        // Ctrl+h で画面分割
+        if input == String::from_utf8(vec![20]).unwrap() {
+            return Action::NewTab;
         }
 
         Action::Input(input)

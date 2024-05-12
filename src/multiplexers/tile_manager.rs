@@ -31,7 +31,8 @@ pub struct TileManager<TShellManager: IShellManager> {
 
     active_tab_id: TabId,
 
-    active_shell_id: Option<TShellManager::Id>,
+    // アクティブなタブで操作対象になってるシェル
+    active_shell_table: HashMap<TabId, TShellManager::Id>,
 }
 
 impl<TShellManager: IShellManager> TileManager<TShellManager> {
@@ -58,7 +59,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             root_tile_id,
             id_set: HashSet::from([shell_id]),
             active_tab_id: tab_id,
-            active_shell_id: Some(shell_id),
+            active_shell_table: HashMap::from([(tab_id, shell_id)]),
             tile_shell_table: HashMap::from([(tile_id, shell_id)]),
         };
         (instance, tile_id)
@@ -109,7 +110,9 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
         // 新規に追加した仮想ウィンドウに割り当てるシェルを起動
         let shell_id = self.shell_manager.spawn();
-        self.active_shell_id = Some(shell_id);
+
+        // 操作対象のシェルを更新
+        self.active_shell_table.insert(self.active_tab_id, shell_id);
 
         // 分割した下側
         // TileId を新たに発行して分割したウィンドウに紐付ける
@@ -122,7 +125,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     }
 
     pub fn send_input(&mut self, input: &str) {
-        let Some(active_shell_id) = &self.active_shell_id else {
+        let Some(active_shell_id) = self.active_shell_table.get(&self.active_tab_id) else {
             return;
         };
 
@@ -178,8 +181,40 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         contents.into_iter()
     }
 
-    pub fn get_cursor_position(&self, id: TileId) -> (u32, u32) {
-        let shell_id = self.tile_shell_table.get(&id).unwrap();
+    pub fn activate_tab(&mut self, index: u32) {
+        let Some(id) = self
+            .virtual_window_manager
+            .get_tab_ids()
+            .get(index as usize)
+        else {
+            // 範囲外を指定されたらタブを作成する使用にしてみる
+            let new_tab_id = self.virtual_window_manager.spawn_virtual_window(1280, 640);
+            let new_virtual_window_id = *self
+                .virtual_window_manager
+                .find_children(new_tab_id)
+                .get(0)
+                .unwrap();
+
+            // 新規に追加した仮想ウィンドウに割り当てるシェルを起動
+            let shell_id = self.shell_manager.spawn();
+            self.active_shell_table.insert(new_tab_id, shell_id);
+
+            // TileId を新たに発行して分割したウィンドウに紐付ける
+            let tile_id = TileId {
+                internal: new_virtual_window_id,
+            };
+            self.tile_shell_table.insert(tile_id, shell_id);
+            self.active_tab_id = new_tab_id;
+            return;
+        };
+
+        self.active_tab_id = *id;
+    }
+
+    pub fn get_cursor_position(&self) -> (u32, u32) {
+        let Some(shell_id) = self.active_shell_table.get(&self.active_tab_id) else {
+            return (0, 0);
+        };
         self.shell_manager.get_cursor_position(*shell_id)
     }
 
@@ -187,8 +222,8 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.id_set.is_empty()
     }
 
-    pub fn consume_dirty(&mut self, id: TileId) -> Option<bool> {
-        let shell_id = self.tile_shell_table.get(&id).unwrap();
+    pub fn consume_dirty(&mut self) -> Option<bool> {
+        let shell_id = self.active_shell_table.get(&self.active_tab_id)?;
         self.shell_manager.consume_dirty(*shell_id)
     }
 }

@@ -52,6 +52,9 @@ pub struct VirtualWindowManager {
 
     // タブ -> 仮想ウィンドウ
     tab_window_table: HashMap<TabId, VirtualWindowId>,
+
+    // タブ ID 一覧
+    tab_ids: Vec<TabId>,
 }
 
 impl VirtualWindowManager {
@@ -69,6 +72,7 @@ impl VirtualWindowManager {
             hierarchy_table,
             actual_size_table,
             tab_window_table: HashMap::default(),
+            tab_ids: Vec::default(),
         }
     }
 
@@ -173,6 +177,7 @@ impl VirtualWindowManager {
 
         let tab_id = TabId::default();
         self.tab_window_table.insert(tab_id, tab_root_id);
+        self.tab_ids.push(tab_id);
 
         tab_id
     }
@@ -319,6 +324,10 @@ impl VirtualWindowManager {
         }
 
         ids
+    }
+
+    pub fn get_tab_ids(&self) -> &[TabId] {
+        &self.tab_ids
     }
 }
 
