@@ -6,5 +6,8 @@ pub enum Action<'a> {
     SplitHorizontal,
 
     // タブ切り替え
+    NewTab,
+
+    // タブ切り替え
     ActivateTab(u32),
 }
