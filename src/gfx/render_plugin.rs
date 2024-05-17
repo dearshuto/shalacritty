@@ -3,5 +3,5 @@ pub trait IRenderPlugin<'a> {
 
     fn resize(&mut self, width: u32, height: u32);
 
-    fn render(&self, render_pass: wgpu::RenderPass<'a>);
+    fn render<'b>(&self, render_pass: wgpu::RenderPass<'b>);
 }

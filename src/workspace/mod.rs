@@ -217,7 +217,7 @@ impl<'a> IRenderPlugin<'a> for Plugin {
         todo!()
     }
 
-    fn render(&self, _render_pass: wgpu::RenderPass<'a>) {
+    fn render<'b>(&self, _render_pass: wgpu::RenderPass<'b>) {
         todo!()
     }
 }

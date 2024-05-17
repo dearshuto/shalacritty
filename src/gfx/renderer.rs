@@ -310,7 +310,7 @@ where
                 0.0,
                 1.0,
             );
-            // self.render_plugin.render(render_pass);
+            self.render_plugin.render(render_pass);
         }
 
         // 文字描画
@@ -410,5 +410,5 @@ impl<'a> IRenderPlugin<'a> for () {
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render(&self, _render_pass: wgpu::RenderPass<'a>) {}
+    fn render<'b>(&self, _render_pass: wgpu::RenderPass<'b>) {}
 }
