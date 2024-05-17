@@ -17,12 +17,12 @@ fn main() {
         ),
         (
             include_str!("res/char_rect.vs"),
-            "src/gfx/char_rect.vs.wgsl",
+            "src/gfx/detail/char_rect.vs.wgsl",
             naga::ShaderStage::Vertex,
         ),
         (
             include_str!("res/char_rect.fs"),
-            "src/gfx/char_rect.fs.wgsl",
+            "src/gfx/detail/char_rect.fs.wgsl",
             naga::ShaderStage::Fragment,
         ),
         (
