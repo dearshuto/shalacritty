@@ -91,7 +91,7 @@ impl<'a> Renderer<'a, ()> {
 
 impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
-    TRenderPlugin: IRenderPlugin<'a>,
+    TRenderPlugin: IRenderPlugin,
 {
     pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
         Self {
@@ -405,10 +405,10 @@ where
     }
 }
 
-impl<'a> IRenderPlugin<'a> for () {
+impl IRenderPlugin for () {
     fn register(&mut self, _instance: &wgpu::Instance) {}
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render<'b>(&self, _render_pass: wgpu::RenderPass<'b>) {}
+    fn render(&self, _render_pass: wgpu::RenderPass) {}
 }

@@ -208,7 +208,7 @@ impl<'a> Workspace<'a> {
 }
 
 struct Plugin;
-impl<'a> IRenderPlugin<'a> for Plugin {
+impl IRenderPlugin for Plugin {
     fn register(&mut self, _instance: &wgpu::Instance) {
         todo!()
     }
@@ -217,7 +217,7 @@ impl<'a> IRenderPlugin<'a> for Plugin {
         todo!()
     }
 
-    fn render<'b>(&self, _render_pass: wgpu::RenderPass<'b>) {
+    fn render(&self, _render_pass: wgpu::RenderPass) {
         todo!()
     }
 }
