@@ -25,7 +25,7 @@ pub struct Workspace<'a> {
     glyph_manager: GlyphManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a, ()>,
+    renderer: Renderer<'a, Plugin<'a>>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,
@@ -45,7 +45,7 @@ impl<'a> Workspace<'a> {
         let glyph_manager = GlyphManager::new();
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
-        let renderer = Renderer::new();
+        let renderer = Renderer::new_with_plugin(Plugin::new());
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
 
@@ -207,17 +207,23 @@ impl<'a> Workspace<'a> {
     }
 }
 
-struct Plugin;
-impl IRenderPlugin for Plugin {
-    fn register(&mut self, _instance: &wgpu::Instance) {
-        todo!()
-    }
+struct Plugin<'a> {
+    #[allow(dead_code)]
+    background_renderer: BackgroundRenderer<'a>,
+}
 
-    fn resize(&mut self, _width: u32, _height: u32) {
-        todo!()
+impl<'a> Plugin<'a> {
+    pub fn new() -> Self {
+        Self {
+            background_renderer: BackgroundRenderer::new(),
+        }
     }
+}
 
-    fn render(&self, _render_pass: wgpu::RenderPass) {
-        todo!()
-    }
+impl<'a> IRenderPlugin for Plugin<'a> {
+    fn register(&mut self, _instance: &wgpu::Instance) {}
+
+    fn resize(&mut self, _width: u32, _height: u32) {}
+
+    fn render(&self, _render_pass: wgpu::RenderPass) {}
 }
