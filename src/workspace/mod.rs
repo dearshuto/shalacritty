@@ -8,7 +8,8 @@ use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
 
 use crate::{
     gfx::{
-        ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
+        BackgroundRenderer, ContentPlotter, GlyphManager, GlyphTexturePatch, IContent,
+        IRenderPlugin, Renderer, RendererUpdateParams,
     },
     multiplexers::{TileId, TileManager},
     window::WindowManager,
@@ -203,5 +204,20 @@ impl<'a> Workspace<'a> {
         }
 
         Action::Input(input)
+    }
+}
+
+struct Plugin;
+impl<'a> IRenderPlugin<'a> for Plugin {
+    fn register(&mut self, _instance: &wgpu::Instance) {
+        todo!()
+    }
+
+    fn resize(&mut self, _width: u32, _height: u32) {
+        todo!()
+    }
+
+    fn render(&self, _render_pass: wgpu::RenderPass<'a>) {
+        todo!()
     }
 }

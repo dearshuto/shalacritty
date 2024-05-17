@@ -8,7 +8,7 @@ use winit::{
 
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
-    detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
+    detail::{CursorRenderer, ScanBufferRenderer, TextRenderer},
     IRenderPlugin,
 };
 
@@ -73,8 +73,6 @@ pub struct Renderer<'a, TRenderPlugin> {
     // カーソル
     cursor_renderer: CursorRenderer<'a>,
 
-    // 背景
-    background_renderer: BackgroundRenderer<'a>,
     // スキャンバッファーに表示
     scan_buffer_renderer: ScanBufferRenderer<'a>,
 
@@ -108,8 +106,6 @@ where
             // カーソル
             cursor_renderer: CursorRenderer::new(),
 
-            // 背景
-            background_renderer: BackgroundRenderer::new(),
             // スキャンバッファー描画
             scan_buffer_renderer: ScanBufferRenderer::new(),
 
@@ -218,9 +214,6 @@ where
         // カーソル
         self.cursor_renderer.resize(width, height);
 
-        // 背景描画
-        // TODO: プラグイン化
-        self.background_renderer.resize(id, queue, width, height);
         // スキャンバッファー描画
         self.scan_buffer_renderer.resize(id, queue, width, height);
 
@@ -251,15 +244,15 @@ where
             render_update_params.image_path,
             render_update_params.image_alpha,
         ) {
-            let texture_format = surface.get_capabilities(adapter).formats[0];
-            self.background_renderer
-                .register(id, device, queue, texture_format, image_path, alpha);
-            self.background_renderer.resize(
-                id,
-                queue,
-                render_update_params.width,
-                render_update_params.height,
-            );
+            // let texture_format = surface.get_capabilities(adapter).formats[0];
+            // self.background_renderer
+            //     .register(id, device, queue, texture_format, image_path, alpha);
+            // self.background_renderer.resize(
+            //     id,
+            //     queue,
+            //     render_update_params.width,
+            //     render_update_params.height,
+            // );
         }
 
         let queue = self.queue_table.get(&id).unwrap();
@@ -317,7 +310,7 @@ where
                 0.0,
                 1.0,
             );
-            self.background_renderer.render(id, render_pass);
+            // self.render_plugin.render(render_pass);
         }
 
         // 文字描画

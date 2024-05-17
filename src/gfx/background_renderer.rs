@@ -177,12 +177,16 @@ where
         CreateInstanceParams::New => {
             let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("background.vs.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "detail/background.vs.wgsl"
+                ))),
             });
 
             let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("background.fs.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "detail/background.fs.wgsl"
+                ))),
             });
 
             let bind_group_layout =
