@@ -24,7 +24,7 @@ pub struct Workspace<'a> {
     glyph_manager: GlyphManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a>,
+    renderer: Renderer<'a, ()>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,

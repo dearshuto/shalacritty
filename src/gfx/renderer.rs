@@ -9,6 +9,7 @@ use winit::{
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
     detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
+    IRenderPlugin,
 };
 
 pub struct RendererUpdateParams<TPath: AsRef<Path>> {
@@ -60,7 +61,7 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
     }
 }
 
-pub struct Renderer<'a> {
+pub struct Renderer<'a, TRenderPlugin> {
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
     adapter_table: HashMap<WindowId, wgpu::Adapter>,
@@ -74,16 +75,27 @@ pub struct Renderer<'a> {
 
     // 背景
     background_renderer: BackgroundRenderer<'a>,
-
     // スキャンバッファーに表示
     scan_buffer_renderer: ScanBufferRenderer<'a>,
 
     // 背景色
     background_color: [f32; 4],
+
+    #[allow(dead_code)]
+    render_plugin: TRenderPlugin,
 }
 
-impl<'a> Renderer<'a> {
+impl<'a> Renderer<'a, ()> {
     pub fn new() -> Self {
+        Self::new_with_plugin(())
+    }
+}
+
+impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
+where
+    TRenderPlugin: IRenderPlugin<'a>,
+{
+    pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
         Self {
             device_table: Default::default(),
             queue_table: Default::default(),
@@ -98,12 +110,13 @@ impl<'a> Renderer<'a> {
 
             // 背景
             background_renderer: BackgroundRenderer::new(),
-
             // スキャンバッファー描画
             scan_buffer_renderer: ScanBufferRenderer::new(),
 
             // 背景色
             background_color: [0.3, 0.4, 0.5, 0.5],
+
+            render_plugin: plugin,
         }
     }
 
@@ -173,6 +186,9 @@ impl<'a> Renderer<'a> {
         self.queue_table.insert(id, queue);
         self.adapter_table.insert(id, adapter);
         self.surface_table.insert(id, surface);
+
+        // プラグイン
+        self.render_plugin.register(instance);
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
@@ -205,9 +221,11 @@ impl<'a> Renderer<'a> {
         // 背景描画
         // TODO: プラグイン化
         self.background_renderer.resize(id, queue, width, height);
-
         // スキャンバッファー描画
         self.scan_buffer_renderer.resize(id, queue, width, height);
+
+        // プラグイン
+        self.render_plugin.resize(width, height);
     }
 
     pub fn update<TPath>(&mut self, id: WindowId, render_update_params: RendererUpdateParams<TPath>)
@@ -392,4 +410,12 @@ impl<'a> Renderer<'a> {
         queue.submit(Some(command_encoder.finish()));
         frame.present();
     }
+}
+
+impl<'a> IRenderPlugin<'a> for () {
+    fn register(&mut self, _instance: &wgpu::Instance) {}
+
+    fn resize(&mut self, _width: u32, _height: u32) {}
+
+    fn render(&self, _render_pass: wgpu::RenderPass<'a>) {}
 }
