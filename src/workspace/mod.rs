@@ -1,7 +1,7 @@
 mod detail;
 mod diff_calculator;
 
-use std::{collections::HashSet, sync::Arc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
 use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
@@ -15,7 +15,7 @@ use crate::{
     ConfigService,
 };
 
-use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
+use self::detail::{Action, BackgroundRenderer, ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -24,7 +24,10 @@ pub struct Workspace<'a> {
     glyph_manager: GlyphManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a, ()>,
+    renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
+
+    #[allow(dead_code)]
+    background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,
@@ -44,9 +47,14 @@ impl<'a> Workspace<'a> {
         let glyph_manager = GlyphManager::new();
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
-        let renderer = Renderer::new();
+        let background_renderer = Rc::new(RefCell::new(BackgroundRenderer::new()));
+        let renderer = Renderer::new_with_plugin(Rc::clone(&background_renderer));
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
+
+        for path in &config_service.read().unwrap().background.path {
+            background_renderer.borrow_mut().register(path);
+        }
 
         Self {
             instance,
@@ -55,6 +63,7 @@ impl<'a> Workspace<'a> {
             window_manager,
             content_plotter,
             renderer,
+            background_renderer,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
@@ -96,7 +105,9 @@ impl<'a> Workspace<'a> {
             if self.is_force_dirty {
                 self.is_force_dirty = false;
             } else {
-                let is_tty_dirty = self.tile_manager.consume_dirty().unwrap();
+                let Some(is_tty_dirty) = self.tile_manager.consume_dirty() else {
+                    continue;
+                };
 
                 // 差分がなかったらなにもしない
                 if !is_tty_dirty && !is_config_dirty {
@@ -128,13 +139,12 @@ impl<'a> Workspace<'a> {
                 &self.glyph_manager,
                 (window.inner_size().width, window.inner_size().height),
             );
-            let update_params =
-                RendererUpdateParams::new(window.inner_size().width, window.inner_size().height)
-                    .with_diff(diff)
-                    .with_glyph_texture_patches(glyph_texture_patches)
-                    .with_background_color(background)
-                    .with_image_alpha(image_alpha)
-                    .with_image_path(image_path.clone());
+            let update_params = RendererUpdateParams::new()
+                .with_diff(diff)
+                .with_glyph_texture_patches(glyph_texture_patches)
+                .with_background_color(background)
+                .with_image_alpha(image_alpha)
+                .with_image_path(image_path.clone());
             self.renderer.update(*window_id, update_params);
 
             window.request_redraw();

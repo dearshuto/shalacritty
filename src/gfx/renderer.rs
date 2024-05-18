@@ -8,13 +8,11 @@ use winit::{
 
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
-    detail::{BackgroundRenderer, CursorRenderer, ScanBufferRenderer, TextRenderer},
+    detail::{CursorRenderer, ScanBufferRenderer, TextRenderer},
     IRenderPlugin,
 };
 
 pub struct RendererUpdateParams<TPath: AsRef<Path>> {
-    width: u32,
-    height: u32,
     background_color: Option<[f32; 4]>,
     diff: Diff,
     glyph_texture_patches: Vec<GlyphTexturePatch>,
@@ -23,10 +21,8 @@ pub struct RendererUpdateParams<TPath: AsRef<Path>> {
 }
 
 impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub fn new() -> Self {
         Self {
-            width,
-            height,
             background_color: None,
             diff: Diff::default(),
             glyph_texture_patches: Vec::default(),
@@ -73,8 +69,6 @@ pub struct Renderer<'a, TRenderPlugin> {
     // カーソル
     cursor_renderer: CursorRenderer<'a>,
 
-    // 背景
-    background_renderer: BackgroundRenderer<'a>,
     // スキャンバッファーに表示
     scan_buffer_renderer: ScanBufferRenderer<'a>,
 
@@ -86,6 +80,7 @@ pub struct Renderer<'a, TRenderPlugin> {
 }
 
 impl<'a> Renderer<'a, ()> {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::new_with_plugin(())
     }
@@ -93,7 +88,7 @@ impl<'a> Renderer<'a, ()> {
 
 impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
-    TRenderPlugin: IRenderPlugin<'a>,
+    TRenderPlugin: IRenderPlugin,
 {
     pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
         Self {
@@ -108,8 +103,6 @@ where
             // カーソル
             cursor_renderer: CursorRenderer::new(),
 
-            // 背景
-            background_renderer: BackgroundRenderer::new(),
             // スキャンバッファー描画
             scan_buffer_renderer: ScanBufferRenderer::new(),
 
@@ -218,9 +211,6 @@ where
         // カーソル
         self.cursor_renderer.resize(width, height);
 
-        // 背景描画
-        // TODO: プラグイン化
-        self.background_renderer.resize(id, queue, width, height);
         // スキャンバッファー描画
         self.scan_buffer_renderer.resize(id, queue, width, height);
 
@@ -232,37 +222,20 @@ where
     where
         TPath: AsRef<Path>,
     {
+        let Some(device) = self.device_table.get(&id) else {
+            return;
+        };
+        let Some(queue) = self.queue_table.get(&id) else {
+            return;
+        };
+
+        // プラグインの更新
+        self.render_plugin.update(device, queue);
+
         if let Some(background_color) = render_update_params.background_color {
             self.background_color = background_color;
         }
 
-        if let (
-            Some(device),
-            Some(queue),
-            Some(surface),
-            Some(adapter),
-            Some(image_path),
-            Some(alpha),
-        ) = (
-            self.device_table.get(&id),
-            self.queue_table.get(&id),
-            self.surface_table.get(&id),
-            self.adapter_table.get(&id),
-            render_update_params.image_path,
-            render_update_params.image_alpha,
-        ) {
-            let texture_format = surface.get_capabilities(adapter).formats[0];
-            self.background_renderer
-                .register(id, device, queue, texture_format, image_path, alpha);
-            self.background_renderer.resize(
-                id,
-                queue,
-                render_update_params.width,
-                render_update_params.height,
-            );
-        }
-
-        let queue = self.queue_table.get(&id).unwrap();
         self.text_renderer.update(
             queue,
             id,
@@ -287,9 +260,9 @@ where
         let mut command_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        // 背景描画
+        // 背景クリア
         {
-            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let _render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -308,17 +281,10 @@ where
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-
-            render_pass.set_viewport(
-                0.0,
-                0.0,
-                frame.texture.size().width as f32,
-                frame.texture.size().height as f32,
-                0.0,
-                1.0,
-            );
-            self.background_renderer.render(id, render_pass);
         }
+
+        // プラグイン
+        self.render_plugin.render(&view, &mut command_encoder);
 
         // 文字描画
         {
@@ -412,10 +378,17 @@ where
     }
 }
 
-impl<'a> IRenderPlugin<'a> for () {
+impl IRenderPlugin for () {
+    fn update(&mut self, _device: &wgpu::Device, _queue: &wgpu::Queue) {}
+
     fn register(&mut self, _instance: &wgpu::Instance) {}
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render(&self, _render_pass: wgpu::RenderPass<'a>) {}
+    fn render(
+        &self,
+        _render_target: &wgpu::TextureView,
+        _command_encoder: &mut wgpu::CommandEncoder,
+    ) {
+    }
 }
