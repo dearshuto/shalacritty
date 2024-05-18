@@ -27,6 +27,9 @@ pub struct Background {
 
     #[serde(default)]
     pub path: Vec<String>,
+
+    #[serde(default)]
+    pub enhance: Vec<f32>,
 }
 
 fn default_image_alpha() -> f32 {

@@ -50,6 +50,8 @@ struct Instance {
     // テクスチャーサイズ
     texture_size_table: HashMap<BackgroundId, (u32, u32)>,
 
+    enhance_value_table: HashMap<BackgroundId, f32>,
+
     resize_dirty_flag: bool,
 
     // バインドするリソース
@@ -95,13 +97,16 @@ impl<'a> BackgroundRenderer<'a> {
         id
     }
 
-    pub fn activate(&mut self, id: BackgroundId) {
+    pub fn activate(&mut self, id: BackgroundId, enhance: f32) {
         self.active_background_id = Some(id);
 
         // 画像を切り替えるとウィンドウにフィットさせるための領域も変更になるのでダーティにする
-        if let Some(instance) = &mut self.instance {
-            instance.resize_dirty_flag = true;
-        }
+        let Some(instance) = &mut self.instance else {
+            return;
+        };
+
+        instance.resize_dirty_flag = true;
+        instance.enhance_value_table.insert(id, enhance);
     }
 
     fn create_instance(device: &wgpu::Device) -> Instance {
@@ -226,6 +231,7 @@ impl<'a> BackgroundRenderer<'a> {
             sampler,
             texture_table: HashMap::default(),
             texture_size_table: HashMap::default(),
+            enhance_value_table: HashMap::default(),
             resize_dirty_flag: true,
             bind_group_table: HashMap::default(),
         }
@@ -386,6 +392,14 @@ impl<'a> BackgroundRenderer<'a> {
         };
         let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
         queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
+
+        if let Some(enhance) = instance.enhance_value_table.get(&id) {
+            let data = MaterialData {
+                alpha_enhance: *enhance,
+            };
+            let data = bytemuck::bytes_of(&data);
+            queue.write_buffer(&instance.material_constant_buffer, 0, data);
+        }
     }
 
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {

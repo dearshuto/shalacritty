@@ -13,8 +13,5 @@ layout (binding = 3) uniform Material {
 void main()
 {
     vec4 color = texture(sampler2D(u_BackgroundTexture, u_Sampler), v_Uv);
-    o_Color = color;
-
-    // 定数バッファーで指定できるようにする
-    o_Color.a *= u_AlphaEnhance;
+    o_Color = vec4(u_AlphaEnhance * color.rgb, color.a);
 }
