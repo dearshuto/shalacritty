@@ -62,7 +62,10 @@ impl<'a> Workspace<'a> {
             background_ids.push(id);
         }
         if let Some(first_background) = background_ids.first() {
-            background_renderer.borrow_mut().activate(*first_background);
+            let enhance = config_service.read().unwrap().background.enhance[0];
+            background_renderer
+                .borrow_mut()
+                .activate(*first_background, enhance);
         }
 
         Self {
@@ -194,9 +197,17 @@ impl<'a> Workspace<'a> {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
 
-                if let Some(id) = self.background_ids.get(index as usize) {
-                    self.background_renderer.borrow_mut().activate(*id);
-                }
+                let Some(id) = self.background_ids.get(index as usize) else {
+                    return;
+                };
+
+                let config = self.config_service.read().unwrap();
+                let Some(enhance) = config.background.enhance.get(index as usize) else {
+                    return;
+                };
+                self.background_renderer
+                    .borrow_mut()
+                    .activate(*id, *enhance);
             }
         }
     }
