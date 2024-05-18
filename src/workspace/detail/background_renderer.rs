@@ -156,10 +156,14 @@ impl<'a> BackgroundRenderer<'a> {
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            dst_factor: wgpu::BlendFactor::DstAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
-                        alpha: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::DstAlpha,
+                            operation: wgpu::BlendOperation::Min,
+                        },
                     }),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
