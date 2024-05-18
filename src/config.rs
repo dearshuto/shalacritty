@@ -151,6 +151,7 @@ fn load_config(path: &Path) -> Config {
     for path in &mut config.background.path {
         image_path.push(&path);
         *path = image_path.to_str().unwrap().to_string();
+        image_path.pop();
     }
 
     config
