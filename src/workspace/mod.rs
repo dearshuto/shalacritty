@@ -4,7 +4,7 @@ mod diff_calculator;
 use std::{collections::HashSet, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
-use winit::{event_loop::EventLoopWindowTarget, window::WindowId};
+use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
     gfx::{
@@ -157,8 +157,8 @@ impl<'a> Workspace<'a> {
         window.request_redraw();
     }
 
-    pub fn send_input(&mut self, _id: WindowId, text: &str) {
-        let action = Self::detect_action(text);
+    pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
+        let action = Self::detect_action(text, modifier_state);
         match action {
             Action::Input(str) => self.tile_manager.send_input(str),
             Action::SplitHorizontal => {
@@ -181,14 +181,18 @@ impl<'a> Workspace<'a> {
         self.tile_manager.is_empty()
     }
 
-    fn detect_action(input: &str) -> Action {
+    fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
         // Ctrl+1
-        if input == String::from_utf8(vec![49]).unwrap() {
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && input == String::from_utf8(vec![49]).unwrap()
+        {
             return Action::ActivateTab(0);
         }
 
         // Ctrl+2
-        if input == String::from_utf8(vec![50]).unwrap() {
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && input == String::from_utf8(vec![50]).unwrap()
+        {
             return Action::ActivateTab(1);
         }
 

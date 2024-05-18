@@ -3,16 +3,18 @@ use std::time::{Duration, Instant};
 use winit::{
     event::{ElementState, Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    keyboard::NamedKey,
+    keyboard::{ModifiersState, NamedKey},
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
 use crate::workspace::Workspace;
 
-pub struct App;
+pub struct App {}
 
 impl App {
     pub async fn run() {
+        let mut modifiers_state = ModifiersState::empty();
+
         let event_loop = EventLoopBuilder::new().build().unwrap();
 
         // ひとつだけウィンドウを起動しておく
@@ -42,13 +44,16 @@ impl App {
                     WindowEvent::RedrawRequested => {
                         workspace.render(window_id);
                     }
+                    WindowEvent::ModifiersChanged(modifiers) => {
+                        modifiers_state = modifiers.state();
+                    }
                     WindowEvent::KeyboardInput { event, .. } => {
                         if event.state != ElementState::Pressed {
                             return;
                         }
 
                         if let Some(text) = event.text_with_all_modifiers() {
-                            workspace.send_input(window_id, text);
+                            workspace.send_input(window_id, text, modifiers_state);
                             return;
                         };
 
@@ -65,7 +70,7 @@ impl App {
                             // winit::keyboard::Key::Dead(_) => {}
                             _ => None,
                         } {
-                            workspace.send_input(window_id, name_key);
+                            workspace.send_input(window_id, name_key, modifiers_state);
                         }
                     }
                     WindowEvent::CloseRequested => {
