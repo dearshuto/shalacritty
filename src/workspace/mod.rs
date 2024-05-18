@@ -15,7 +15,9 @@ use crate::{
     ConfigService,
 };
 
-use self::detail::{Action, BackgroundRenderer, ConfigDiff, ContentAdapter, MultiplexersAdapter};
+use self::detail::{
+    Action, BackgroundId, BackgroundRenderer, ConfigDiff, ContentAdapter, MultiplexersAdapter,
+};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -26,8 +28,10 @@ pub struct Workspace<'a> {
     content_plotter: ContentPlotter,
     renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
 
-    #[allow(dead_code)]
     background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
+
+    // 並び順がタブのインデックスと対応
+    background_ids: Vec<BackgroundId>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,
@@ -52,8 +56,13 @@ impl<'a> Workspace<'a> {
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
 
+        let mut background_ids = Vec::default();
         for path in &config_service.read().unwrap().background.path {
-            background_renderer.borrow_mut().register(path);
+            let id = background_renderer.borrow_mut().register(path);
+            background_ids.push(id);
+        }
+        if let Some(first_background) = background_ids.first() {
+            background_renderer.borrow_mut().activate(*first_background);
         }
 
         Self {
@@ -64,6 +73,7 @@ impl<'a> Workspace<'a> {
             content_plotter,
             renderer,
             background_renderer,
+            background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
@@ -182,7 +192,11 @@ impl<'a> Workspace<'a> {
             }
             Action::ActivateTab(index) => {
                 self.is_force_dirty = true;
-                self.tile_manager.activate_tab(index)
+                self.tile_manager.activate_tab(index);
+
+                if let Some(id) = self.background_ids.get(index as usize) {
+                    self.background_renderer.borrow_mut().activate(*id);
+                }
             }
         }
     }
