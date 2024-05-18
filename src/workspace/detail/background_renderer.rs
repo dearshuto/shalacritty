@@ -95,6 +95,15 @@ impl<'a> BackgroundRenderer<'a> {
         id
     }
 
+    pub fn activate(&mut self, id: BackgroundId) {
+        self.active_background_id = Some(id);
+
+        // 画像を切り替えるとウィンドウにフィットさせるための領域も変更になるのでダーティにする
+        if let Some(instance) = &mut self.instance {
+            instance.resize_dirty_flag = true;
+        }
+    }
+
     fn create_instance(device: &wgpu::Device) -> Instance {
         let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
