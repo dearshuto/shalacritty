@@ -217,18 +217,13 @@ impl<'a> Workspace<'a> {
     }
 
     fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
-        // Ctrl+1
-        if modifier_state.contains(ModifiersState::CONTROL)
-            && input == String::from_utf8(vec![49]).unwrap()
-        {
-            return Action::ActivateTab(0);
-        }
-
-        // Ctrl+2
-        if modifier_state.contains(ModifiersState::CONTROL)
-            && input == String::from_utf8(vec![50]).unwrap()
-        {
-            return Action::ActivateTab(1);
+        // Ctrl+<0~4>
+        for index in 0..5 {
+            if modifier_state.contains(ModifiersState::CONTROL)
+                && input == String::from_utf8(vec![49 + index]).unwrap()
+            {
+                return Action::ActivateTab(index as u32);
+            }
         }
 
         // Ctrl+h で画面分割
