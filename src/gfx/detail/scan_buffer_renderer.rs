@@ -165,8 +165,10 @@ impl<'a> ScanBufferRenderer<'a> {
     }
 
     pub fn resize(&self, id: WindowId, queue: &wgpu::Queue, width: u32, height: u32) {
+        let Some(instance) = self.instance_table.get(&id) else {
+            return;
+        };
         let (scale_x, scale_y) = (width as f32 / 4096.0, height as f32 / 4096.0);
-        let instance = self.instance_table.get(&id).unwrap();
         queue.write_buffer(
             &instance.constant_buffer,
             0,
@@ -175,7 +177,10 @@ impl<'a> ScanBufferRenderer<'a> {
     }
 
     pub fn render(&'a self, id: WindowId, mut render_pass: wgpu::RenderPass<'a>) {
-        let instance = self.instance_table.get(&id).unwrap();
+        let Some(instance) = self.instance_table.get(&id) else {
+            return;
+        };
+
         render_pass.set_pipeline(&instance.render_pipeline);
         render_pass.set_bind_group(0, &instance.bind_group, &[]);
         render_pass.draw(0..6, 0..1);
