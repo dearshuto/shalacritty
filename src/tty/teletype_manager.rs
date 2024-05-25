@@ -139,7 +139,7 @@ impl TeletypeManager {
     pub fn consume_ptr_write(&self) -> Vec<Vec<u8>> {
         self.terminal_table
             .keys()
-            .filter_map(|id| self.ptr_write_table.lock().unwrap().remove(&id))
+            .filter_map(|id| self.ptr_write_table.lock().unwrap().remove(id))
             .collect()
     }
 

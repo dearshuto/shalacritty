@@ -37,9 +37,7 @@ impl WindowManager {
     }
 
     pub fn try_get_window(&self, id: WindowId) -> Option<Arc<Window>> {
-        let Some(window) = self.window_table.get(&id) else {
-            return None;
-        };
+        let window = self.window_table.get(&id)?;
 
         Some(window.clone())
     }

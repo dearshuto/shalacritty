@@ -341,7 +341,7 @@ mod tests {
     fn parents() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         manager.update();
 
         let (width, height) = manager.try_get_actual_size(id).unwrap();
@@ -354,7 +354,7 @@ mod tests {
     fn single_child() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let child_id = manager
             .spawn_virtual_window_with_parent(640, 480, id)
             .unwrap();
@@ -374,7 +374,7 @@ mod tests {
     fn children() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let child_id0 = manager
             .spawn_virtual_window_with_parent(640, 240, id)
             .unwrap();
@@ -402,7 +402,7 @@ mod tests {
     fn split_horizontal() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.update();
@@ -417,7 +417,7 @@ mod tests {
     fn split_horizontal_resize() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.resize(320, 480);
@@ -434,7 +434,7 @@ mod tests {
     fn find_children() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let new_window_id = manager.split_horizontal(id);
 
         manager.update();
@@ -448,7 +448,7 @@ mod tests {
     fn remove() {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
-        let id = *manager.find_children(tab_id).get(0).unwrap();
+        let id = *manager.find_children(tab_id).first().unwrap();
         let new_window_id = manager.split_horizontal(id);
         manager.remove(new_window_id);
 
