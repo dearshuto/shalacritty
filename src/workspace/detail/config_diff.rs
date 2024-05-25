@@ -43,7 +43,7 @@ impl ConfigDiff {
         // 画像パス
         if config.image != self.old_config.image {
             self.image_path_tentative = Some(config.image.clone());
-            self.old_config.image = config.image.clone();
+            self.old_config.image.clone_from(&config.image);
         } else {
             self.image_path_tentative = None;
         }

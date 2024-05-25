@@ -194,8 +194,8 @@ where
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format: swapchain_format,
-            width: width as u32,
-            height: height as u32,
+            width,
+            height,
             present_mode: wgpu::PresentMode::Fifo,
             #[cfg(not(any(target_os = "macos", windows)))]
             alpha_mode: wgpu::CompositeAlphaMode::Auto,

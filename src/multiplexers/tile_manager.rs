@@ -44,7 +44,10 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
         let mut virtual_window_manager = VirtualWindowManager::new();
         let tab_id = virtual_window_manager.spawn_virtual_window(1280, 960);
-        let virtual_window_id = *virtual_window_manager.find_children(tab_id).get(0).unwrap();
+        let virtual_window_id = *virtual_window_manager
+            .find_children(tab_id)
+            .first()
+            .unwrap();
 
         let tile_id = TileId {
             internal: virtual_window_id,
@@ -192,7 +195,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             let new_virtual_window_id = *self
                 .virtual_window_manager
                 .find_children(new_tab_id)
-                .get(0)
+                .first()
                 .unwrap();
 
             // 新規に追加した仮想ウィンドウに割り当てるシェルを起動

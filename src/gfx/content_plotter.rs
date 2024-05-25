@@ -206,7 +206,7 @@ impl ContentPlotter {
 
         Diff {
             character_info_array: items,
-            cursor: Some(cursor_point.clone()),
+            cursor: Some(*cursor_point),
             item_count: item_count as i32,
         }
     }
