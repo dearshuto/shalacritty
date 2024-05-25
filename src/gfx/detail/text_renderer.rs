@@ -242,7 +242,12 @@ impl<'a> TextRenderer<'a> {
         diff: &Diff,
         glyph_texture_patches: &[GlyphTexturePatch],
     ) {
-        let buffer = self.character_storage_block_table.get(&id).unwrap();
+        let Some(buffer) = self.character_storage_block_table.get(&id) else {
+            return;
+        };
+        let Some(texture) = &self.glyph_texture else {
+            return;
+        };
 
         // 文字数
         self.character_count = diff.item_count() as u32;
@@ -271,7 +276,6 @@ impl<'a> TextRenderer<'a> {
             queue.write_buffer(buffer, offset as u64, binary);
         }
 
-        let texture = self.glyph_texture.as_ref().unwrap();
         for texture_patch in glyph_texture_patches {
             if texture_patch.width() == 0
                 || texture.height() == 0
