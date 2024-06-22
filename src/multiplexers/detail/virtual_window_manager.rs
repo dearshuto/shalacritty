@@ -472,4 +472,27 @@ mod tests {
         // タブが消えてる
         assert_eq!(manager.get_tab_ids().len(), 0);
     }
+
+    // 子要素の走査で順序が保持されていることをテスト
+    #[test]
+    fn remove_split_horizontal() {
+        let mut manager = VirtualWindowManager::new();
+        let tab_id = manager.spawn_virtual_window(640, 480);
+        let id = *manager.find_children(tab_id).first().unwrap();
+
+        // 横方向に分割
+        let new_virtual_window_id = manager.split_horizontal(id);
+
+        // タブができてる
+        manager.update();
+        assert_eq!(manager.find_children(tab_id).len(), 2);
+
+        // ウィンドウを削除
+        manager.remove(new_virtual_window_id);
+        manager.update();
+
+        // ウィンドウが消えてる
+        assert_eq!(manager.find_children(tab_id).len(), 1);
+        assert_eq!(*manager.find_children(tab_id).first().unwrap(), id);
+    }
 }
