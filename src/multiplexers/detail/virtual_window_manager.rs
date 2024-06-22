@@ -272,7 +272,6 @@ impl VirtualWindowManager {
         new_window_id
     }
 
-    #[allow(dead_code)]
     pub fn remove(&mut self, id: VirtualWindowId) {
         self.virtual_window_table.remove(&id);
         self.actual_size_table.remove(&id);
@@ -293,6 +292,18 @@ impl VirtualWindowManager {
             children.extend(removed_children);
             break;
         }
+
+        self.tab_ids.retain(|tab_id| {
+            let Some(id) = self.tab_window_table.get(tab_id) else {
+                return false;
+            };
+
+            let Some(children) = self.hierarchy_table.get(&id) else {
+                return false;
+            };
+
+            !children.is_empty()
+        });
     }
 
     pub fn try_get_actual_size(&self, id: VirtualWindowId) -> Option<(u32, u32)> {
@@ -449,12 +460,16 @@ mod tests {
         let mut manager = VirtualWindowManager::new();
         let tab_id = manager.spawn_virtual_window(640, 480);
         let id = *manager.find_children(tab_id).first().unwrap();
-        let new_window_id = manager.split_horizontal(id);
-        manager.remove(new_window_id);
 
+        // タブができてる
+        manager.update();
+        assert_eq!(manager.get_tab_ids().len(), 1);
+
+        // ウィンドウを削除
+        manager.remove(id);
         manager.update();
 
-        let children = manager.find_children(tab_id);
-        assert_eq!(children, vec![id]);
+        // タブが消えてる
+        assert_eq!(manager.get_tab_ids().len(), 0);
     }
 }
