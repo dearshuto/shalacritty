@@ -30,6 +30,8 @@ impl WindowManager {
             .with_max_inner_size(PhysicalSize::new(4096, 4096))
             .build(event_loop)
             .unwrap();
+        window.set_ime_allowed(true);
+
         let id = window.id();
         self.ids.push(id);
         self.window_table.insert(id, Arc::new(window));

@@ -38,6 +38,14 @@ impl App {
                 Event::WindowEvent {
                     window_id, event, ..
                 } => match event {
+                    WindowEvent::Ime(ime) => match ime {
+                        winit::event::Ime::Enabled => {}
+                        winit::event::Ime::Preedit(_, _) => {}
+                        winit::event::Ime::Commit(str) => {
+                            workspace.send_input(window_id, &str, modifiers_state)
+                        }
+                        winit::event::Ime::Disabled => {}
+                    },
                     WindowEvent::Resized(size) => {
                         workspace.resize(window_id, size.width, size.height);
                     }
