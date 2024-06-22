@@ -103,6 +103,27 @@ impl<'a> Workspace<'a> {
 
         self.tile_manager.update();
 
+        // 背景更新
+        for (index, tab_id) in self.tile_manager.get_tab_ids().iter().enumerate() {
+            if self.tile_manager.get_active_tab_id() != *tab_id {
+                continue;
+            }
+
+            let background_id = self.background_ids[index];
+
+            let config = self.config_service.read().unwrap();
+            let Some(enhance) = config.background.enhance.get(index) else {
+                return;
+            };
+            let is_changed = self
+                .background_renderer
+                .borrow_mut()
+                .activate(background_id, *enhance);
+            if is_changed {
+                self.is_force_dirty = true;
+            }
+        }
+
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();

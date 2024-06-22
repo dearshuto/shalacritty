@@ -97,16 +97,22 @@ impl<'a> BackgroundRenderer<'a> {
         id
     }
 
-    pub fn activate(&mut self, id: BackgroundId, enhance: f32) {
+    pub fn activate(&mut self, id: BackgroundId, enhance: f32) -> bool {
+        // 変化がなければなにもしない
+        if self.active_background_id.is_some() && self.active_background_id.unwrap() == id {
+            return false;
+        }
+
         self.active_background_id = Some(id);
 
         // 画像を切り替えるとウィンドウにフィットさせるための領域も変更になるのでダーティにする
         let Some(instance) = &mut self.instance else {
-            return;
+            return true;
         };
 
         instance.resize_dirty_flag = true;
         instance.enhance_value_table.insert(id, enhance);
+        true
     }
 
     fn create_instance(device: &wgpu::Device) -> Instance {

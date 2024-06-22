@@ -71,12 +71,42 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     pub fn update(&mut self) {
         self.shell_manager.update();
 
-        // まだ動いてるやつだけ残す
-        self.id_set.retain(|id| self.shell_manager.is_running(*id));
+        // 終了してるシェル削除しつつ確保しておく
+        let mut killed_shell_ids = Vec::default();
+        self.id_set.retain(|id| {
+            if self.shell_manager.is_running(*id) {
+                return true;
+            }
+
+            killed_shell_ids.push(*id);
+            false
+        });
+
+        // 終了したシェルの仮想ウィンドウを削除
+        for killed_shell_id in killed_shell_ids {
+            let Some((tile_id, _shell_id)) = self
+                .tile_shell_table
+                .iter()
+                .find(|(_tile_id, shell_id)| **shell_id == killed_shell_id)
+            else {
+                continue;
+            };
+
+            let virtual_window_id = tile_id.internal;
+            self.virtual_window_manager.remove(virtual_window_id);
+            break;
+        }
 
         self.virtual_window_manager.update();
 
-        // TODO: 終了している仮想ウィンドウを除外する
+        if !self
+            .virtual_window_manager
+            .get_tab_ids()
+            .contains(&self.active_tab_id)
+            && !self.virtual_window_manager.get_tab_ids().is_empty()
+        {
+            self.active_tab_id = *self.virtual_window_manager.get_tab_ids().first().unwrap();
+        }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -123,6 +153,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             internal: new_virtual_window_id,
         };
         self.tile_shell_table.insert(tile_id, shell_id);
+        self.id_set.insert(shell_id);
 
         tile_id
     }
@@ -207,11 +238,20 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
                 internal: new_virtual_window_id,
             };
             self.tile_shell_table.insert(tile_id, shell_id);
+            self.id_set.insert(shell_id);
             self.active_tab_id = new_tab_id;
             return;
         };
 
         self.active_tab_id = *id;
+    }
+
+    pub fn get_active_tab_id(&self) -> TabId {
+        self.active_tab_id
+    }
+
+    pub fn get_tab_ids(&self) -> &[TabId] {
+        self.virtual_window_manager.get_tab_ids()
     }
 
     pub fn get_cursor_position(&self) -> (u32, u32) {
