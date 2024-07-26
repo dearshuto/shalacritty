@@ -136,6 +136,7 @@ where
                     label: None,
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::default(),
                 },
                 None,
             )

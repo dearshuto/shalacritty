@@ -126,6 +126,7 @@ impl<'a> ScanBufferRenderer<'a> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
