@@ -138,6 +138,7 @@ impl<'a> TextRenderer<'a> {
                 compilation_options: Default::default(),
             }),
             multiview: None,
+            cache: None,
         });
 
         // 頂点バッファー
