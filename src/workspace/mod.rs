@@ -1,9 +1,15 @@
 mod detail;
 mod diff_calculator;
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
 use alacritty_terminal::index::{Column, Line, Point};
+use detail::{ImageCache, ImageId};
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -38,6 +44,11 @@ pub struct Workspace<'a> {
 
     tile_manager: TileManager<MultiplexersAdapter>,
 
+    image_cache: ImageCache,
+
+    /// 画像の世代
+    image_generation_table: HashMap<ImageId, u64>,
+
     // 設定の差分
     config_diff: ConfigDiff,
 
@@ -68,6 +79,21 @@ impl<'a> Workspace<'a> {
                 .activate(*first_background, enhance);
         }
 
+        let mut image_generation_table = HashMap::default();
+        let mut image_cache = ImageCache::new();
+        if let Ok(config_service) = config_service.read() {
+            for path in &config_service.background.path {
+                // 監視開始
+                let Some(id) = image_cache.register(path) else {
+                    continue;
+                };
+
+                // 登録時の世代をキャッシュしておく
+                let generation = image_cache.get_generation(id);
+                image_generation_table.insert(id, generation);
+            }
+        }
+
         Self {
             instance,
             config_service,
@@ -79,6 +105,8 @@ impl<'a> Workspace<'a> {
             background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
+            image_cache,
+            image_generation_table,
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
         }
@@ -100,6 +128,20 @@ impl<'a> Workspace<'a> {
         // 設定の差分検出
         self.config_diff
             .update(&self.config_service.read().unwrap());
+
+        // 画像の更新チェック
+        for (id, cached_generation) in &self.image_generation_table {
+            //
+            let latest_geneartion = self.image_cache.get_generation(*id);
+            if latest_geneartion <= *cached_generation {
+                // より新しい世代を採用済みなのでなにもしない
+            }
+
+            // 背景に使用している画像が更新されたので GPU に送りなおす
+            self.image_cache.operate_image(*id, |_| {
+                // TODO
+            });
+        }
 
         self.tile_manager.update();
 
