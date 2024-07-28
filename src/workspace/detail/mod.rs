@@ -1,10 +1,12 @@
 mod action;
 mod background_renderer;
 mod config_diff;
+mod image_cache;
 mod multiplexers_adapter;
 
 pub use action::Action;
 pub use background_renderer::{BackgroundId, BackgroundRenderer};
 pub use config_diff::ConfigDiff;
+pub use image_cache::{ImageCache, ImageId};
 #[allow(unused_imports)]
 pub use multiplexers_adapter::{ContentAdapter, MultiplexersAdapter, PositionAdapter};
