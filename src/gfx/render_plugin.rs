@@ -1,5 +1,27 @@
+pub struct UpdateParams<'a, T> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub user_data: T,
+}
+
+impl<'a, T> UpdateParams<'a, T> {
+    pub fn device(&self) -> &wgpu::Device {
+        self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        self.queue
+    }
+
+    pub fn user_data(&self) -> &T {
+        &self.user_data
+    }
+}
+
 pub trait IRenderPlugin {
-    fn update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue);
+    type UserData;
+
+    fn update(&mut self, update_params: &UpdateParams<'_, Self::UserData>);
 
     fn register(&mut self, instance: &wgpu::Instance);
 
