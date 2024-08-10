@@ -9,7 +9,7 @@ use winit::{
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
     detail::{CursorRenderer, ScanBufferRenderer, TextRenderer},
-    IRenderPlugin,
+    IRenderPlugin, UpdateParams,
 };
 
 pub struct RendererUpdateParams<TPath: AsRef<Path>> {
@@ -88,7 +88,7 @@ impl<'a> Renderer<'a, ()> {
 
 impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
-    TRenderPlugin: IRenderPlugin,
+    TRenderPlugin: IRenderPlugin<UserData = ()>,
 {
     pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
         Self {
@@ -223,30 +223,7 @@ where
     where
         TPath: AsRef<Path>,
     {
-        let Some(device) = self.device_table.get(&id) else {
-            return;
-        };
-        let Some(queue) = self.queue_table.get(&id) else {
-            return;
-        };
-
-        // プラグインの更新
-        self.render_plugin.update(device, queue);
-
-        if let Some(background_color) = render_update_params.background_color {
-            self.background_color = background_color;
-        }
-
-        self.text_renderer.update(
-            queue,
-            id,
-            &render_update_params.diff,
-            &render_update_params.glyph_texture_patches,
-        );
-
-        // カーソルレンダラーの更新
-        self.cursor_renderer
-            .update(id, &render_update_params.diff, queue);
+        self.update_with_user_data(id, render_update_params, ());
     }
 
     pub fn render(&self, id: WindowId) {
@@ -379,8 +356,53 @@ where
     }
 }
 
+impl<'a, TRenderPlugin, TUserData> Renderer<'a, TRenderPlugin>
+where
+    TRenderPlugin: IRenderPlugin<UserData = TUserData>,
+{
+    pub fn update_with_user_data<TPath>(
+        &mut self,
+        id: WindowId,
+        render_update_params: RendererUpdateParams<TPath>,
+        user_data: TUserData,
+    ) where
+        TPath: AsRef<Path>,
+    {
+        let Some(device) = self.device_table.get(&id) else {
+            return;
+        };
+        let Some(queue) = self.queue_table.get(&id) else {
+            return;
+        };
+
+        // プラグインの更新
+        let params = UpdateParams {
+            device,
+            queue,
+            user_data,
+        };
+        self.render_plugin.update(&params);
+
+        if let Some(background_color) = render_update_params.background_color {
+            self.background_color = background_color;
+        }
+
+        self.text_renderer.update(
+            queue,
+            id,
+            &render_update_params.diff,
+            &render_update_params.glyph_texture_patches,
+        );
+
+        // カーソルレンダラーの更新
+        self.cursor_renderer
+            .update(id, &render_update_params.diff, queue);
+    }
+}
+
 impl IRenderPlugin for () {
-    fn update(&mut self, _device: &wgpu::Device, _queue: &wgpu::Queue) {}
+    type UserData = ();
+    fn update(&mut self, _update_param: &UpdateParams<()>) {}
 
     fn register(&mut self, _instance: &wgpu::Instance) {}
 

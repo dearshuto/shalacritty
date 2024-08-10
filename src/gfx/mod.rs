@@ -6,5 +6,5 @@ mod renderer;
 
 pub use content_plotter::{ContentPlotter, GlyphTexturePatch, IContent};
 pub use glyph_manager::GlyphManager;
-pub use render_plugin::IRenderPlugin;
+pub use render_plugin::{IRenderPlugin, UpdateParams};
 pub use renderer::{Renderer, RendererUpdateParams};

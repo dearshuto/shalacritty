@@ -14,7 +14,7 @@ use image::{
 use uuid::Uuid;
 use wgpu::util::DeviceExt;
 
-use crate::gfx::IRenderPlugin;
+use crate::gfx::{IRenderPlugin, UpdateParams};
 
 #[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
 #[repr(C)]
@@ -476,11 +476,18 @@ impl<'a> BackgroundRenderer<'a> {
 }
 
 impl<'a> IRenderPlugin for Rc<RefCell<BackgroundRenderer<'a>>> {
-    fn update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    type UserData = ();
+
+    fn update(&mut self, update_params: &UpdateParams<()>) {
+        let device = update_params.device();
+        let queue = update_params.queue();
+
         let mut renderer = self.borrow_mut();
         if renderer.instance.is_none() {
             renderer.instance = Some(BackgroundRenderer::create_instance(device));
         }
+
+        let _ = update_params.user_data();
 
         // 画像更新
         renderer.update_image(device, queue);
