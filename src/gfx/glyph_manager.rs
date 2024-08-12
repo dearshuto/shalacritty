@@ -50,19 +50,6 @@ impl GlyphManager {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn extract_alphabet(&mut self) {
-        // アルファベットをあらかじめ抽出しておく
-        for char_code in 'A'..='z' {
-            self.extract(char_code);
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn extract_alphabet_async(&mut self) {
-        self.extract_alphabet();
-    }
-
     pub fn extract(&mut self, code: char) -> Option<GlyphTexturePatch> {
         // すでに抽出済み
         if self.glyph_table.rasterized_glyph_table.contains_key(&code) {
