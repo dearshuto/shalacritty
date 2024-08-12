@@ -9,7 +9,7 @@ use std::{
 };
 
 use alacritty_terminal::index::{Column, Line, Point};
-use detail::{ImageCache, ImageId};
+use detail::{BackgroundRendererV2, IBackgroundRendererContext, ImageCache, ImageId};
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -34,6 +34,8 @@ pub struct Workspace<'a> {
     content_plotter: ContentPlotter,
     renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
 
+    renderer_v2: Renderer<'a, BackgroundRendererV2<Workspace<'a>>>,
+
     background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
 
     // 並び順がタブのインデックスと対応
@@ -45,6 +47,8 @@ pub struct Workspace<'a> {
     tile_manager: TileManager<MultiplexersAdapter>,
 
     image_cache: ImageCache,
+
+    active_background_image_id: Option<ImageId>,
 
     /// 画像の世代
     image_generation_table: HashMap<ImageId, u64>,
@@ -101,11 +105,13 @@ impl<'a> Workspace<'a> {
             window_manager,
             content_plotter,
             renderer,
+            renderer_v2: Renderer::new_with_plugin(BackgroundRendererV2::new()),
             background_renderer,
             background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             image_cache,
+            active_background_image_id: None,
             image_generation_table,
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
@@ -116,7 +122,10 @@ impl<'a> Workspace<'a> {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();
-        self.renderer.register(id, &self.instance, window).await;
+        self.renderer
+            .register(id, &self.instance, window.clone())
+            .await;
+        self.renderer_v2.register(id, &self.instance, window).await;
         self.renderer
             .resize(id, window_size.width, window_size.height);
 
@@ -235,6 +244,7 @@ impl<'a> Workspace<'a> {
         self.tile_manager.resize(width, height);
 
         self.renderer.resize(id, width, height);
+        self.renderer_v2.resize(id, width, height);
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {
@@ -300,5 +310,28 @@ impl<'a> Workspace<'a> {
         }
 
         Action::Input(input)
+    }
+}
+
+/// 背景描画のアダプターとしての実装
+impl<'a> IBackgroundRendererContext for Workspace<'a> {
+    fn active_id(&self) -> Option<ImageId> {
+        self.active_background_image_id
+    }
+
+    fn image_cache(&self) -> &ImageCache {
+        &self.image_cache
+    }
+
+    fn window_size(&self) -> (u32, u32) {
+        // ひとまずウィンドウは 1 つしかないと仮定する
+        let Some(window_id) = self.window_manager.ids().first() else {
+            return (1, 1);
+        };
+        let Some(window) = self.window_manager.try_get_window(*window_id) else {
+            return (1, 1);
+        };
+
+        (window.inner_size().width, window.inner_size().height)
     }
 }
