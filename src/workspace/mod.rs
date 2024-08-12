@@ -32,11 +32,7 @@ pub struct Workspace<'a> {
     glyph_manager: GlyphManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
-
-    renderer_v2: Renderer<'a, BackgroundRendererV2<Workspace<'a>>>,
-
-    background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
+    renderer_v2: Renderer<'a, BackgroundRendererV2<BackgroundRendererContext>>,
 
     // 並び順がタブのインデックスと対応
     background_ids: Vec<BackgroundId>,
@@ -57,6 +53,8 @@ pub struct Workspace<'a> {
     config_diff: ConfigDiff,
 
     is_force_dirty: bool,
+
+    background_renderer_context: BackgroundRendererContext,
 }
 
 impl<'a> Workspace<'a> {
@@ -104,9 +102,7 @@ impl<'a> Workspace<'a> {
             glyph_manager,
             window_manager,
             content_plotter,
-            renderer,
             renderer_v2: Renderer::new_with_plugin(BackgroundRendererV2::new()),
-            background_renderer,
             background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
@@ -115,6 +111,7 @@ impl<'a> Workspace<'a> {
             image_generation_table,
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
+            background_renderer_context: BackgroundRendererContext {},
         }
     }
 
@@ -122,12 +119,7 @@ impl<'a> Workspace<'a> {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();
-        self.renderer
-            .register(id, &self.instance, window.clone())
-            .await;
         self.renderer_v2.register(id, &self.instance, window).await;
-        self.renderer
-            .resize(id, window_size.width, window_size.height);
 
         // 初期サイズ反映
         self.resize(id, window_size.width, window_size.height);
@@ -153,27 +145,6 @@ impl<'a> Workspace<'a> {
         }
 
         self.tile_manager.update();
-
-        // 背景更新
-        for (index, tab_id) in self.tile_manager.get_tab_ids().iter().enumerate() {
-            if self.tile_manager.get_active_tab_id() != *tab_id {
-                continue;
-            }
-
-            let background_id = self.background_ids[index];
-
-            let config = self.config_service.read().unwrap();
-            let Some(enhance) = config.background.enhance.get(index) else {
-                return;
-            };
-            let is_changed = self
-                .background_renderer
-                .borrow_mut()
-                .activate(background_id, *enhance);
-            if is_changed {
-                self.is_force_dirty = true;
-            }
-        }
 
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
@@ -224,26 +195,28 @@ impl<'a> Workspace<'a> {
                 &self.glyph_manager,
                 (window.inner_size().width, window.inner_size().height),
             );
-            let update_params = RendererUpdateParams::new()
-                .with_diff(diff)
-                .with_glyph_texture_patches(glyph_texture_patches)
-                .with_background_color(background)
-                .with_image_alpha(image_alpha)
-                .with_image_path(image_path.clone());
-            self.renderer.update(*window_id, &update_params);
+            let update_params =
+                RendererUpdateParams::new_with_user_data(&self.background_renderer_context)
+                    .with_diff(diff)
+                    .with_glyph_texture_patches(glyph_texture_patches)
+                    .with_background_color(background)
+                    .with_image_alpha(image_alpha)
+                    .with_image_path(image_path.clone());
+            // self.renderer.update(*window_id, update_params);
+            self.renderer_v2
+                .update_with_user_data(*window_id, &update_params);
 
             window.request_redraw();
         }
     }
 
     pub fn render(&mut self, id: WindowId) {
-        self.renderer.render(id);
+        self.renderer_v2.render(id);
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         self.tile_manager.resize(width, height);
 
-        self.renderer.resize(id, width, height);
         self.renderer_v2.resize(id, width, height);
 
         // 最描画要求
@@ -269,18 +242,6 @@ impl<'a> Workspace<'a> {
             Action::ActivateTab(index) => {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
-
-                let Some(id) = self.background_ids.get(index as usize) else {
-                    return;
-                };
-
-                let config = self.config_service.read().unwrap();
-                let Some(enhance) = config.background.enhance.get(index as usize) else {
-                    return;
-                };
-                self.background_renderer
-                    .borrow_mut()
-                    .activate(*id, *enhance);
             }
         }
     }
@@ -314,24 +275,28 @@ impl<'a> Workspace<'a> {
 }
 
 /// 背景描画のアダプターとしての実装
-impl<'a> IBackgroundRendererContext for Workspace<'a> {
+struct BackgroundRendererContext {}
+impl<'a> IBackgroundRendererContext for BackgroundRendererContext {
     fn active_id(&self) -> Option<ImageId> {
-        self.active_background_image_id
+        // self.active_background_image_id
+        todo!()
     }
 
     fn image_cache(&self) -> &ImageCache {
-        &self.image_cache
+        todo!()
+        // &self.image_cache
     }
 
     fn window_size(&self) -> (u32, u32) {
-        // ひとまずウィンドウは 1 つしかないと仮定する
-        let Some(window_id) = self.window_manager.ids().first() else {
-            return (1, 1);
-        };
-        let Some(window) = self.window_manager.try_get_window(*window_id) else {
-            return (1, 1);
-        };
+        todo!()
+        // // ひとまずウィンドウは 1 つしかないと仮定する
+        // let Some(window_id) = self.window_manager.ids().first() else {
+        //     return (1, 1);
+        // };
+        // let Some(window) = self.window_manager.try_get_window(*window_id) else {
+        //     return (1, 1);
+        // };
 
-        (window.inner_size().width, window.inner_size().height)
+        // (window.inner_size().width, window.inner_size().height)
     }
 }

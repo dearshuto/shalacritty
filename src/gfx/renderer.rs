@@ -30,16 +30,16 @@ pub trait IRendererUpdateParams {
     fn user_data(&self) -> &Self::TUserData;
 }
 
-pub struct RendererUpdateParams<TPath: AsRef<Path>, T> {
+pub struct RendererUpdateParams<'a, TPath: AsRef<Path>, T> {
     background_color: Option<[f32; 4]>,
     diff: Diff,
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     image_path: Option<TPath>,
     image_alpha: Option<f32>,
-    user_data: T,
+    user_data: &'a T,
 }
 
-impl<TPath: AsRef<Path>> RendererUpdateParams<TPath, ()> {
+impl<'a, TPath: AsRef<Path>> RendererUpdateParams<'a, TPath, ()> {
     pub fn new() -> Self {
         Self {
             background_color: None,
@@ -47,14 +47,14 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath, ()> {
             glyph_texture_patches: Vec::default(),
             image_path: None,
             image_alpha: None,
-            user_data: (),
+            user_data: &(),
         }
     }
 }
 
-impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
+impl<'a, TPath: AsRef<Path>, T> RendererUpdateParams<'a, TPath, T> {
     #[allow(dead_code)]
-    pub fn new_with_user_data(user_data: T) -> Self {
+    pub fn new_with_user_data(user_data: &'a T) -> Self {
         Self {
             background_color: None,
             diff: Diff::default(),

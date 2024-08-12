@@ -21,7 +21,7 @@ impl<'a, T> UpdateParams<'a, T> {
 pub trait IRenderPlugin {
     type UserData;
 
-    fn update(&mut self, update_params: &UpdateParams<'_, Self::UserData>);
+    fn update(&mut self, update_params: &UpdateParams<'_, &Self::UserData>);
 
     fn register(&mut self, instance: &wgpu::Instance);
 
