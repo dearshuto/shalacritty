@@ -90,135 +90,6 @@ impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
     TRenderPlugin: IRenderPlugin<UserData = ()>,
 {
-    pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
-        Self {
-            device_table: Default::default(),
-            queue_table: Default::default(),
-            adapter_table: Default::default(),
-            surface_table: Default::default(),
-
-            // テキスト描画
-            text_renderer: TextRenderer::new(),
-
-            // カーソル
-            cursor_renderer: CursorRenderer::new(),
-
-            // スキャンバッファー描画
-            scan_buffer_renderer: ScanBufferRenderer::new(),
-
-            // 背景色
-            background_color: [0.3, 0.4, 0.5, 0.5],
-
-            render_plugin: plugin,
-        }
-    }
-
-    pub async fn register<TWindow>(
-        &mut self,
-        id: WindowId,
-        instance: &wgpu::Instance,
-        window: Arc<TWindow>,
-    ) where
-        TWindow: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 'a,
-    {
-        let surface = instance.create_surface(window).unwrap();
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .unwrap();
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
-            .await
-            .unwrap();
-
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
-
-        let swapchain_format = swapchain_capabilities.formats[0];
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-            format: swapchain_format,
-            width: 640,
-            height: 480,
-            present_mode: wgpu::PresentMode::Fifo,
-            #[cfg(not(any(target_os = "macos", windows)))]
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            #[cfg(target_os = "macos")]
-            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
-            #[cfg(target_os = "windows")]
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![swapchain_format],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
-
-        // テキスト描画
-        self.text_renderer
-            .register(id, &device, config.format)
-            .await;
-
-        // カーソル描画
-        self.cursor_renderer
-            .register(id, &device, &queue, config.format);
-
-        // スキャンバッファー描画
-        self.scan_buffer_renderer
-            .register(id, &device, swapchain_format);
-
-        self.device_table.insert(id, device);
-        self.queue_table.insert(id, queue);
-        self.adapter_table.insert(id, adapter);
-        self.surface_table.insert(id, surface);
-
-        // プラグイン
-        self.render_plugin.register(instance);
-    }
-
-    pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
-        let device = self.device_table.get(&id).unwrap();
-        let queue = self.queue_table.get(&id).unwrap();
-        let surface = self.surface_table.get(&id).unwrap();
-        let adapter = self.adapter_table.get(&id).unwrap();
-        let swapchain_capabilities = surface.get_capabilities(adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
-            format: swapchain_format,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::Fifo,
-            #[cfg(not(any(target_os = "macos", windows)))]
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            #[cfg(target_os = "macos")]
-            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
-            #[cfg(target_os = "windows")]
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(device, &config);
-
-        // カーソル
-        self.cursor_renderer.resize(width, height);
-
-        // スキャンバッファー描画
-        self.scan_buffer_renderer.resize(id, queue, width, height);
-
-        // プラグイン
-        self.render_plugin.resize(width, height);
-    }
-
     pub fn update<TPath>(&mut self, id: WindowId, render_update_params: RendererUpdateParams<TPath>)
     where
         TPath: AsRef<Path>,
@@ -360,6 +231,101 @@ impl<'a, TRenderPlugin, TUserData> Renderer<'a, TRenderPlugin>
 where
     TRenderPlugin: IRenderPlugin<UserData = TUserData>,
 {
+    pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
+        Self {
+            device_table: Default::default(),
+            queue_table: Default::default(),
+            adapter_table: Default::default(),
+            surface_table: Default::default(),
+
+            // テキスト描画
+            text_renderer: TextRenderer::new(),
+
+            // カーソル
+            cursor_renderer: CursorRenderer::new(),
+
+            // スキャンバッファー描画
+            scan_buffer_renderer: ScanBufferRenderer::new(),
+
+            // 背景色
+            background_color: [0.3, 0.4, 0.5, 0.5],
+
+            render_plugin: plugin,
+        }
+    }
+
+    pub async fn register<TWindow>(
+        &mut self,
+        id: WindowId,
+        instance: &wgpu::Instance,
+        window: Arc<TWindow>,
+    ) where
+        TWindow: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 'a,
+    {
+        let surface = instance.create_surface(window).unwrap();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .unwrap();
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::default(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let swapchain_capabilities = surface.get_capabilities(&adapter);
+
+        let swapchain_format = swapchain_capabilities.formats[0];
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            format: swapchain_format,
+            width: 640,
+            height: 480,
+            present_mode: wgpu::PresentMode::Fifo,
+            #[cfg(not(any(target_os = "macos", windows)))]
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            #[cfg(target_os = "macos")]
+            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
+            #[cfg(target_os = "windows")]
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            view_formats: vec![swapchain_format],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        // テキスト描画
+        self.text_renderer
+            .register(id, &device, config.format)
+            .await;
+
+        // カーソル描画
+        self.cursor_renderer
+            .register(id, &device, &queue, config.format);
+
+        // スキャンバッファー描画
+        self.scan_buffer_renderer
+            .register(id, &device, swapchain_format);
+
+        self.device_table.insert(id, device);
+        self.queue_table.insert(id, queue);
+        self.adapter_table.insert(id, adapter);
+        self.surface_table.insert(id, surface);
+
+        // プラグイン
+        self.render_plugin.register(instance);
+    }
+
     pub fn update_with_user_data<TPath>(
         &mut self,
         id: WindowId,
@@ -397,6 +363,40 @@ where
         // カーソルレンダラーの更新
         self.cursor_renderer
             .update(id, &render_update_params.diff, queue);
+    }
+
+    pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
+        let device = self.device_table.get(&id).unwrap();
+        let queue = self.queue_table.get(&id).unwrap();
+        let surface = self.surface_table.get(&id).unwrap();
+        let adapter = self.adapter_table.get(&id).unwrap();
+        let swapchain_capabilities = surface.get_capabilities(adapter);
+        let swapchain_format = swapchain_capabilities.formats[0];
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            format: swapchain_format,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::Fifo,
+            #[cfg(not(any(target_os = "macos", windows)))]
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            #[cfg(target_os = "macos")]
+            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
+            #[cfg(target_os = "windows")]
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(device, &config);
+
+        // カーソル
+        self.cursor_renderer.resize(width, height);
+
+        // スキャンバッファー描画
+        self.scan_buffer_renderer.resize(id, queue, width, height);
+
+        // プラグイン
+        self.render_plugin.resize(width, height);
     }
 }
 
