@@ -14,7 +14,6 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             ids: Vec::default(),

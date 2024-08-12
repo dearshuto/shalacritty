@@ -75,15 +75,7 @@ pub struct Renderer<'a, TRenderPlugin> {
     // 背景色
     background_color: [f32; 4],
 
-    #[allow(dead_code)]
     render_plugin: TRenderPlugin,
-}
-
-impl<'a> Renderer<'a, ()> {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self::new_with_plugin(())
-    }
 }
 
 impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>

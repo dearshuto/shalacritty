@@ -130,7 +130,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn split_horizontal(&mut self, id: TileId) -> TileId {
         let virtual_window_id = id.internal;
 
