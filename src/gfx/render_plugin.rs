@@ -1,7 +1,7 @@
 pub struct UpdateParams<'a, T> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
-    pub user_data: T,
+    pub user_data: &'a T,
 }
 
 impl<'a, T> UpdateParams<'a, T> {
@@ -14,7 +14,7 @@ impl<'a, T> UpdateParams<'a, T> {
     }
 
     pub fn user_data(&self) -> &T {
-        &self.user_data
+        self.user_data
     }
 }
 
