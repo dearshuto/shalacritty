@@ -12,15 +12,16 @@ use super::{
     IRenderPlugin, UpdateParams,
 };
 
-pub struct RendererUpdateParams<TPath: AsRef<Path>> {
+pub struct RendererUpdateParams<TPath: AsRef<Path>, T> {
     background_color: Option<[f32; 4]>,
     diff: Diff,
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     image_path: Option<TPath>,
     image_alpha: Option<f32>,
+    user_data: T,
 }
 
-impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
+impl<TPath: AsRef<Path>> RendererUpdateParams<TPath, ()> {
     pub fn new() -> Self {
         Self {
             background_color: None,
@@ -28,6 +29,21 @@ impl<TPath: AsRef<Path>> RendererUpdateParams<TPath> {
             glyph_texture_patches: Vec::default(),
             image_path: None,
             image_alpha: None,
+            user_data: (),
+        }
+    }
+}
+
+impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
+    #[allow(dead_code)]
+    pub fn new_with_user_data(user_data: T) -> Self {
+        Self {
+            background_color: None,
+            diff: Diff::default(),
+            glyph_texture_patches: Vec::default(),
+            image_path: None,
+            image_alpha: None,
+            user_data,
         }
     }
 
@@ -82,11 +98,14 @@ impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
     TRenderPlugin: IRenderPlugin<UserData = ()>,
 {
-    pub fn update<TPath>(&mut self, id: WindowId, render_update_params: RendererUpdateParams<TPath>)
-    where
+    pub fn update<TPath>(
+        &mut self,
+        id: WindowId,
+        render_update_params: RendererUpdateParams<TPath, ()>,
+    ) where
         TPath: AsRef<Path>,
     {
-        self.update_with_user_data(id, render_update_params, &());
+        self.update_with_user_data(id, render_update_params);
     }
 }
 
@@ -192,11 +211,11 @@ where
     pub fn update_with_user_data<TPath>(
         &mut self,
         id: WindowId,
-        render_update_params: RendererUpdateParams<TPath>,
-        user_data: &TUserData,
+        render_update_params: RendererUpdateParams<TPath, TUserData>,
     ) where
         TPath: AsRef<Path>,
     {
+        let user_data = &render_update_params.user_data;
         let Some(device) = self.device_table.get(&id) else {
             return;
         };
