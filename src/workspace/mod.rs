@@ -221,7 +221,7 @@ impl<'a> Workspace<'a> {
                 .with_background_color(background)
                 .with_image_alpha(image_alpha)
                 .with_image_path(image_path.clone());
-            self.renderer.update(*window_id, update_params);
+            self.renderer.update(*window_id, &update_params);
 
             window.request_redraw();
         }
