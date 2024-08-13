@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use wgpu::util::DeviceExt;
 
-use crate::gfx::IRenderPlugin;
+use crate::gfx::{IRenderPlugin, IRenderPluginUpdateParams, UpdateParams};
 
 use super::{ImageCache, ImageId};
 
@@ -251,10 +251,10 @@ impl<T> BackgroundRendererV2<T> {
     }
 }
 
-impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
-    type UserData = T;
+impl<'a, T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
+    type TRenderPluginUpdateParams = UpdateParams<'a, T>;
 
-    fn update(&mut self, update_params: &crate::gfx::UpdateParams<'_, Self::UserData>) {
+    fn update(&mut self, update_params: &Self::TRenderPluginUpdateParams) {
         // 初回はインスタンスを生成してないので作成する
         if self.instance.is_none() {
             let device = update_params.device();

@@ -91,7 +91,7 @@ impl<'a, TPath: AsRef<Path>, T> RendererUpdateParams<'a, TPath, T> {
     }
 }
 
-impl<TPath: AsRef<Path>, T> IRendererUpdateParams for RendererUpdateParams<TPath, T> {
+impl<'a, TPath: AsRef<Path>, T> IRendererUpdateParams for RendererUpdateParams<'a, TPath, T> {
     type TUserData = T;
 
     fn background_color(&self) -> Option<&[f32; 4]> {
@@ -134,7 +134,7 @@ pub struct Renderer<'a, TRenderPlugin> {
 
 impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
-    TRenderPlugin: IRenderPlugin<UserData = ()>,
+    TRenderPlugin: IRenderPlugin,
 {
     pub fn update<TRenderUpdateParams>(
         &mut self,
@@ -149,7 +149,7 @@ where
 
 impl<'a, TRenderPlugin, TUserData> Renderer<'a, TRenderPlugin>
 where
-    TRenderPlugin: IRenderPlugin<UserData = TUserData>,
+    TRenderPlugin: IRenderPlugin,
 {
     pub fn new_with_plugin(plugin: TRenderPlugin) -> Self {
         Self {
@@ -449,9 +449,10 @@ where
     }
 }
 
-impl IRenderPlugin for () {
-    type UserData = ();
-    fn update(&mut self, _update_param: &UpdateParams<()>) {}
+impl<'a> IRenderPlugin for () {
+    type TRenderPluginUpdateParams = UpdateParams<'a, ()>;
+
+    fn update(&mut self, _update_param: &UpdateParams<&()>) {}
 
     fn register(&mut self, _instance: &wgpu::Instance) {}
 
