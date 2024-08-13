@@ -12,6 +12,24 @@ use super::{
     IRenderPlugin, UpdateParams,
 };
 
+/// レンダラー更新パラメーターの制約
+pub trait IRendererUpdateParams {
+    /// プラグインに渡すユーザーデータ型
+    type TUserData;
+
+    /// 背景色
+    fn background_color(&self) -> Option<&[f32; 4]>;
+
+    /// 差分
+    fn diff(&self) -> &Diff;
+
+    /// グリフテクスチャーの更新差分
+    fn glyph_texture_patches(&self) -> &[GlyphTexturePatch];
+
+    /// プラグインに渡すユーザーデータ
+    fn user_data(&self) -> &Self::TUserData;
+}
+
 pub struct RendererUpdateParams<TPath: AsRef<Path>, T> {
     background_color: Option<[f32; 4]>,
     diff: Diff,
@@ -73,6 +91,26 @@ impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
     }
 }
 
+impl<TPath: AsRef<Path>, T> IRendererUpdateParams for RendererUpdateParams<TPath, T> {
+    type TUserData = T;
+
+    fn background_color(&self) -> Option<&[f32; 4]> {
+        self.background_color.as_ref()
+    }
+
+    fn diff(&self) -> &Diff {
+        &self.diff
+    }
+
+    fn glyph_texture_patches(&self) -> &[GlyphTexturePatch] {
+        &self.glyph_texture_patches
+    }
+
+    fn user_data(&self) -> &T {
+        &self.user_data
+    }
+}
+
 pub struct Renderer<'a, TRenderPlugin> {
     device_table: HashMap<WindowId, wgpu::Device>,
     queue_table: HashMap<WindowId, wgpu::Queue>,
@@ -98,12 +136,12 @@ impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
 where
     TRenderPlugin: IRenderPlugin<UserData = ()>,
 {
-    pub fn update<TPath>(
+    pub fn update<TRenderUpdateParams>(
         &mut self,
         id: WindowId,
-        render_update_params: RendererUpdateParams<TPath, ()>,
+        render_update_params: &TRenderUpdateParams,
     ) where
-        TPath: AsRef<Path>,
+        TRenderUpdateParams: IRendererUpdateParams<TUserData = ()>,
     {
         self.update_with_user_data(id, render_update_params);
     }
@@ -208,14 +246,14 @@ where
         self.render_plugin.register(instance);
     }
 
-    pub fn update_with_user_data<TPath>(
+    pub fn update_with_user_data<TUpdateParams>(
         &mut self,
         id: WindowId,
-        render_update_params: RendererUpdateParams<TPath, TUserData>,
+        render_update_params: &TUpdateParams,
     ) where
-        TPath: AsRef<Path>,
+        TUpdateParams: IRendererUpdateParams<TUserData = TUserData>,
     {
-        let user_data = &render_update_params.user_data;
+        let user_data = render_update_params.user_data();
         let Some(device) = self.device_table.get(&id) else {
             return;
         };
@@ -231,20 +269,20 @@ where
         };
         self.render_plugin.update(&params);
 
-        if let Some(background_color) = render_update_params.background_color {
-            self.background_color = background_color;
+        if let Some(background_color) = render_update_params.background_color() {
+            self.background_color = *background_color;
         }
 
         self.text_renderer.update(
             queue,
             id,
-            &render_update_params.diff,
-            &render_update_params.glyph_texture_patches,
+            render_update_params.diff(),
+            render_update_params.glyph_texture_patches(),
         );
 
         // カーソルレンダラーの更新
         self.cursor_renderer
-            .update(id, &render_update_params.diff, queue);
+            .update(id, &render_update_params.diff(), queue);
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
