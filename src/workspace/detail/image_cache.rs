@@ -55,9 +55,9 @@ impl ImageCache {
 
     /// 画像データを取得します
     /// ロードが終わってなかったりファイルが壊れていると取得できないこともあります
-    pub fn operate_image<T>(&self, id: ImageId, func: T)
+    pub fn operate_image<T>(&self, id: ImageId, mut func: T)
     where
-        T: Fn(Option<&DynamicImage>),
+        T: FnMut(Option<&DynamicImage>),
     {
         let Ok(binding) = self.image_cache_internal.lock() else {
             func(None);
