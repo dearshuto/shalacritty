@@ -9,7 +9,7 @@ use std::{
 };
 
 use alacritty_terminal::index::{Column, Line, Point};
-use detail::{ImageCache, ImageId};
+use detail::{BackgroundRendererV2, IBackgroundRendererContext, ImageCache, ImageId};
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -35,6 +35,9 @@ pub struct Workspace<'a> {
     renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
 
     background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
+
+    #[allow(dead_code)]
+    renderer_v2: Renderer<'a, BackgroundRendererV2<BackgroundRendererContext>>,
 
     // 並び順がタブのインデックスと対応
     background_ids: Vec<BackgroundId>,
@@ -102,6 +105,7 @@ impl<'a> Workspace<'a> {
             content_plotter,
             renderer,
             background_renderer,
+            renderer_v2: Renderer::new_with_plugin(BackgroundRendererV2::new()),
             background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
@@ -300,5 +304,32 @@ impl<'a> Workspace<'a> {
         }
 
         Action::Input(input)
+    }
+}
+
+/// 背景描画のアダプターとしての実装
+struct BackgroundRendererContext {}
+impl<'a> IBackgroundRendererContext for BackgroundRendererContext {
+    fn active_id(&self) -> Option<ImageId> {
+        // self.active_background_image_id
+        todo!()
+    }
+
+    fn image_cache(&self) -> &ImageCache {
+        todo!()
+        // &self.image_cache
+    }
+
+    fn window_size(&self) -> (u32, u32) {
+        todo!()
+        // // ひとまずウィンドウは 1 つしかないと仮定する
+        // let Some(window_id) = self.window_manager.ids().first() else {
+        //     return (1, 1);
+        // };
+        // let Some(window) = self.window_manager.try_get_window(*window_id) else {
+        //     return (1, 1);
+        // };
+
+        // (window.inner_size().width, window.inner_size().height)
     }
 }
