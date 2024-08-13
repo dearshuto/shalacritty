@@ -13,6 +13,7 @@ use notify::{
     event::{CreateKind, RemoveKind},
     RecommendedWatcher, RecursiveMode, Watcher,
 };
+use tokio::{runtime::Handle, task::JoinHandle};
 use uuid::Uuid;
 
 #[derive(Debug, Hash, Clone, Copy, Eq, PartialEq)]
@@ -64,12 +65,28 @@ impl ImageCache {
             return;
         };
 
-        let Some(image) = binding.image_table.get(&id) else {
-            func(None);
-            return;
-        };
+        binding.operate_image(id, func);
+    }
 
-        func(Some(image));
+    /// 画像データを取得します
+    /// ロードが終わってなかったりファイルが壊れていると取得できないこともあります
+    pub fn operate_image_and_wait<T>(&self, id: ImageId, func: T)
+    where
+        T: Fn(Option<&DynamicImage>),
+    {
+        let local = self.image_cache_internal.clone();
+        // let Ok(mut binding) = self.image_cache_internal.lock() else {
+        //     func(None);
+        //     return;
+        // };
+
+        Handle::current().block_on(async {
+            let Ok(mut binding) = local.lock() else {
+                func(None);
+                return;
+            };
+            binding.operate_image_async(id, func).await;
+        });
     }
 
     pub fn get_generation(&self, id: ImageId) -> u64 {
@@ -149,17 +166,20 @@ impl notify::EventHandler for EventHanlder {
 struct ImageCacheInternal {
     path_id_table: HashMap<String, ImageId>,
 
-    image_table: HashMap<ImageId, DynamicImage>,
+    image_table: Arc<Mutex<HashMap<ImageId, DynamicImage>>>,
 
     generation_table: HashMap<ImageId, u64>,
+
+    load_image_task_table: HashMap<ImageId, JoinHandle<()>>,
 }
 
 impl ImageCacheInternal {
     pub fn new() -> Self {
         Self {
             path_id_table: HashMap::default(),
-            image_table: HashMap::default(),
+            image_table: Arc::default(),
             generation_table: HashMap::default(),
+            load_image_task_table: HashMap::default(),
         }
     }
 
@@ -172,34 +192,77 @@ impl ImageCacheInternal {
 
         let path_str = path.as_ref().to_str().unwrap();
 
-        // 画像を読み込んでキャッシュ
-        let Some(image) = Self::load_image(path.as_ref()) else {
-            return id;
-        };
+        // 画像の読み込みは非同期化
+        let image_table_local = self.image_table.clone();
+        let path_local = path.as_ref().to_path_buf();
+        let task = tokio::spawn(async move {
+            // 画像を読み込んでキャッシュ
+            let Some(image) = Self::load_image(path_local) else {
+                return;
+            };
+
+            image_table_local.lock().unwrap().insert(id, image);
+        });
+        self.load_image_task_table.insert(id, task);
 
         self.path_id_table.insert(path_str.to_string(), id);
-        self.image_table.insert(id, image);
+
         id
     }
 
-    pub fn update<T>(&mut self, path: T)
+    pub fn operate_image<T>(&self, id: ImageId, func: T)
+    where
+        T: Fn(Option<&DynamicImage>),
+    {
+        let binding = self.image_table.lock().unwrap();
+        let Some(image) = binding.get(&id) else {
+            func(None);
+            return;
+        };
+
+        func(Some(image));
+    }
+
+    pub async fn operate_image_async<T>(&mut self, id: ImageId, func: T)
+    where
+        T: Fn(Option<&DynamicImage>),
+    {
+        // タスクが実行中なら完了を待つ
+        if let Some(task) = self.load_image_task_table.remove(&id) {
+            let _ = task.await;
+        };
+
+        // 画像に対する処理を呼び出す
+        self.operate_image(id, func);
+    }
+
+    fn update<T>(&mut self, path: T)
     where
         T: AsRef<Path>,
     {
         let path_str = path.as_ref().to_str().unwrap();
 
-        let Some(id) = self.path_id_table.get(path_str) else {
+        let id = self.path_id_table.get(path_str);
+        if id.is_none() {
             return;
-        };
+        }
 
-        // ファイルが画像として不正なデータになってたらデータを破棄する
-        let Some(image) = Self::load_image(path) else {
-            self.image_table.remove(id);
-            return;
-        };
+        let id = *id.unwrap();
+        let id_local = id;
+        let image_table_local = self.image_table.clone();
+        let path_str_local = path_str.to_string();
+        let task = tokio::spawn(async move {
+            // ファイルが画像として不正なデータになってたらデータを破棄する
+            let Some(image) = Self::load_image(path_str_local) else {
+                image_table_local.lock().unwrap().remove(&id_local);
+                return;
+            };
 
-        self.image_table.insert(*id, image);
-        *self.generation_table.get_mut(id).unwrap() += 1;
+            image_table_local.lock().unwrap().insert(id_local, image);
+        });
+        self.load_image_task_table.insert(id, task);
+
+        *self.generation_table.get_mut(&id).unwrap() += 1;
     }
 
     pub fn invalidate_image<T>(&mut self, path: T)
@@ -211,7 +274,8 @@ impl ImageCacheInternal {
             return;
         };
 
-        self.image_table.remove(id);
+        let mut binding = self.image_table.lock().unwrap();
+        binding.remove(id);
         *self.generation_table.get_mut(id).unwrap() += 1;
     }
 
