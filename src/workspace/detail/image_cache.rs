@@ -68,18 +68,15 @@ impl ImageCache {
         binding.operate_image(id, func);
     }
 
-    /// 画像データを取得します
-    /// ロードが終わってなかったりファイルが壊れていると取得できないこともあります
+    /// ロード処理の完了を待って画像データを取得します
+    /// ロード処理がすでに完了している場合は即座に関数が呼ばれます
+    /// ファイルが壊れていると取得できないこともあります
+    #[allow(dead_code)]
     pub fn operate_image_and_wait<T>(&self, id: ImageId, func: T)
     where
         T: Fn(Option<&DynamicImage>),
     {
         let local = self.image_cache_internal.clone();
-        // let Ok(mut binding) = self.image_cache_internal.lock() else {
-        //     func(None);
-        //     return;
-        // };
-
         Handle::current().block_on(async {
             let Ok(mut binding) = local.lock() else {
                 func(None);
