@@ -72,9 +72,9 @@ impl ImageCache {
     /// ロード処理がすでに完了している場合は即座に関数が呼ばれます
     /// ファイルが壊れていると取得できないこともあります
     #[allow(dead_code)]
-    pub fn operate_image_and_wait<T>(&self, id: ImageId, func: T)
+    pub fn operate_image_and_wait<T>(&self, id: ImageId, mut func: T)
     where
-        T: Fn(Option<&DynamicImage>),
+        T: FnMut(Option<&DynamicImage>),
     {
         let local = self.image_cache_internal.clone();
         Handle::current().block_on(async {
@@ -207,9 +207,9 @@ impl ImageCacheInternal {
         id
     }
 
-    pub fn operate_image<T>(&self, id: ImageId, func: T)
+    pub fn operate_image<T>(&self, id: ImageId, mut func: T)
     where
-        T: Fn(Option<&DynamicImage>),
+        T: FnMut(Option<&DynamicImage>),
     {
         let binding = self.image_table.lock().unwrap();
         let Some(image) = binding.get(&id) else {
@@ -222,7 +222,7 @@ impl ImageCacheInternal {
 
     pub async fn operate_image_async<T>(&mut self, id: ImageId, func: T)
     where
-        T: Fn(Option<&DynamicImage>),
+        T: FnMut(Option<&DynamicImage>),
     {
         // タスクが実行中なら完了を待つ
         if let Some(task) = self.load_image_task_table.remove(&id) {
