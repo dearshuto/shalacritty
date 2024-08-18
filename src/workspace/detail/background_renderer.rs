@@ -66,7 +66,7 @@ pub trait IBackgroundRendererContext {
     fn window_size(&self) -> (u32, u32);
 }
 
-pub struct BackgroundRendererV2<T> {
+pub struct BackgroundRenderer<T> {
     instance: Option<Instance>,
 
     active_id: Option<ImageId>,
@@ -74,7 +74,7 @@ pub struct BackgroundRendererV2<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T> BackgroundRendererV2<T> {
+impl<T> BackgroundRenderer<T> {
     pub fn new() -> Self {
         Self {
             instance: None,
@@ -259,14 +259,14 @@ impl<T> BackgroundRendererV2<T> {
     }
 }
 
-impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
+impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
     type UserData = T;
 
     fn update(&mut self, update_params: &UpdateParams<'_, Self::UserData>) {
         // 初回はインスタンスを生成してないので作成する
         if self.instance.is_none() {
             let device = update_params.device();
-            self.instance = Some(BackgroundRendererV2::<T>::create_instance(device));
+            self.instance = Some(BackgroundRenderer::<T>::create_instance(device));
         }
 
         self.active_id = update_params.user_data().active_id();

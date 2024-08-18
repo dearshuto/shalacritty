@@ -4,7 +4,7 @@ mod diff_calculator;
 use std::{collections::HashSet, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
-use detail::{BackgroundRendererV2, IBackgroundRendererContext, ImageCache, ImageId};
+use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -26,8 +26,7 @@ pub struct Workspace<'a> {
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
 
-    #[allow(dead_code)]
-    renderer_v2: Renderer<'a, BackgroundRendererV2<BackgroundRendererContext>>,
+    renderer: Renderer<'a, BackgroundRenderer<BackgroundRendererContext>>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,
@@ -72,7 +71,7 @@ impl<'a> Workspace<'a> {
             glyph_manager,
             window_manager,
             content_plotter,
-            renderer_v2: Renderer::new_with_plugin(BackgroundRendererV2::new()),
+            renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
@@ -99,8 +98,8 @@ impl<'a> Workspace<'a> {
         self.resize(id, window_size.width, window_size.height);
 
         // 載せ替え予定
-        self.renderer_v2.register(id, &self.instance, window).await;
-        self.renderer_v2
+        self.renderer.register(id, &self.instance, window).await;
+        self.renderer
             .resize(id, window_size.width, window_size.height);
     }
 
@@ -168,7 +167,7 @@ impl<'a> Workspace<'a> {
                     .with_background_color(background)
                     .with_image_alpha(image_alpha)
                     .with_image_path(image_path.clone());
-            self.renderer_v2
+            self.renderer
                 .update_with_user_data(*window_id, &update_params);
 
             window.request_redraw();
@@ -177,7 +176,7 @@ impl<'a> Workspace<'a> {
 
     pub fn render(&mut self, id: WindowId) {
         // self.renderer.render(id);
-        self.renderer_v2.render(id);
+        self.renderer.render(id);
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
@@ -185,7 +184,7 @@ impl<'a> Workspace<'a> {
 
         self.tile_manager.resize(width, height);
 
-        self.renderer_v2.resize(id, width, height);
+        self.renderer.resize(id, width, height);
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {
