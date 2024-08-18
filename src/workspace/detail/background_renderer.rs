@@ -273,8 +273,6 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
 
         let instance = self.instance.as_mut().unwrap();
 
-        instance.window_size = update_params.user_data().window_size();
-
         let user_data = update_params.user_data();
         let Some(active_image_id) = user_data.active_id() else {
             return;
@@ -282,38 +280,41 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
 
         let image_cache = user_data.image_cache();
         let queue = update_params.queue();
-        image_cache.operate_image(active_image_id, |image| {
-            let Some(image) = image else {
-                return;
-            };
+        if instance.window_size != user_data.window_size() {
+            image_cache.operate_image(active_image_id, |image| {
+                let Some(image) = image else {
+                    return;
+                };
 
-            // テクスチャーを画面にフィットさせるための UV 変換を算出
-            let (width, height) = user_data.window_size();
-            let width = width as f32;
-            let height = height as f32;
-            let image_width = image.width() as f32;
-            let image_height = image.height() as f32;
+                // テクスチャーを画面にフィットさせるための UV 変換を算出
+                let (width, height) = user_data.window_size();
+                let width = width as f32;
+                let height = height as f32;
+                let image_width = image.width() as f32;
+                let image_height = image.height() as f32;
 
-            // 画像の UV 変換
-            let scale_x = width / image_width;
-            let scale_y = height / image_height;
+                // 画像の UV 変換
+                let scale_x = width / image_width;
+                let scale_y = height / image_height;
 
-            // (1, 1) より外を参照してたらフィットするよう補正
-            // [0, 1] だったら補正は不要なので 1 で抑えておく
-            let factor = scale_x.max(scale_y).max(1.0);
-            let x = scale_x / factor;
-            let y = scale_y / factor;
+                // (1, 1) より外を参照してたらフィットするよう補正
+                // [0, 1] だったら補正は不要なので 1 で抑えておく
+                let factor = scale_x.max(scale_y).max(1.0);
+                let x = scale_x / factor;
+                let y = scale_y / factor;
 
-            // 画像の中心とターミナルの中心が一致するように並行移動
-            let t_x = 0.5 * (image_width - width).max(0.0) / width;
-            let t_y = 0.5 * (image_height - height).max(0.0) / height;
-            let constant_buffer_data = ConstantBufferData {
-                image_tansform0: [x, 0.0, x * t_x, 0.0],
-                image_tansform1: [0.0, y, y * t_y, 0.0],
-            };
-            let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
-            queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
-        });
+                // 画像の中心とターミナルの中心が一致するように並行移動
+                let t_x = 0.5 * (image_width - width).max(0.0) / width;
+                let t_y = 0.5 * (image_height - height).max(0.0) / height;
+                let constant_buffer_data = ConstantBufferData {
+                    image_tansform0: [x, 0.0, x * t_x, 0.0],
+                    image_tansform1: [0.0, y, y * t_y, 0.0],
+                };
+                let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
+                queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
+                instance.window_size = user_data.window_size();
+            });
+        }
 
         // 画像データの最新の世代を取得
         let image_cache = user_data.image_cache();
