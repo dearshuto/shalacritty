@@ -114,7 +114,6 @@ impl<'a> Workspace<'a> {
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
-        let image_alpha = self.config_diff.consume_image_alpha();
 
         for window_id in self.window_manager.ids() {
             // 最描画要求
@@ -166,7 +165,6 @@ impl<'a> Workspace<'a> {
                     .with_diff(diff)
                     .with_glyph_texture_patches(glyph_texture_patches)
                     .with_background_color(background)
-                    .with_image_alpha(image_alpha)
                     .with_image_path(image_path.clone());
             self.renderer
                 .update_with_user_data(*window_id, &update_params);
