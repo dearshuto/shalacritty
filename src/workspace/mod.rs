@@ -1,12 +1,7 @@
 mod detail;
 mod diff_calculator;
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
 use detail::{BackgroundRendererV2, IBackgroundRendererContext, ImageCache, ImageId};
@@ -47,15 +42,13 @@ pub struct Workspace<'a> {
 
     tile_manager: TileManager<MultiplexersAdapter>,
 
-    image_cache: ImageCache,
-
-    /// 画像の世代
-    image_generation_table: HashMap<ImageId, u64>,
-
     // 設定の差分
     config_diff: ConfigDiff,
 
     is_force_dirty: bool,
+
+    #[allow(dead_code)]
+    background_renderer_context: BackgroundRendererContext,
 }
 
 impl<'a> Workspace<'a> {
@@ -82,18 +75,13 @@ impl<'a> Workspace<'a> {
                 .activate(*first_background, enhance);
         }
 
-        let mut image_generation_table = HashMap::default();
         let mut image_cache = ImageCache::new();
         if let Ok(config_service) = config_service.read() {
             for path in &config_service.background.path {
                 // 監視開始
-                let Some(id) = image_cache.register(path) else {
+                let Some(_id) = image_cache.register(path) else {
                     continue;
                 };
-
-                // 登録時の世代をキャッシュしておく
-                let generation = image_cache.get_generation(id);
-                image_generation_table.insert(id, generation);
             }
         }
 
@@ -109,10 +97,13 @@ impl<'a> Workspace<'a> {
             background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
-            image_cache,
-            image_generation_table,
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
+            background_renderer_context: BackgroundRendererContext {
+                active_id: None,
+                image_cache,
+                window_size: (640, 480),
+            },
         }
     }
 
@@ -132,20 +123,6 @@ impl<'a> Workspace<'a> {
         // 設定の差分検出
         self.config_diff
             .update(&self.config_service.read().unwrap());
-
-        // 画像の更新チェック
-        for (id, cached_generation) in &self.image_generation_table {
-            //
-            let latest_geneartion = self.image_cache.get_generation(*id);
-            if latest_geneartion <= *cached_generation {
-                // より新しい世代を採用済みなのでなにもしない
-            }
-
-            // 背景に使用している画像が更新されたので GPU に送りなおす
-            self.image_cache.operate_image(*id, |_| {
-                // TODO
-            });
-        }
 
         self.tile_manager.update();
 
@@ -236,6 +213,8 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
+        self.background_renderer_context.window_size = (width, height);
+
         self.tile_manager.resize(width, height);
 
         self.renderer.resize(id, width, height);
@@ -308,28 +287,25 @@ impl<'a> Workspace<'a> {
 }
 
 /// 背景描画のアダプターとしての実装
-struct BackgroundRendererContext {}
+struct BackgroundRendererContext {
+    active_id: Option<ImageId>,
+
+    image_cache: ImageCache,
+
+    // ひとまずウィンドウはひとつしかないと仮定
+    window_size: (u32, u32),
+}
+
 impl<'a> IBackgroundRendererContext for BackgroundRendererContext {
     fn active_id(&self) -> Option<ImageId> {
-        // self.active_background_image_id
-        todo!()
+        self.active_id
     }
 
     fn image_cache(&self) -> &ImageCache {
-        todo!()
-        // &self.image_cache
+        &self.image_cache
     }
 
     fn window_size(&self) -> (u32, u32) {
-        todo!()
-        // // ひとまずウィンドウは 1 つしかないと仮定する
-        // let Some(window_id) = self.window_manager.ids().first() else {
-        //     return (1, 1);
-        // };
-        // let Some(window) = self.window_manager.try_get_window(*window_id) else {
-        //     return (1, 1);
-        // };
-
-        // (window.inner_size().width, window.inner_size().height)
+        self.window_size
     }
 }
