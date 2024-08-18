@@ -245,10 +245,12 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.active_tab_id = *id;
     }
 
+    #[allow(dead_code)]
     pub fn get_active_tab_id(&self) -> TabId {
         self.active_tab_id
     }
 
+    #[allow(dead_code)]
     pub fn get_tab_ids(&self) -> &[TabId] {
         self.virtual_window_manager.get_tab_ids()
     }

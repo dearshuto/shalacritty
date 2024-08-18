@@ -39,19 +39,6 @@ pub struct RendererUpdateParams<TPath: AsRef<Path>, T> {
     user_data: T,
 }
 
-impl<TPath: AsRef<Path>> RendererUpdateParams<TPath, ()> {
-    pub fn new() -> Self {
-        Self {
-            background_color: None,
-            diff: Diff::default(),
-            glyph_texture_patches: Vec::default(),
-            image_path: None,
-            image_alpha: None,
-            user_data: (),
-        }
-    }
-}
-
 impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
     #[allow(dead_code)]
     pub fn new_with_user_data(user_data: T) -> Self {
@@ -130,21 +117,6 @@ pub struct Renderer<'a, TRenderPlugin> {
     background_color: [f32; 4],
 
     render_plugin: TRenderPlugin,
-}
-
-impl<'a, TRenderPlugin> Renderer<'a, TRenderPlugin>
-where
-    TRenderPlugin: IRenderPlugin<UserData = ()>,
-{
-    pub fn update<TRenderUpdateParams>(
-        &mut self,
-        id: WindowId,
-        render_update_params: &TRenderUpdateParams,
-    ) where
-        TRenderUpdateParams: IRendererUpdateParams<TUserData = ()>,
-    {
-        self.update_with_user_data(id, render_update_params);
-    }
 }
 
 impl<'a, TRenderPlugin, TUserData> Renderer<'a, TRenderPlugin>
