@@ -47,7 +47,6 @@ pub struct Workspace<'a> {
 
     is_force_dirty: bool,
 
-    #[allow(dead_code)]
     background_renderer_context: BackgroundRendererContext,
 }
 
@@ -101,7 +100,7 @@ impl<'a> Workspace<'a> {
             is_force_dirty: false,
             background_renderer_context: BackgroundRendererContext {
                 active_id: None,
-                image_cache,
+                image_cache: Arc::new(image_cache),
                 window_size: (640, 480),
             },
         }
@@ -211,6 +210,13 @@ impl<'a> Workspace<'a> {
                 .with_image_path(image_path.clone());
             self.renderer.update(*window_id, &update_params);
 
+            let update_params =
+                RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
+                    .with_background_color(background)
+                    .with_image_path(image_path.clone());
+            self.renderer_v2
+                .update_with_user_data(*window_id, &update_params);
+
             window.request_redraw();
         }
     }
@@ -296,16 +302,17 @@ impl<'a> Workspace<'a> {
 }
 
 /// 背景描画のアダプターとしての実装
+#[derive(Clone)]
 struct BackgroundRendererContext {
     active_id: Option<ImageId>,
 
-    image_cache: ImageCache,
+    image_cache: Arc<ImageCache>,
 
     // ひとまずウィンドウはひとつしかないと仮定
     window_size: (u32, u32),
 }
 
-impl<'a> IBackgroundRendererContext for BackgroundRendererContext {
+impl IBackgroundRendererContext for BackgroundRendererContext {
     fn active_id(&self) -> Option<ImageId> {
         self.active_id
     }
