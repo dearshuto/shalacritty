@@ -57,6 +57,8 @@ struct Instance {
     // バインドするリソース
     bind_group_table: HashMap<ImageId, wgpu::BindGroup>,
 
+    active_image_id_cache: Option<ImageId>,
+
     window_size: (u32, u32),
 
     image_alpha_chache: f32,
@@ -219,6 +221,7 @@ impl<T> BackgroundRenderer<T> {
             enhance_value_table: HashMap::default(),
             resize_dirty_table: HashMap::default(),
             bind_group_table: HashMap::default(),
+            active_image_id_cache: None,
             window_size: (640, 480),
             image_alpha_chache: INIT_IMAGE_ALPHA,
         }
@@ -279,10 +282,12 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
             self.instance = Some(BackgroundRenderer::<T>::create_instance(device));
         }
 
+        let is_image_changed = !(self.active_id.is_some()
+            && update_params.user_data().active_id().is_some()
+            && self.active_id.unwrap() == update_params.user_data().active_id().unwrap());
         self.active_id = update_params.user_data().active_id();
 
         let instance = self.instance.as_mut().unwrap();
-
         let user_data = update_params.user_data();
         let Some(active_image_id) = user_data.active_id() else {
             return;
@@ -290,7 +295,7 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
 
         let image_cache = user_data.image_cache();
         let queue = update_params.queue();
-        if instance.window_size != user_data.window_size() {
+        if is_image_changed || instance.window_size != user_data.window_size() {
             image_cache.operate_image(active_image_id, |image| {
                 let Some(image) = image else {
                     return;
