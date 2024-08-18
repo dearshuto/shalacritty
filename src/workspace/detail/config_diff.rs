@@ -5,8 +5,6 @@ pub struct ConfigDiff {
 
     clear_color: Option<[f32; 4]>,
 
-    image_alpha: Option<f32>,
-
     image_path_tentative: Option<String>,
 
     background_image_path: Option<Vec<String>>,
@@ -17,7 +15,6 @@ impl ConfigDiff {
         Self {
             old_config: Config::default(),
             clear_color: None,
-            image_alpha: None,
             image_path_tentative: None,
             background_image_path: None,
         }
@@ -30,14 +27,6 @@ impl ConfigDiff {
             self.old_config.background.clear_color = config.background.clear_color;
         } else {
             self.clear_color = None;
-        }
-
-        // 画像の透過度
-        if config.image_alpha != self.old_config.image_alpha {
-            self.image_alpha = Some(config.image_alpha);
-            self.old_config.image_alpha = config.image_alpha;
-        } else {
-            self.image_alpha = None;
         }
 
         // 画像パス
@@ -54,10 +43,6 @@ impl ConfigDiff {
             return true;
         }
 
-        if self.image_alpha.is_some() {
-            return true;
-        }
-
         if self.image_path_tentative.is_some() {
             return true;
         }
@@ -68,12 +53,6 @@ impl ConfigDiff {
     pub fn consume_clear_color(&mut self) -> Option<[f32; 4]> {
         let mut dst = None;
         std::mem::swap(&mut dst, &mut self.clear_color);
-        dst
-    }
-
-    pub fn consume_image_alpha(&mut self) -> Option<f32> {
-        let mut dst = None;
-        std::mem::swap(&mut dst, &mut self.image_alpha);
         dst
     }
 

@@ -35,7 +35,6 @@ pub struct RendererUpdateParams<TPath: AsRef<Path>, T> {
     diff: Diff,
     glyph_texture_patches: Vec<GlyphTexturePatch>,
     image_path: Option<TPath>,
-    image_alpha: Option<f32>,
     user_data: T,
 }
 
@@ -47,7 +46,6 @@ impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
             diff: Diff::default(),
             glyph_texture_patches: Vec::default(),
             image_path: None,
-            image_alpha: None,
             user_data,
         }
     }
@@ -59,11 +57,6 @@ impl<TPath: AsRef<Path>, T> RendererUpdateParams<TPath, T> {
 
     pub fn with_glyph_texture_patches(mut self, patches: Vec<GlyphTexturePatch>) -> Self {
         self.glyph_texture_patches = patches;
-        self
-    }
-
-    pub fn with_image_alpha(mut self, alpha: Option<f32>) -> Self {
-        self.image_alpha = alpha;
         self
     }
 
