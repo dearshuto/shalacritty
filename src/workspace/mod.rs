@@ -120,12 +120,19 @@ impl<'a> Workspace<'a> {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();
-        self.renderer.register(id, &self.instance, window).await;
+        self.renderer
+            .register(id, &self.instance, window.clone())
+            .await;
         self.renderer
             .resize(id, window_size.width, window_size.height);
 
         // 初期サイズ反映
         self.resize(id, window_size.width, window_size.height);
+
+        // 載せ替え予定
+        self.renderer_v2.register(id, &self.instance, window).await;
+        self.renderer_v2
+            .resize(id, window_size.width, window_size.height);
     }
 
     pub fn update(&mut self) {
@@ -239,6 +246,8 @@ impl<'a> Workspace<'a> {
         self.tile_manager.resize(width, height);
 
         self.renderer.resize(id, width, height);
+        // ↑ を ↓ に載せ替え予定
+        self.renderer_v2.resize(id, width, height);
 
         // 最描画要求
         let Some(window) = self.window_manager.try_get_window(id) else {

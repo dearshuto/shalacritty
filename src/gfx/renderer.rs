@@ -286,7 +286,10 @@ where
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
-        let device = self.device_table.get(&id).unwrap();
+        let Some(device) = self.device_table.get(&id) else {
+            return;
+        };
+
         let queue = self.queue_table.get(&id).unwrap();
         let surface = self.surface_table.get(&id).unwrap();
         let adapter = self.adapter_table.get(&id).unwrap();
