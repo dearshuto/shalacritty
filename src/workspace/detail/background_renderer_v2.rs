@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, u8};
 
 use wgpu::util::DeviceExt;
 
@@ -54,6 +54,8 @@ struct Instance {
 
     // バインドするリソース
     bind_group_table: HashMap<ImageId, wgpu::BindGroup>,
+
+    window_size: (u32, u32),
 }
 
 pub trait IBackgroundRendererContext {
@@ -96,47 +98,7 @@ impl<T> BackgroundRendererV2<T> {
             ))),
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout = Self::create_bind_group_layout(device);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
@@ -216,7 +178,7 @@ impl<T> BackgroundRendererV2<T> {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                contents: bytemuck::bytes_of(&MaterialData { alpha_enhance: 1.0 }),
+                contents: bytemuck::bytes_of(&MaterialData { alpha_enhance: 0.3 }),
             });
 
         // グリフを矩形に貼るときのサンプラー
@@ -248,7 +210,52 @@ impl<T> BackgroundRendererV2<T> {
             enhance_value_table: HashMap::default(),
             resize_dirty_table: HashMap::default(),
             bind_group_table: HashMap::default(),
+            window_size: (640, 480),
         }
+    }
+
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        })
     }
 }
 
@@ -261,55 +268,24 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
             let device = update_params.device();
             self.instance = Some(BackgroundRendererV2::<T>::create_instance(device));
         }
+
+        self.active_id = update_params.user_data().active_id();
+
         let instance = self.instance.as_mut().unwrap();
+
+        instance.window_size = update_params.user_data().window_size();
 
         let user_data = update_params.user_data();
         let Some(active_image_id) = user_data.active_id() else {
             return;
         };
 
-        // 画像データの最新の世代を取得
         let image_cache = user_data.image_cache();
-        let current_generation = image_cache.get_generation(active_image_id);
-
-        // キャッシュしてある世代の方が新しければなにもしない
-        let cached_generation = instance
-            .image_generation_table
-            .insert(active_image_id, current_generation);
-        if cached_generation.is_some() && current_generation <= cached_generation.unwrap() {
-            return;
-        }
-
-        // 世代が進んでいたのでテクスチャーを作り直す
-        let device = update_params.device();
         let queue = update_params.queue();
         image_cache.operate_image(active_image_id, |image| {
             let Some(image) = image else {
                 return;
             };
-
-            let raw_bytes = image.as_bytes();
-            let new_texture = device.create_texture_with_data(
-                queue,
-                &wgpu::TextureDescriptor {
-                    label: None,
-                    size: wgpu::Extent3d {
-                        width: image.width(),
-                        height: image.height(),
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Uint,
-                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[wgpu::TextureFormat::Rgba8Uint],
-                },
-                wgpu::util::TextureDataOrder::default(),
-                raw_bytes,
-            );
-
-            instance.texture_table.insert(active_image_id, new_texture);
 
             // テクスチャーを画面にフィットさせるための UV 変換を算出
             let (width, height) = user_data.window_size();
@@ -337,6 +313,97 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
             };
             let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
             queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
+        });
+
+        // 画像データの最新の世代を取得
+        let image_cache = user_data.image_cache();
+        let current_generation = image_cache.get_generation(active_image_id);
+
+        // キャッシュしてある世代の方が新しければなにもしない
+        let cached_generation = instance
+            .image_generation_table
+            .insert(active_image_id, current_generation);
+        if cached_generation.is_some() && current_generation <= cached_generation.unwrap() {
+            return;
+        }
+
+        // 世代が進んでいたのでテクスチャーを作り直す
+        let device = update_params.device();
+        let queue = update_params.queue();
+        image_cache.operate_image(active_image_id, |image| {
+            let Some(image) = image else {
+                return;
+            };
+
+            let raw_bytes = image.as_bytes();
+            let raw_bytes = {
+                let mut result = Vec::new();
+                for index in 0..(raw_bytes.len() / 3) {
+                    result.push(raw_bytes[3 * index]);
+                    result.push(raw_bytes[3 * index + 1]);
+                    result.push(raw_bytes[3 * index + 2]);
+                    result.push(u8::MAX);
+                }
+                result
+            };
+            let new_texture = device.create_texture_with_data(
+                queue,
+                &wgpu::TextureDescriptor {
+                    label: None,
+                    size: wgpu::Extent3d {
+                        width: image.width(),
+                        height: image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
+                },
+                wgpu::util::TextureDataOrder::default(),
+                &raw_bytes,
+            );
+
+            let bind_group_layout = Self::create_bind_group_layout(device);
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: instance.constant_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&new_texture.create_view(
+                            &wgpu::TextureViewDescriptor {
+                                label: None,
+                                format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+                                dimension: Some(wgpu::TextureViewDimension::D2),
+                                aspect: wgpu::TextureAspect::All,
+                                base_mip_level: 0,
+                                mip_level_count: None,
+                                base_array_layer: 0,
+                                array_layer_count: None,
+                            },
+                        )),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&instance.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: instance.material_constant_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+            instance
+                .bind_group_table
+                .insert(active_image_id, bind_group);
+            instance.texture_table.insert(active_image_id, new_texture);
         });
     }
 
@@ -376,14 +443,14 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRendererV2<T> {
             occlusion_query_set: None,
         });
 
-        // render_pass.set_viewport(
-        //     0.0,
-        //     0.0,
-        //     binding.window_size.0 as f32,
-        //     binding.window_size.1 as f32,
-        //     0.0,
-        //     1.0,
-        // );
+        render_pass.set_viewport(
+            0.0,
+            0.0,
+            instance.window_size.0 as f32,
+            instance.window_size.1 as f32,
+            0.0,
+            1.0,
+        );
 
         render_pass.set_pipeline(&instance.render_pipeline);
         render_pass.set_vertex_buffer(0, instance.vertex_buffer.slice(..));

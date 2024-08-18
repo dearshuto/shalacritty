@@ -1,7 +1,7 @@
 mod detail;
 mod diff_calculator;
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
 use detail::{BackgroundRendererV2, IBackgroundRendererContext, ImageCache, ImageId};
@@ -16,9 +16,7 @@ use crate::{
     ConfigService,
 };
 
-use self::detail::{
-    Action, BackgroundId, BackgroundRenderer, ConfigDiff, ContentAdapter, MultiplexersAdapter,
-};
+use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
 pub struct Workspace<'a> {
     instance: wgpu::Instance,
@@ -27,15 +25,9 @@ pub struct Workspace<'a> {
     glyph_manager: GlyphManager,
     window_manager: WindowManager,
     content_plotter: ContentPlotter,
-    renderer: Renderer<'a, Rc<RefCell<BackgroundRenderer<'a>>>>,
-
-    background_renderer: Rc<RefCell<BackgroundRenderer<'a>>>,
 
     #[allow(dead_code)]
     renderer_v2: Renderer<'a, BackgroundRendererV2<BackgroundRendererContext>>,
-
-    // 並び順がタブのインデックスと対応
-    background_ids: Vec<BackgroundId>,
 
     // WindowId -> TileId
     tile_id_set: HashSet<TileId>,
@@ -48,6 +40,8 @@ pub struct Workspace<'a> {
     is_force_dirty: bool,
 
     background_renderer_context: BackgroundRendererContext,
+
+    image_ids: Vec<ImageId>,
 }
 
 impl<'a> Workspace<'a> {
@@ -57,30 +51,18 @@ impl<'a> Workspace<'a> {
         let glyph_manager = GlyphManager::new();
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
-        let background_renderer = Rc::new(RefCell::new(BackgroundRenderer::new()));
-        let renderer = Renderer::new_with_plugin(Rc::clone(&background_renderer));
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
-
-        let mut background_ids = Vec::default();
-        for path in &config_service.read().unwrap().background.path {
-            let id = background_renderer.borrow_mut().register(path);
-            background_ids.push(id);
-        }
-        if let Some(first_background) = background_ids.first() {
-            let enhance = config_service.read().unwrap().background.enhance[0];
-            background_renderer
-                .borrow_mut()
-                .activate(*first_background, enhance);
-        }
-
         let mut image_cache = ImageCache::new();
+        let mut image_ids = Vec::default();
         if let Ok(config_service) = config_service.read() {
             for path in &config_service.background.path {
                 // 監視開始
-                let Some(_id) = image_cache.register(path) else {
+                let Some(id) = image_cache.register(path) else {
                     continue;
                 };
+
+                image_ids.push(id);
             }
         }
 
@@ -90,19 +72,21 @@ impl<'a> Workspace<'a> {
             glyph_manager,
             window_manager,
             content_plotter,
-            renderer,
-            background_renderer,
             renderer_v2: Renderer::new_with_plugin(BackgroundRendererV2::new()),
-            background_ids,
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
             background_renderer_context: BackgroundRendererContext {
-                active_id: None,
+                active_id: if image_ids.is_empty() {
+                    None
+                } else {
+                    Some(image_ids[0])
+                },
                 image_cache: Arc::new(image_cache),
                 window_size: (640, 480),
             },
+            image_ids,
         }
     }
 
@@ -110,11 +94,6 @@ impl<'a> Workspace<'a> {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();
-        self.renderer
-            .register(id, &self.instance, window.clone())
-            .await;
-        self.renderer
-            .resize(id, window_size.width, window_size.height);
 
         // 初期サイズ反映
         self.resize(id, window_size.width, window_size.height);
@@ -131,27 +110,6 @@ impl<'a> Workspace<'a> {
             .update(&self.config_service.read().unwrap());
 
         self.tile_manager.update();
-
-        // 背景更新
-        for (index, tab_id) in self.tile_manager.get_tab_ids().iter().enumerate() {
-            if self.tile_manager.get_active_tab_id() != *tab_id {
-                continue;
-            }
-
-            let background_id = self.background_ids[index];
-
-            let config = self.config_service.read().unwrap();
-            let Some(enhance) = config.background.enhance.get(index) else {
-                return;
-            };
-            let is_changed = self
-                .background_renderer
-                .borrow_mut()
-                .activate(background_id, *enhance);
-            if is_changed {
-                self.is_force_dirty = true;
-            }
-        }
 
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
@@ -202,17 +160,13 @@ impl<'a> Workspace<'a> {
                 &self.glyph_manager,
                 (window.inner_size().width, window.inner_size().height),
             );
-            let update_params = RendererUpdateParams::new()
-                .with_diff(diff)
-                .with_glyph_texture_patches(glyph_texture_patches)
-                .with_background_color(background)
-                .with_image_alpha(image_alpha)
-                .with_image_path(image_path.clone());
-            self.renderer.update(*window_id, &update_params);
 
             let update_params =
                 RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
+                    .with_diff(diff)
+                    .with_glyph_texture_patches(glyph_texture_patches)
                     .with_background_color(background)
+                    .with_image_alpha(image_alpha)
                     .with_image_path(image_path.clone());
             self.renderer_v2
                 .update_with_user_data(*window_id, &update_params);
@@ -222,7 +176,8 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn render(&mut self, id: WindowId) {
-        self.renderer.render(id);
+        // self.renderer.render(id);
+        self.renderer_v2.render(id);
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
@@ -230,8 +185,6 @@ impl<'a> Workspace<'a> {
 
         self.tile_manager.resize(width, height);
 
-        self.renderer.resize(id, width, height);
-        // ↑ を ↓ に載せ替え予定
         self.renderer_v2.resize(id, width, height);
 
         // 最描画要求
@@ -258,17 +211,20 @@ impl<'a> Workspace<'a> {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
 
-                let Some(id) = self.background_ids.get(index as usize) else {
-                    return;
+                if let Some(id) = self.image_ids.get(index as usize) {
+                    self.background_renderer_context.set_active_image_id(*id);
                 };
 
-                let config = self.config_service.read().unwrap();
-                let Some(enhance) = config.background.enhance.get(index as usize) else {
+                let Some(_enhance) = self
+                    .config_service
+                    .read()
+                    .unwrap()
+                    .background
+                    .enhance
+                    .get(index as usize)
+                else {
                     return;
                 };
-                self.background_renderer
-                    .borrow_mut()
-                    .activate(*id, *enhance);
             }
         }
     }
@@ -323,5 +279,11 @@ impl IBackgroundRendererContext for BackgroundRendererContext {
 
     fn window_size(&self) -> (u32, u32) {
         self.window_size
+    }
+}
+
+impl BackgroundRendererContext {
+    pub fn set_active_image_id(&mut self, id: ImageId) {
+        self.active_id = Some(id);
     }
 }

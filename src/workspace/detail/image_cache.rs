@@ -185,7 +185,7 @@ impl ImageCacheInternal {
         T: AsRef<Path>,
     {
         let id = ImageId { id: Uuid::new_v4() };
-        self.generation_table.insert(id, 0);
+        self.generation_table.insert(id, 1);
 
         let path_str = path.as_ref().to_str().unwrap();
 
