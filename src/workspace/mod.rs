@@ -67,7 +67,7 @@ impl<'a> Workspace<'a> {
 
         Self {
             instance,
-            config_service,
+            config_service: config_service.clone(),
             glyph_manager,
             window_manager,
             content_plotter,
@@ -82,6 +82,7 @@ impl<'a> Workspace<'a> {
                 } else {
                     Some(image_ids[0])
                 },
+                config_service,
                 image_cache: Arc::new(image_cache),
                 window_size: (640, 480),
             },
@@ -261,6 +262,8 @@ impl<'a> Workspace<'a> {
 struct BackgroundRendererContext {
     active_id: Option<ImageId>,
 
+    config_service: Arc<ConfigService>,
+
     image_cache: Arc<ImageCache>,
 
     // ひとまずウィンドウはひとつしかないと仮定
@@ -270,6 +273,10 @@ struct BackgroundRendererContext {
 impl IBackgroundRendererContext for BackgroundRendererContext {
     fn active_id(&self) -> Option<ImageId> {
         self.active_id
+    }
+
+    fn active_image_alpha(&self) -> f32 {
+        self.config_service.read().unwrap().image_alpha
     }
 
     fn image_cache(&self) -> &ImageCache {

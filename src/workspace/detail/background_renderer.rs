@@ -6,6 +6,8 @@ use crate::gfx::{IRenderPlugin, UpdateParams};
 
 use super::{ImageCache, ImageId};
 
+const INIT_IMAGE_ALPHA: f32 = 0.3;
+
 // 頂点シェーダーに渡す定数バッファーの型定義
 #[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
 #[repr(C)]
@@ -56,10 +58,15 @@ struct Instance {
     bind_group_table: HashMap<ImageId, wgpu::BindGroup>,
 
     window_size: (u32, u32),
+
+    image_alpha_chache: f32,
 }
 
 pub trait IBackgroundRendererContext {
     fn active_id(&self) -> Option<ImageId>;
+
+    // [0, 1]
+    fn active_image_alpha(&self) -> f32;
 
     fn image_cache(&self) -> &ImageCache;
 
@@ -178,7 +185,9 @@ impl<T> BackgroundRenderer<T> {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                contents: bytemuck::bytes_of(&MaterialData { alpha_enhance: 0.3 }),
+                contents: bytemuck::bytes_of(&MaterialData {
+                    alpha_enhance: INIT_IMAGE_ALPHA,
+                }),
             });
 
         // グリフを矩形に貼るときのサンプラー
@@ -211,6 +220,7 @@ impl<T> BackgroundRenderer<T> {
             resize_dirty_table: HashMap::default(),
             bind_group_table: HashMap::default(),
             window_size: (640, 480),
+            image_alpha_chache: INIT_IMAGE_ALPHA,
         }
     }
 
@@ -314,6 +324,19 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
             let constant_buffer_data = bytemuck::bytes_of(&constant_buffer_data);
             queue.write_buffer(&instance.constant_buffer, 0, constant_buffer_data);
         });
+
+        // ピクセルシェーダー用の定数バッファー
+        // 背景画像のアルファが変更されていたら更新する
+        if instance.image_alpha_chache != user_data.active_image_alpha() {
+            queue.write_buffer(
+                &instance.material_constant_buffer,
+                0,
+                bytemuck::bytes_of(&MaterialData {
+                    alpha_enhance: update_params.user_data().active_image_alpha(),
+                }),
+            );
+            instance.image_alpha_chache = user_data.active_image_alpha();
+        }
 
         // 画像データの最新の世代を取得
         let image_cache = user_data.image_cache();
