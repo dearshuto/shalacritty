@@ -3,6 +3,7 @@ use std::{
     fs::File,
     path::Path,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use image::{
@@ -13,7 +14,7 @@ use notify::{
     event::{CreateKind, RemoveKind},
     RecommendedWatcher, RecursiveMode, Watcher,
 };
-use tokio::{runtime::Handle, task::JoinHandle};
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 #[derive(Debug, Hash, Clone, Copy, Eq, PartialEq)]
@@ -71,19 +72,20 @@ impl ImageCache {
     /// ロード処理の完了を待って画像データを取得します
     /// ロード処理がすでに完了している場合は即座に関数が呼ばれます
     /// ファイルが壊れていると取得できないこともあります
-    #[allow(dead_code)]
-    pub fn operate_image_and_wait<T>(&self, id: ImageId, mut func: T)
+    pub fn operate_image_and_wait<T>(&self, id: ImageId, func: T)
     where
         T: FnMut(Option<&DynamicImage>),
     {
-        let local = self.image_cache_internal.clone();
-        Handle::current().block_on(async {
-            let Ok(mut binding) = local.lock() else {
-                func(None);
-                return;
-            };
-            binding.operate_image_async(id, func).await;
-        });
+        // 入れ子にロックしないようスコープを作る
+        {
+            let binding = self.image_cache_internal.lock().unwrap();
+            let handle = binding.load_image_task_table.get(&id).unwrap();
+            while !handle.is_finished() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        self.operate_image(id, func);
     }
 
     pub fn get_generation(&self, id: ImageId) -> u64 {
@@ -218,19 +220,6 @@ impl ImageCacheInternal {
         };
 
         func(Some(image));
-    }
-
-    pub async fn operate_image_async<T>(&mut self, id: ImageId, func: T)
-    where
-        T: FnMut(Option<&DynamicImage>),
-    {
-        // タスクが実行中なら完了を待つ
-        if let Some(task) = self.load_image_task_table.remove(&id) {
-            let _ = task.await;
-        };
-
-        // 画像に対する処理を呼び出す
-        self.operate_image(id, func);
     }
 
     fn update<T>(&mut self, path: T)
