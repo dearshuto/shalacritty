@@ -92,7 +92,7 @@ impl<T> BackgroundRenderer<T> {
         }
     }
 
-    fn create_instance(device: &wgpu::Device) -> Instance {
+    fn create_instance(device: &wgpu::Device, swapchain_format: wgpu::TextureFormat) -> Instance {
         let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
@@ -140,7 +140,7 @@ impl<T> BackgroundRenderer<T> {
                 module: &pixel_shader_module,
                 entry_point: "main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    format: swapchain_format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -279,7 +279,10 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
         // 初回はインスタンスを生成してないので作成する
         if self.instance.is_none() {
             let device = update_params.device();
-            self.instance = Some(BackgroundRenderer::<T>::create_instance(device));
+            self.instance = Some(BackgroundRenderer::<T>::create_instance(
+                device,
+                update_params.swapchain_format,
+            ));
         }
 
         let is_image_changed = !(self.active_id.is_some()
