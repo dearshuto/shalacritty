@@ -173,7 +173,7 @@ where
 
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
             width: 640,
             height: 480,
@@ -226,10 +226,22 @@ where
             return;
         };
 
+        let Some(adapter) = self.adapter_table.get(&id) else {
+            return;
+        };
+
+        let Some(surface) = self.surface_table.get(&id) else {
+            return;
+        };
+
+        let swapchain_capabilities = surface.get_capabilities(adapter);
+        let swapchain_format = swapchain_capabilities.formats[0];
+
         // プラグインの更新
         let params = UpdateParams {
             device,
             queue,
+            swapchain_format,
             user_data,
         };
         self.render_plugin.update(&params);
@@ -261,7 +273,7 @@ where
         let swapchain_capabilities = surface.get_capabilities(adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
             width,
             height,

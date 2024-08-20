@@ -1,6 +1,7 @@
 pub struct UpdateParams<'a, T> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
+    pub swapchain_format: wgpu::TextureFormat,
     pub user_data: &'a T,
 }
 
