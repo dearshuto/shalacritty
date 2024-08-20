@@ -247,7 +247,10 @@ impl<'a> Workspace<'a> {
         }
 
         // Ctrl+h で画面分割
-        if input == String::from_utf8(vec![8]).unwrap() {
+        // バイト表現では Backspace の制御文字と区別できないので装飾キーの存在をチェックする
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && input == String::from_utf8(vec![8]).unwrap()
+        {
             return Action::SplitHorizontal;
         }
 
@@ -256,7 +259,7 @@ impl<'a> Workspace<'a> {
             return Action::NewTab;
         }
 
-        Action::Input(input)
+        return Action::Input(input);
     }
 }
 
