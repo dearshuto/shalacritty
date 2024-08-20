@@ -214,9 +214,10 @@ impl<'a> Workspace<'a> {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
 
-                if let Some(id) = self.image_ids.get(index as usize) {
-                    self.background_renderer_context.set_active_image_id(*id);
-                };
+                // 背景画像の切り替え
+                let id = self.image_ids.get(index as usize);
+                self.background_renderer_context
+                    .set_active_image_id(id.cloned());
 
                 let Some(_enhance) = self
                     .config_service
@@ -295,7 +296,7 @@ impl IBackgroundRendererContext for BackgroundRendererContext {
 }
 
 impl BackgroundRendererContext {
-    pub fn set_active_image_id(&mut self, id: ImageId) {
-        self.active_id = Some(id);
+    pub fn set_active_image_id(&mut self, id: Option<ImageId>) {
+        self.active_id = id;
     }
 }
