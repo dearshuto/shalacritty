@@ -218,17 +218,6 @@ impl<'a> Workspace<'a> {
                 let id = self.image_ids.get(index as usize);
                 self.background_renderer_context
                     .set_active_image_id(id.cloned());
-
-                let Some(_enhance) = self
-                    .config_service
-                    .read()
-                    .unwrap()
-                    .background
-                    .enhance
-                    .get(index as usize)
-                else {
-                    return;
-                };
             }
         }
     }
