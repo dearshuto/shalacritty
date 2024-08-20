@@ -65,6 +65,11 @@ impl<'a> Workspace<'a> {
             }
         }
 
+        // 最初に表示する画像はロード完了を待つ
+        if let Some(id) = image_ids.first() {
+            image_cache.operate_image_and_wait(*id, |_| {});
+        }
+
         Self {
             instance,
             config_service: config_service.clone(),
