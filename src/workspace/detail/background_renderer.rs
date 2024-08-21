@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, u8};
+use std::{borrow::Cow, collections::HashMap};
 
 use wgpu::util::DeviceExt;
 
@@ -310,20 +310,18 @@ impl<T: IBackgroundRendererContext> IRenderPlugin for BackgroundRenderer<T> {
                 let height = height as f32;
                 let image_width = image.width() as f32;
                 let image_height = image.height() as f32;
+                let (x, y, t_x, t_y) = if image_width / width < image_height / height {
+                    let ratio = height / width;
+                    let clip_image_height = image_width * ratio;
+                    let height_v = clip_image_height / image_height;
+                    (1.0, height_v, 0.0, (1.0 - height_v))
+                } else {
+                    let ratio = width / height;
+                    let clip_image_width = image_height * ratio;
+                    let width_u = clip_image_width / image_width;
+                    (width_u, 1.0, (1.0 - width_u), 0.0)
+                };
 
-                // 画像の UV 変換
-                let scale_x = width / image_width;
-                let scale_y = height / image_height;
-
-                // (1, 1) より外を参照してたらフィットするよう補正
-                // [0, 1] だったら補正は不要なので 1 で抑えておく
-                let factor = scale_x.max(scale_y).max(1.0);
-                let x = scale_x / factor;
-                let y = scale_y / factor;
-
-                // 画像の中心とターミナルの中心が一致するように並行移動
-                let t_x = 0.5 * (image_width - width).max(0.0) / width;
-                let t_y = 0.5 * (image_height - height).max(0.0) / height;
                 let constant_buffer_data = ConstantBufferData {
                     image_tansform0: [x, 0.0, x * t_x, 0.0],
                     image_tansform1: [0.0, y, y * t_y, 0.0],
