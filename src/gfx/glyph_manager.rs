@@ -37,6 +37,7 @@ pub struct GlyphManager {
     font_engine: FontEngine,
     glyph_writer: GlyphWriter,
     glyph_table: GlyphTable,
+    font_size: f32,
 }
 
 impl GlyphManager {
@@ -47,7 +48,16 @@ impl GlyphManager {
                 rasterized_glyph_table: HashMap::new(),
             },
             glyph_writer: GlyphWriter::new(),
+            font_size: 32.0,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn set_font_size(&mut self, size: f32) {
+        self.font_size = size;
+
+        // 文字サイズが変更されたらすべてのキャッシュを破棄する
+        self.glyph_table.rasterized_glyph_table.clear();
     }
 
     pub fn extract(&mut self, code: char) -> Option<GlyphTexturePatch> {
@@ -57,6 +67,8 @@ impl GlyphManager {
         }
 
         // 空白だけ特別扱い
+        // フォントサイズを 32 で決め打ちにしているが、空白なので何でも良いと思う
+        // TODO: もっと小さなサイズでラスタライズしたときの挙動を調べてみる
         if code == ' ' {
             let mut buffer = Vec::default();
             buffer.resize(3 * 32 * 32, 0);
@@ -78,7 +90,7 @@ impl GlyphManager {
         }
 
         // ラスタライズに失敗した
-        let Ok(rasterized_glyph) = self.font_engine.rasterize(code, 32.0) else {
+        let Ok(rasterized_glyph) = self.font_engine.rasterize(code, self.font_size) else {
             return None;
         };
 
