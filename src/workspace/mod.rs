@@ -226,6 +226,9 @@ impl<'a> Workspace<'a> {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(99)
             }
+            Action::ActivateNextTile => {
+                self.tile_manager.activate_next_tile();
+            }
             Action::ActivateTab(index) => {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
@@ -261,6 +264,16 @@ impl<'a> Workspace<'a> {
             }
         }
 
+        //===============================================================
+        // バイト表現では制御文字と区別できない入力は装飾キーの存在をチェックする
+
+        // Ctrl+n で操作対象のシェルを変更
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && input == String::from_utf8(vec![14]).unwrap()
+        {
+            return Action::ActivateNextTile;
+        }
+
         // Ctrl+h で画面分割
         // バイト表現では Backspace の制御文字と区別できないので装飾キーの存在をチェックする
         if modifier_state.contains(ModifiersState::CONTROL)
@@ -270,9 +283,11 @@ impl<'a> Workspace<'a> {
         }
 
         // Ctrl+h で画面分割
+        // TODO: これも装飾文字の存在をチェックした方がよい
         if input == String::from_utf8(vec![20]).unwrap() {
             return Action::NewTab;
         }
+        //===============================================================
 
         return Action::Input(input);
     }
