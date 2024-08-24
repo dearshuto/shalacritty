@@ -235,6 +235,9 @@ impl<'a> Workspace<'a> {
                 self.background_renderer_context
                     .set_active_image_id(id.cloned());
             }
+            Action::DumpDebugInfo => {
+                self.tile_manager.dump_for_debug();
+            }
         }
     }
 
@@ -243,6 +246,12 @@ impl<'a> Workspace<'a> {
     }
 
     fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && modifier_state.contains(ModifiersState::SHIFT)
+        {
+            return Action::DumpDebugInfo;
+        }
+
         // Ctrl+<0~4>
         for index in 0..5 {
             if modifier_state.contains(ModifiersState::CONTROL)
