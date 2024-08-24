@@ -13,6 +13,9 @@ pub struct Config {
     #[serde(default)]
     pub image: String,
 
+    #[serde(default = "default_font_size")]
+    pub font_size: f32,
+
     #[serde(default = "default_image_alpha")]
     pub image_alpha: f32,
 
@@ -30,6 +33,10 @@ pub struct Background {
 
     #[serde(default)]
     pub enhance: Vec<f32>,
+}
+
+fn default_font_size() -> f32 {
+    32.0
 }
 
 fn default_image_alpha() -> f32 {

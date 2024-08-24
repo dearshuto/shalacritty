@@ -41,14 +41,14 @@ pub struct GlyphManager {
 }
 
 impl GlyphManager {
-    pub fn new() -> Self {
+    pub fn new(font_size: f32) -> Self {
         Self {
-            font_engine: FontEngine::new(),
+            font_engine: FontEngine::new_with_font_size(font_size),
             glyph_table: GlyphTable {
                 rasterized_glyph_table: HashMap::new(),
             },
             glyph_writer: GlyphWriter::new(),
-            font_size: 32.0,
+            font_size,
         }
     }
 
@@ -56,8 +56,11 @@ impl GlyphManager {
     pub fn set_font_size(&mut self, size: f32) {
         self.font_size = size;
 
+        self.font_engine.set_font_size(size);
+
         // 文字サイズが変更されたらすべてのキャッシュを破棄する
         self.glyph_table.rasterized_glyph_table.clear();
+        self.glyph_writer.invalidate_cache();
     }
 
     pub fn extract(&mut self, code: char) -> Option<GlyphTexturePatch> {
@@ -85,6 +88,10 @@ impl GlyphManager {
             let mut glyph_texture_patches = self
                 .glyph_writer
                 .execute([' '].into_iter(), &self.glyph_table);
+
+            if glyph_texture_patches.is_empty() {
+                return None;
+            }
 
             return Some(glyph_texture_patches.remove(0).into());
         }
@@ -152,8 +159,8 @@ mod tests {
     // リポジトリのルートに「愛」が出力される
     #[test]
     fn export() {
-        let mut glyph_manager = GlyphManager::new();
-        glyph_manager.extract_alphabet();
+        let mut glyph_manager = GlyphManager::new(64.0);
+        glyph_manager.extract('K');
         let (buffer, width, height) = {
             let rasterized_glyph = &glyph_manager.get_rasterized_glyph('K');
             let buffer = &rasterized_glyph.buffer;
