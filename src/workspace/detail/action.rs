@@ -11,6 +11,9 @@ pub enum Action<'a> {
     // タブ切り替え
     ActivateTab(u32),
 
+    // 入力対象の切り替え
+    ActivateNextTile,
+
     // デバッグ情報のダンプ
     DumpDebugInfo,
 }

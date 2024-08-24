@@ -32,7 +32,7 @@ pub struct TileManager<TShellManager: IShellManager> {
     active_tab_id: TabId,
 
     // アクティブなタブで操作対象になってるシェル
-    active_shell_table: HashMap<TabId, Vec<TShellManager::Id>>,
+    active_shell_table: HashMap<TabId, TShellManager::Id>,
 }
 
 impl<TShellManager: IShellManager> TileManager<TShellManager> {
@@ -62,7 +62,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             root_tile_id,
             id_set: HashSet::from([shell_id]),
             active_tab_id: tab_id,
-            active_shell_table: HashMap::from([(tab_id, vec![shell_id])]),
+            active_shell_table: HashMap::from([(tab_id, shell_id)]),
             tile_shell_table: HashMap::from([(tile_id, shell_id)]),
         };
         (instance, tile_id)
@@ -144,12 +144,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         let shell_id = self.shell_manager.spawn();
 
         // 操作対象のシェルを更新
-        if let Some(shells) = self.active_shell_table.get_mut(&self.active_tab_id) {
-            shells.push(shell_id);
-        } else {
-            self.active_shell_table
-                .insert(self.active_tab_id, vec![shell_id]);
-        }
+        self.active_shell_table.insert(self.active_tab_id, shell_id);
 
         // 分割した下側
         // TileId を新たに発行して分割したウィンドウに紐付ける
@@ -167,8 +162,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
             return;
         };
 
-        self.shell_manager
-            .send_input(*active_shell_id.last().unwrap(), input);
+        self.shell_manager.send_input(*active_shell_id, input);
     }
 
     #[allow(dead_code)]
@@ -236,7 +230,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
 
             // 新規に追加した仮想ウィンドウに割り当てるシェルを起動
             let shell_id = self.shell_manager.spawn();
-            self.active_shell_table.insert(new_tab_id, vec![shell_id]);
+            self.active_shell_table.insert(new_tab_id, shell_id);
 
             // TileId を新たに発行して分割したウィンドウに紐付ける
             let tile_id = TileId {
@@ -249,6 +243,36 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         };
 
         self.active_tab_id = *id;
+    }
+
+    pub fn activate_next_tile(&mut self) {
+        let tab_ids: Vec<_> = self
+            .virtual_window_manager
+            .find_children(self.active_tab_id)
+            .iter()
+            .map(|virtual_window_id| TileId {
+                internal: *virtual_window_id,
+            })
+            .collect();
+
+        let Some(active_shell_id) = self.active_shell_table.get_mut(&self.active_tab_id) else {
+            return;
+        };
+
+        let current_tab_index = tab_ids.iter().position(|tile_id| {
+            let Some(shell_id) = self.tile_shell_table.get(tile_id) else {
+                return false;
+            };
+
+            shell_id == active_shell_id
+        });
+        if current_tab_index.is_none() {
+            return;
+        }
+
+        let next_tab_id = tab_ids[(current_tab_index.unwrap() + 1) % tab_ids.len()];
+        let shell_id = self.tile_shell_table.get(&next_tab_id).unwrap();
+        *active_shell_id = *shell_id;
     }
 
     #[allow(dead_code)]
@@ -265,8 +289,7 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         let Some(shell_id) = self.active_shell_table.get(&self.active_tab_id) else {
             return (0, 0);
         };
-        self.shell_manager
-            .get_cursor_position(*shell_id.last().unwrap())
+        self.shell_manager.get_cursor_position(*shell_id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -274,10 +297,18 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
     }
 
     pub fn consume_dirty(&mut self) -> Option<bool> {
-        let shell_ids = self.active_shell_table.get(&self.active_tab_id)?;
+        let virtual_window_ids = self
+            .virtual_window_manager
+            .find_children(self.active_tab_id);
 
         let mut is_dirty = false;
-        for shell_id in shell_ids {
+        for virtual_window_id in virtual_window_ids {
+            let tile_id = TileId {
+                internal: virtual_window_id,
+            };
+            let Some(shell_id) = self.tile_shell_table.get(&tile_id) else {
+                continue;
+            };
             let dirty = self.shell_manager.consume_dirty(*shell_id)?;
             is_dirty |= dirty;
         }
