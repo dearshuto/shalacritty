@@ -3,6 +3,8 @@ use crate::Config;
 pub struct ConfigDiff {
     old_config: Config,
 
+    font_size: Option<f32>,
+
     clear_color: Option<[f32; 4]>,
 
     image_alpha: Option<f32>,
@@ -16,6 +18,7 @@ impl ConfigDiff {
     pub fn new() -> Self {
         Self {
             old_config: Config::default(),
+            font_size: None,
             clear_color: None,
             image_alpha: None,
             image_path_tentative: None,
@@ -24,6 +27,12 @@ impl ConfigDiff {
     }
 
     pub fn update(&mut self, config: &Config) {
+        // フォントサイズ
+        if config.font_size != self.old_config.font_size {
+            self.font_size = Some(config.font_size);
+            self.old_config.font_size = config.font_size;
+        }
+
         // 背景色
         if config.background.clear_color != self.old_config.background.clear_color {
             self.clear_color = Some(config.background.clear_color);
@@ -63,6 +72,12 @@ impl ConfigDiff {
         }
 
         false
+    }
+
+    pub fn consume_font_size(&mut self) -> Option<f32> {
+        let mut dst = None;
+        std::mem::swap(&mut dst, &mut self.font_size);
+        dst
     }
 
     pub fn consume_clear_color(&mut self) -> Option<[f32; 4]> {

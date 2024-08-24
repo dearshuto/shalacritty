@@ -46,8 +46,8 @@ pub struct Workspace<'a> {
 impl<'a> Workspace<'a> {
     pub fn new() -> Self {
         let instance = wgpu::Instance::default();
-        let config_service = Arc::new(ConfigService::new());
-        let glyph_manager = GlyphManager::new();
+        let config_service = ConfigService::new();
+        let glyph_manager = GlyphManager::new(config_service.read().unwrap().font_size);
         let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
 
@@ -70,6 +70,7 @@ impl<'a> Workspace<'a> {
             image_cache.operate_image_and_wait(*id, |_| {});
         }
 
+        let config_service = Arc::new(config_service);
         Self {
             instance,
             config_service: config_service.clone(),
@@ -119,6 +120,11 @@ impl<'a> Workspace<'a> {
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
+
+        // フォントサイズの更新
+        if let Some(font_size) = self.config_diff.consume_font_size() {
+            self.glyph_manager.set_font_size(font_size);
+        }
 
         for window_id in self.window_manager.ids() {
             // 最描画要求

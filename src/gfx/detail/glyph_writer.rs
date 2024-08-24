@@ -153,6 +153,12 @@ impl GlyphWriter {
         glyph_image_patches
     }
 
+    pub fn invalidate_cache(&mut self) {
+        self.character_data.clear();
+        self.current_x = 0;
+        self.current_y = 0;
+    }
+
     pub fn get_clip_rect(&self, code: char) -> CharacterData {
         let data = match self.character_data.get(&code) {
             Some(data) => data,
@@ -209,7 +215,7 @@ mod tests {
         where
             T: Iterator<Item = char>,
         {
-            let mut font_engine = FontEngine::new();
+            let mut font_engine = FontEngine::new_with_font_size(32.0);
             let table = codes
                 .map(|code| {
                     let glyph = font_engine.rasterize(code, 32.0).unwrap();
