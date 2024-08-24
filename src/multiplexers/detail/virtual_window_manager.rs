@@ -340,6 +340,29 @@ impl VirtualWindowManager {
     pub fn get_tab_ids(&self) -> &[TabId] {
         &self.tab_ids
     }
+
+    pub fn dump_hierarchy_for_debug(&self) {
+        println!("======================");
+
+        // タブ情報
+        println!("TabIds: {:?}", self.tab_ids);
+        println!("TabId -> WindowId");
+        println!("{:?}", self.tab_window_table);
+
+        // 階層構造
+        println!("Hierarchy");
+        let mut stack = vec![self.root_window_id];
+        while let Some(last) = stack.pop() {
+            let Some(children) = self.hierarchy_table.get(&last) else {
+                continue;
+            };
+
+            for child in children {
+                println!("{:?} -> {:?}", last, *child);
+                stack.push(*child);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

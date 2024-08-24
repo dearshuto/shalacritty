@@ -270,4 +270,16 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         let shell_id = self.active_shell_table.get(&self.active_tab_id)?;
         self.shell_manager.consume_dirty(*shell_id)
     }
+
+    pub fn dump_for_debug(&self) {
+        self.virtual_window_manager.dump_hierarchy_for_debug();
+
+        println!("CurrentTargetVirtualWindowIds");
+        let child_virtual_window_ids = self
+            .virtual_window_manager
+            .find_children(self.active_tab_id);
+        for child_virtual_window_id in child_virtual_window_ids {
+            println!("{:?}", child_virtual_window_id);
+        }
+    }
 }

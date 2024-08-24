@@ -10,4 +10,7 @@ pub enum Action<'a> {
 
     // タブ切り替え
     ActivateTab(u32),
+
+    // デバッグ情報のダンプ
+    DumpDebugInfo,
 }
