@@ -211,6 +211,16 @@ impl<'a> Workspace<'a> {
                 let id = self.tile_id_set.iter().next().unwrap();
                 let new_id = self.tile_manager.split_horizontal(*id);
                 self.tile_id_set.insert(new_id);
+                self.is_force_dirty = true;
+
+                for id in self.window_manager.ids() {
+                    let Some(window) = self.window_manager.try_get_window(*id) else {
+                        continue;
+                    };
+
+                    self.tile_manager
+                        .resize(window.inner_size().width, window.inner_size().height);
+                }
             }
             Action::NewTab => {
                 self.is_force_dirty = true;
