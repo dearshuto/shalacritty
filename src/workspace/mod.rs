@@ -41,6 +41,8 @@ pub struct Workspace<'a> {
     background_renderer_context: BackgroundRendererContext,
 
     image_ids: Vec<ImageId>,
+
+    resize_throttle: Option<(std::time::SystemTime, WindowId, u32, u32)>,
 }
 
 impl<'a> Workspace<'a> {
@@ -93,6 +95,7 @@ impl<'a> Workspace<'a> {
                 window_size: (640, 480),
             },
             image_ids,
+            resize_throttle: None,
         }
     }
 
@@ -111,6 +114,16 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn update(&mut self) {
+        // リサイズ反映
+        // 即時反映だと重いので 20 msec 無操作状態が続いたら反映する
+        if let Some((time, _id, _width, _height)) = self.resize_throttle {
+            if let Ok(duration) = std::time::SystemTime::now().duration_since(time) {
+                if 20 < duration.as_millis() {
+                    self.resize_impl();
+                }
+            }
+        };
+
         // 設定の差分検出
         self.config_diff
             .update(&self.config_service.read().unwrap());
@@ -190,17 +203,8 @@ impl<'a> Workspace<'a> {
     }
 
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
-        self.background_renderer_context.window_size = (width, height);
-
-        self.tile_manager.resize(width, height);
-
-        self.renderer.resize(id, width, height);
-
-        // 最描画要求
-        let Some(window) = self.window_manager.try_get_window(id) else {
-            return;
-        };
-        window.request_redraw();
+        let now = std::time::SystemTime::now();
+        self.resize_throttle = Some((now, id, width, height));
     }
 
     pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
@@ -275,6 +279,30 @@ impl<'a> Workspace<'a> {
         }
 
         return Action::Input(input);
+    }
+
+    fn resize_impl(&mut self) {
+        // 一応チェック入れとく
+        if self.resize_throttle.is_none() {
+            return;
+        }
+
+        // スロットル分を更新
+        let mut resize_info = None;
+        std::mem::swap(&mut resize_info, &mut self.resize_throttle);
+
+        let (_, id, width, height) = resize_info.unwrap();
+        self.background_renderer_context.window_size = (width, height);
+
+        self.tile_manager.resize(width, height);
+
+        self.renderer.resize(id, width, height);
+
+        // 最描画要求
+        let Some(window) = self.window_manager.try_get_window(id) else {
+            return;
+        };
+        window.request_redraw();
     }
 }
 
