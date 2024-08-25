@@ -1,5 +1,5 @@
 use alacritty_terminal::{
-    index::{Column, Line, Point},
+    index::Point,
     vte::ansi::{Color, NamedColor},
 };
 
@@ -95,10 +95,31 @@ impl Diff {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CompressedPoint {
+    value: i32,
+}
+
+impl CompressedPoint {
+    pub fn new(line: i16, column: i16) -> Self {
+        Self {
+            value: ((line as i32) << 16) | (column as i32),
+        }
+    }
+
+    pub fn line(&self) -> i32 {
+        (self.value >> 16) & 0xFFFF
+    }
+
+    pub fn column(&self) -> i32 {
+        self.value & 0xFF
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CharacterInfoCache {
     pub code: char,
     pub color: Color,
-    pub point: Point<Line, Column>,
+    pub point: CompressedPoint,
 }
 
 pub struct ContentPlotter {
@@ -129,7 +150,10 @@ impl ContentPlotter {
             .map(|c| CharacterInfoCache {
                 code: c.code(),
                 color: c.color_fg(),
-                point: c.position(),
+                point: CompressedPoint::new(
+                    c.position().line.0 as i16,
+                    c.position().column.0 as i16,
+                ),
             })
             .collect::<Vec<CharacterInfoCache>>();
         let item_count = items.len();
@@ -171,8 +195,8 @@ impl ContentPlotter {
                 // 画面上に配置
                 let offset_matrix = Matrix3::new_translation(
                     &(Vector2::new(
-                        item.point.column.0 as f32 / (size.0 as f32 / 16.0),
-                        item.point.line.0 as f32 / (size.1 as f32 / 16.0),
+                        item.point.column() as f32 / (size.0 as f32 / 16.0),
+                        item.point.line() as f32 / (size.1 as f32 / 16.0),
                     )),
                 );
 
@@ -251,7 +275,7 @@ impl ContentPlotter {
             NamedColor::White => [1.0, 1.0, 1.0, 0.0],
             NamedColor::Magenta => [1.0, 0.0, 1.0, 0.0],
             NamedColor::Cyan => [87.0 / 255.0, 154.0 / 255.0, 205.0 / 255.0, 0.0],
-            NamedColor::BrightBlack => [0.2, 0.2, 0.2, 0.0],
+            NamedColor::BrightBlack => [0.8, 0.8, 0.2, 0.0],
             // NamedColor::BrightRed => todo!(),
             // NamedColor::BrightGreen => todo!(),
             // NamedColor::BrightYellow => todo!(),
