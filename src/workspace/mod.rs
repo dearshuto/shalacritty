@@ -233,6 +233,16 @@ impl<'a> Workspace<'a> {
                 self.is_force_dirty = true;
                 self.tile_manager.activate_tab(index);
 
+                // タブが切り替わったタイミングで切り替え先の tty にリサイズをかける
+                // ウィンドウのリサイズタイミングで全ての tty をリサイズしてもいいかも
+                // MEMO:  ウィンドウはひとつを仮定
+                if let Some(window_id) = self.window_manager.ids().first() {
+                    if let Some(window) = self.window_manager.try_get_window(*window_id) {
+                        self.tile_manager
+                            .resize(window.inner_size().width, window.inner_size().height);
+                    }
+                }
+
                 // 背景画像の切り替え
                 let id = self.image_ids.get(index as usize);
                 self.background_renderer_context
