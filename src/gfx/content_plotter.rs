@@ -7,7 +7,10 @@ use nalgebra::{Matrix3, Vector2};
 
 use crate::util::{DiffCalculator, IDiffCalculator};
 
-use super::{detail::GlyphImagePatch, GlyphManager};
+use super::{
+    detail::{BufferPatch, GlyphImagePatch},
+    GlyphManager,
+};
 
 pub trait IContent {
     type TColor;
@@ -76,6 +79,7 @@ impl From<GlyphImagePatch> for GlyphTexturePatch {
 #[derive(Default)]
 pub struct Diff {
     character_info_array: Vec<CharacterInfo>,
+    buffer_patches: Vec<BufferPatch>,
     cursor: Option<Point>,
     item_count: i32,
 }
@@ -83,6 +87,10 @@ pub struct Diff {
 impl Diff {
     pub fn character_info_array(&self) -> &[CharacterInfo] {
         &self.character_info_array
+    }
+
+    pub fn buffer_patches(&self) -> &[BufferPatch] {
+        &self.buffer_patches
     }
 
     pub fn cursor(&self) -> Option<&Point> {
@@ -133,7 +141,18 @@ impl ContentPlotter {
             })
             .collect::<Vec<CharacterInfoCache>>();
         let item_count = items.len();
-        let diff = self.diff_calculator.calculate(items.into_iter());
+        let diff = self.diff_calculator.calculate(&items);
+
+        let buffer_patches: Vec<_> = diff
+            .items()
+            .iter()
+            .enumerate()
+            .map(|(index, new_item)| {
+                let item_index = diff.indicies()[index];
+                let old_item = items[item_index];
+                Self::create_buffer_patch(&old_item, new_item)
+            })
+            .collect();
 
         // 表示要素を描画に必要な情報に変換
         let items = (0..diff.items().len())
@@ -206,6 +225,7 @@ impl ContentPlotter {
 
         Diff {
             character_info_array: items,
+            buffer_patches,
             cursor: Some(*cursor_point),
             item_count: item_count as i32,
         }
@@ -276,6 +296,19 @@ impl ContentPlotter {
                 println!("unknown color: {:?}", color);
                 [0.0, 0.0, 0.0, 0.0]
             }
+        }
+    }
+
+    fn create_buffer_patch(
+        _old_value: &CharacterInfoCache,
+        _new_value: &CharacterInfoCache,
+    ) -> BufferPatch {
+        BufferPatch {
+            binary: Vec::default(),
+            partial_sizes: [0; 8],
+            src_offsets: [0; 8],
+            dst_offsets: [0; 8],
+            count: 0,
         }
     }
 }

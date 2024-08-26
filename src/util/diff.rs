@@ -14,9 +14,7 @@ impl<T> Diff<T> {
 }
 
 pub trait IDiffCalculator<T> {
-    fn calculate<TIterator>(&mut self, items: TIterator) -> Diff<T>
-    where
-        TIterator: Iterator<Item = T>;
+    fn calculate(&mut self, items: &[T]) -> Diff<T>;
 }
 
 pub struct DiffCalculator<T>
@@ -41,14 +39,11 @@ impl<T> IDiffCalculator<T> for DiffCalculator<T>
 where
     T: Eq + Copy,
 {
-    fn calculate<TIterator>(&mut self, items: TIterator) -> Diff<T>
-    where
-        TIterator: Iterator<Item = T>,
-    {
+    fn calculate(&mut self, items: &[T]) -> Diff<T> {
         // 要素を列挙して比較するシンプルな実装
         // Wu の差分検出みたいないけてる実装に載せ替えたい
 
-        let old_items: Vec<T> = items.collect();
+        let old_items: Vec<T> = items.to_vec();
 
         let mut changed_items = Vec::default();
         let mut item_indicies = Vec::default();
