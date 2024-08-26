@@ -6,14 +6,22 @@ use winit::window::WindowId;
 
 use crate::gfx::{content_plotter::Diff, GlyphTexturePatch};
 
+pub struct BufferPatch {
+    pub binary: Vec<u8>,
+    pub partial_sizes: [usize; 8],
+    pub src_offsets: [usize; 8],
+    pub dst_offsets: [usize; 8],
+    pub count: u8,
+}
+
 #[repr(C)]
 #[derive(Debug, Pod, Copy, Clone, Zeroable)]
-struct CharacterData {
-    transform0: [f32; 4],
-    transform1: [f32; 4],
-    fore_ground_color: [f32; 4],
-    uv_bl: [f32; 2],
-    uv_tr: [f32; 2],
+pub struct CharacterData {
+    pub transform0: [f32; 4],
+    pub transform1: [f32; 4],
+    pub fore_ground_color: [f32; 4],
+    pub uv_bl: [f32; 2],
+    pub uv_tr: [f32; 2],
 }
 
 pub struct TextRenderer<'a> {
@@ -241,6 +249,7 @@ impl<'a> TextRenderer<'a> {
         queue: &wgpu::Queue,
         id: WindowId,
         diff: &Diff,
+        buffer_patches: &[BufferPatch],
         glyph_texture_patches: &[GlyphTexturePatch],
     ) {
         let Some(buffer) = self.character_storage_block_table.get(&id) else {
@@ -253,28 +262,14 @@ impl<'a> TextRenderer<'a> {
         // 文字数
         self.character_count = diff.item_count() as u32;
 
-        let data = diff
-            .character_info_array()
-            .iter()
-            .map(|info| {
-                let t = info.transform;
-                (
-                    info.index,
-                    CharacterData {
-                        transform0: [t[0], t[1], t[2], 0.0],
-                        transform1: [t[3], t[4], t[5], 0.0],
-                        fore_ground_color: info.fore_ground_color,
-                        uv_bl: [info.uv0[0], info.uv0[1]],
-                        uv_tr: [info.uv1[0], info.uv1[1]],
-                    },
-                )
-            })
-            .collect::<Vec<(usize, CharacterData)>>();
-
-        for (index, data) in data {
-            let offset = index * std::mem::size_of::<CharacterData>();
-            let binary = bytemuck::bytes_of(&data);
-            queue.write_buffer(buffer, offset as u64, binary);
+        for buffer_patch in buffer_patches {
+            for index in 0..buffer_patch.count {
+                let src_offset = buffer_patch.src_offsets[index as usize];
+                let dst_offset = buffer_patch.dst_offsets[index as usize];
+                let size = buffer_patch.partial_sizes[index as usize];
+                let bibary = &buffer_patch.binary[src_offset..(src_offset + size)];
+                queue.write_buffer(buffer, dst_offset as u64, bibary);
+            }
         }
 
         for texture_patch in glyph_texture_patches {

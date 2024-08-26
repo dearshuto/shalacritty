@@ -8,4 +8,4 @@ pub use cursor_renderer::CursorRenderer;
 pub use font_engine::FontEngine;
 pub use glyph_writer::{CharacterData, GlyphImagePatch, GlyphWriter, IGlyphManager};
 pub use scan_buffer_renderer::ScanBufferRenderer;
-pub use text_renderer::TextRenderer;
+pub use text_renderer::{BufferPatch, CharacterData as CharacterInfoData, TextRenderer};
