@@ -80,6 +80,11 @@ impl App {
                         } {
                             workspace.send_input(window_id, name_key, modifiers_state);
                         }
+
+                        // 装飾キーが押されてると text_with_all_modifiers() が取得できないときがあるのでその救済措置
+                        if let Some(text) = event.key_without_modifiers().to_text() {
+                            workspace.send_input(window_id, text, modifiers_state);
+                        }
                     }
                     WindowEvent::CloseRequested => {
                         target.exit();
