@@ -149,7 +149,7 @@ impl ContentPlotter {
             .enumerate()
             .map(|(index, new_item)| {
                 let item_index = diff.indicies()[index];
-                let old_item = items[item_index];
+                let old_item = self.diff_calculator.old_items()[item_index];
                 Self::create_buffer_patch(&old_item, new_item)
             })
             .collect();
@@ -301,14 +301,39 @@ impl ContentPlotter {
 
     fn create_buffer_patch(
         _old_value: &CharacterInfoCache,
-        _new_value: &CharacterInfoCache,
+        new_value: &CharacterInfoCache,
     ) -> BufferPatch {
+        let mut binary = Vec::default();
+        let mut partial_sizes = [0; 8];
+        let mut src_offsets = [0; 8];
+        let mut dst_offsets = [0; 8];
+        let mut current_index = 0;
+
+        // カラー
+        let fore_ground_color = match new_value.color {
+            Color::Named(c) => Self::convert_named_color(c),
+            Color::Spec(rgb) => [
+                rgb.r as f32 / 255.0,
+                rgb.g as f32 / 255.0,
+                rgb.b as f32 / 255.0,
+                1.0f32,
+            ],
+            Color::Indexed(i) => Self::convert_index_color(i),
+        };
+
+        let color_binary = bytemuck::cast_slice(&fore_ground_color);
+        partial_sizes[current_index as usize] = binary.len();
+        src_offsets[current_index as usize] = 0;
+        dst_offsets[current_index as usize] = 0;
+        binary.extend_from_slice(color_binary);
+        current_index += 1;
+
         BufferPatch {
-            binary: Vec::default(),
-            partial_sizes: [0; 8],
-            src_offsets: [0; 8],
-            dst_offsets: [0; 8],
-            count: 0,
+            binary,
+            partial_sizes,
+            src_offsets,
+            dst_offsets,
+            count: current_index,
         }
     }
 }

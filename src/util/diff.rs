@@ -33,6 +33,10 @@ where
             old_items: Vec::default(),
         }
     }
+
+    pub fn old_items(&self) -> &[T] {
+        &self.old_items
+    }
 }
 
 impl<T> IDiffCalculator<T> for DiffCalculator<T>
