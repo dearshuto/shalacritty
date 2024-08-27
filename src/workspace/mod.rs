@@ -265,12 +265,11 @@ impl<'a> Workspace<'a> {
             return Action::DumpDebugInfo;
         }
 
-        // Ctrl+<0~4>
-        for index in 0..5 {
-            if modifier_state.contains(ModifiersState::CONTROL)
-                && input == String::from_utf8(vec![49 + index]).unwrap()
-            {
-                return Action::ActivateTab(index as u32);
+        // Ctrl+<1~4>
+        for tab_number in 1..=4 {
+            if modifier_state.contains(ModifiersState::CONTROL) && input == tab_number.to_string() {
+                // インデックスとしては 0 始まりなので -1 しておく
+                return Action::ActivateTab(tab_number - 1);
             }
         }
 
