@@ -1,11 +1,9 @@
 use alacritty_terminal::{
     index::{Column, Line, Point},
-    vte::ansi::{Color, NamedColor},
+    vte::ansi::Color,
 };
 
-use nalgebra::{Matrix3, Vector2};
-
-use crate::util::{DiffCalculator, IDiffCalculator};
+use crate::util::DiffCalculator;
 
 use super::{
     detail::{BufferPatch, GlyphImagePatch},
@@ -78,17 +76,12 @@ impl From<GlyphImagePatch> for GlyphTexturePatch {
 
 #[derive(Default)]
 pub struct Diff {
-    character_info_array: Vec<CharacterInfo>,
     buffer_patches: Vec<BufferPatch>,
     cursor: Option<Point>,
     item_count: i32,
 }
 
 impl Diff {
-    pub fn character_info_array(&self) -> &[CharacterInfo] {
-        &self.character_info_array
-    }
-
     pub fn buffer_patches(&self) -> &[BufferPatch] {
         &self.buffer_patches
     }
@@ -103,7 +96,7 @@ impl Diff {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CharacterInfoCache {
+pub struct CharacterInfoCache {
     pub code: char,
     pub color: Color,
     pub point: Point<Line, Column>,
@@ -141,199 +134,15 @@ impl ContentPlotter {
             })
             .collect::<Vec<CharacterInfoCache>>();
         let item_count = items.len();
-        let diff = self.diff_calculator.calculate(&items);
 
-        let buffer_patches: Vec<_> = diff
-            .items()
-            .iter()
-            .enumerate()
-            .map(|(index, new_item)| {
-                let item_index = diff.indicies()[index];
-                let old_item = self.diff_calculator.old_items()[item_index];
-                Self::create_buffer_patch(&old_item, new_item)
-            })
-            .collect();
-
-        // 表示要素を描画に必要な情報に変換
-        let items = (0..diff.items().len())
-            .map(|index| {
-                let item = &diff.items()[index];
-                let item_index = diff.indicies()[index];
-
-                let code = item.code;
-                let glyph = glyph_manager.get_rasterized_glyph(code);
-
-                // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
-                let local_pixel_scale_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
-                    glyph.width as f32,
-                    glyph.height as f32,
-                ));
-
-                // ピクセル座標で表示位置をずらす
-                let local_pixel_translate_matrix = Matrix3::new_translation(&Vector2::new(
-                    glyph.left as f32,
-                    (32 - glyph.top) as f32,
-                ));
-
-                // ピクセル座標を [0, 1] 空間に変換する行列
-                // フレームバッファーのサイズで変わる
-                // 文字間を開けて見栄えを整えるために文字サイズを 0.6 倍している
-                let normalized_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
-                    0.6f32 / size.0 as f32,
-                    0.6f32 / size.1 as f32,
-                ));
-
-                // [0, 1] => [-1, 1]
-                let view_matrix =
-                    Matrix3::new_translation(&Vector2::new(-1.0, -1.0)) * Matrix3::new_scaling(2.0);
-
-                // 画面上に配置
-                let offset_matrix = Matrix3::new_translation(
-                    &(Vector2::new(
-                        item.point.column.0 as f32 / (size.0 as f32 / 16.0),
-                        item.point.line.0 as f32 / (size.1 as f32 / 16.0),
-                    )),
-                );
-
-                let transform_matrix = view_matrix
-                    * offset_matrix
-                    * normalized_matrix
-                    * local_pixel_translate_matrix
-                    * local_pixel_scale_matrix;
-
-                let character = glyph_manager.get_clip_rect(code);
-                let fore_ground_color = match item.color {
-                    Color::Named(c) => Self::convert_named_color(c),
-                    Color::Spec(rgb) => [
-                        rgb.r as f32 / 255.0,
-                        rgb.g as f32 / 255.0,
-                        rgb.b as f32 / 255.0,
-                        1.0f32,
-                    ],
-                    Color::Indexed(i) => Self::convert_index_color(i),
-                };
-                CharacterInfo {
-                    code,
-                    transform: transform_matrix.transpose().remove_column(2),
-                    fore_ground_color,
-                    uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
-                    uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
-                    index: item_index,
-                }
-            })
-            .collect::<Vec<CharacterInfo>>();
+        let buffer_patches =
+            self.diff_calculator
+                .calculate_binary_patch(&items, glyph_manager, size);
 
         Diff {
-            character_info_array: items,
             buffer_patches,
             cursor: Some(*cursor_point),
             item_count: item_count as i32,
-        }
-    }
-
-    fn convert_index_color(i: u8) -> [f32; 4] {
-        match i {
-            0 => Self::convert_named_color(NamedColor::White),
-            1 => Self::convert_named_color(NamedColor::Magenta),
-            2 => Self::convert_named_color(NamedColor::Black),
-            3 => Self::convert_named_color(NamedColor::BrightBlack),
-            4 => Self::convert_named_color(NamedColor::White),
-            5 => Self::convert_named_color(NamedColor::BrightMagenta),
-            6 => Self::convert_named_color(NamedColor::BrightWhite),
-            7 => Self::convert_named_color(NamedColor::White),
-            8 => Self::convert_named_color(NamedColor::BrightBlack),
-            10 => Self::convert_named_color(NamedColor::BrightBlue),
-            11 => Self::convert_named_color(NamedColor::Green),
-            12 => Self::convert_named_color(NamedColor::Blue),
-            13 => Self::convert_named_color(NamedColor::Cyan),
-            14 => Self::convert_named_color(NamedColor::White),
-            15 => Self::convert_named_color(NamedColor::Green),
-            // わからん
-            48 => Self::convert_named_color(NamedColor::White),
-            81 => Self::convert_named_color(NamedColor::White),
-            149 => Self::convert_named_color(NamedColor::White),
-            208 => Self::convert_named_color(NamedColor::White),
-            243 => Self::convert_named_color(NamedColor::White),
-            _ => {
-                println!("unknown index color: {}", i);
-                [0.0; 4]
-            }
-        }
-    }
-
-    fn convert_named_color(color: NamedColor) -> [f32; 4] {
-        match color {
-            NamedColor::Black => [0.0, 0.0, 0.0, 0.0],
-            NamedColor::Red => [1.0, 0.0, 0.0, 0.0],
-            NamedColor::Green => [0.0, 1.0, 0.0, 0.0],
-            NamedColor::Yellow => [1.0, 1.0, 0.0, 0.0],
-            NamedColor::Blue => [0.0, 0.0, 0.8, 0.0],
-            NamedColor::White => [1.0, 1.0, 1.0, 0.0],
-            NamedColor::Magenta => [1.0, 0.0, 1.0, 0.0],
-            NamedColor::Cyan => [87.0 / 255.0, 154.0 / 255.0, 205.0 / 255.0, 0.0],
-            NamedColor::BrightBlack => [0.2, 0.2, 0.2, 0.0],
-            // NamedColor::BrightRed => todo!(),
-            // NamedColor::BrightGreen => todo!(),
-            // NamedColor::BrightYellow => todo!(),
-            NamedColor::BrightBlue => [0.0, 0.0, 1.0, 0.0],
-            NamedColor::BrightMagenta => [1.0, 0.0, 1.0, 0.0],
-            NamedColor::BrightCyan => [0.0, 1.0, 1.0, 0.0],
-            NamedColor::BrightWhite => [0.8, 0.8, 0.8, 0.0],
-            NamedColor::Foreground => [1.0, 1.0, 1.0, 0.0],
-            NamedColor::Background => [1.0, 1.0, 1.0, 0.0],
-            // NamedColor::Cursor => todo!(),
-            // NamedColor::DimBlack => todo!(),
-            // NamedColor::DimRed => todo!(),
-            // NamedColor::DimGreen => todo!(),
-            // NamedColor::DimYellow => todo!(),
-            // NamedColor::DimBlue => todo!(),
-            // NamedColor::DimMagenta => todo!(),
-            // NamedColor::DimCyan => todo!(),
-            // NamedColor::DimWhite => todo!(),
-            // NamedColor::BrightForeground => todo!(),
-            // NamedColor::DimForeground => todo!(),
-            _ => {
-                println!("unknown color: {:?}", color);
-                [0.0, 0.0, 0.0, 0.0]
-            }
-        }
-    }
-
-    fn create_buffer_patch(
-        _old_value: &CharacterInfoCache,
-        new_value: &CharacterInfoCache,
-    ) -> BufferPatch {
-        let mut binary = Vec::default();
-        let mut partial_sizes = [0; 8];
-        let mut src_offsets = [0; 8];
-        let mut dst_offsets = [0; 8];
-        let mut current_index = 0;
-
-        // カラー
-        let fore_ground_color = match new_value.color {
-            Color::Named(c) => Self::convert_named_color(c),
-            Color::Spec(rgb) => [
-                rgb.r as f32 / 255.0,
-                rgb.g as f32 / 255.0,
-                rgb.b as f32 / 255.0,
-                1.0f32,
-            ],
-            Color::Indexed(i) => Self::convert_index_color(i),
-        };
-
-        let color_binary = bytemuck::cast_slice(&fore_ground_color);
-        partial_sizes[current_index as usize] = binary.len();
-        src_offsets[current_index as usize] = 0;
-        dst_offsets[current_index as usize] = 0;
-        binary.extend_from_slice(color_binary);
-        current_index += 1;
-
-        BufferPatch {
-            binary,
-            partial_sizes,
-            src_offsets,
-            dst_offsets,
-            count: current_index,
         }
     }
 }

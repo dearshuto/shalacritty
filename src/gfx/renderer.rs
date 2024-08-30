@@ -8,7 +8,7 @@ use winit::{
 
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
-    detail::{BufferPatch, CharacterInfoData, CursorRenderer, ScanBufferRenderer, TextRenderer},
+    detail::{CursorRenderer, ScanBufferRenderer, TextRenderer},
     IRenderPlugin, UpdateParams,
 };
 
@@ -250,46 +250,11 @@ where
             self.background_color = *background_color;
         }
 
-        let buffer_patches: Vec<_> = render_update_params
-            .diff()
-            .character_info_array()
-            .iter()
-            .map(|info| {
-                let t = info.transform;
-                let data = CharacterInfoData {
-                    transform0: [t[0], t[1], t[2], 0.0],
-                    transform1: [t[3], t[4], t[5], 0.0],
-                    fore_ground_color: info.fore_ground_color,
-                    uv_bl: [info.uv0[0], info.uv0[1]],
-                    uv_tr: [info.uv1[0], info.uv1[1]],
-                };
-
-                let binary = bytemuck::bytes_of(&data).to_vec();
-                let binary_size = binary.len();
-                BufferPatch {
-                    binary,
-                    partial_sizes: [binary_size, 0, 0, 0, 0, 0, 0, 0],
-                    src_offsets: [0; 8],
-                    dst_offsets: [
-                        info.index * std::mem::size_of::<CharacterInfoData>(),
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                    ],
-                    count: 1, // TODO
-                }
-            })
-            .collect();
-
         self.text_renderer.update(
             queue,
             id,
             render_update_params.diff(),
-            &buffer_patches,
+            render_update_params.diff().buffer_patches(),
             render_update_params.glyph_texture_patches(),
         );
 

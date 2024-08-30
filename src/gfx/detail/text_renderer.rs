@@ -6,13 +6,7 @@ use winit::window::WindowId;
 
 use crate::gfx::{content_plotter::Diff, GlyphTexturePatch};
 
-pub struct BufferPatch {
-    pub binary: Vec<u8>,
-    pub partial_sizes: [usize; 8],
-    pub src_offsets: [usize; 8],
-    pub dst_offsets: [usize; 8],
-    pub count: u8,
-}
+use super::BufferPatch;
 
 #[repr(C)]
 #[derive(Debug, Pod, Copy, Clone, Zeroable)]
