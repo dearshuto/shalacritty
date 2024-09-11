@@ -11,6 +11,7 @@ rust-version = "1.73"
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5abb4b7" }
 
 bytemuck = { version = "*", features = ["derive"] }
+copypasta = "*"
 crossfont = { version = "0.8.0" }
 image = "0.24.7"
 nalgebra = "0.32.3"

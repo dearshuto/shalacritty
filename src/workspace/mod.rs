@@ -4,6 +4,7 @@ mod diff_calculator;
 use std::{collections::HashSet, sync::Arc};
 
 use alacritty_terminal::index::{Column, Line, Point};
+use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
@@ -41,10 +42,14 @@ pub struct Workspace<'a> {
     background_renderer_context: BackgroundRendererContext,
 
     image_ids: Vec<ImageId>,
+
+    clipboard_context: ClipboardContext,
 }
 
 impl<'a> Workspace<'a> {
     pub fn new() -> Self {
+        let clipboard_context = ClipboardContext::new().unwrap();
+
         let instance = wgpu::Instance::default();
         let config_service = ConfigService::new();
         let glyph_manager = GlyphManager::new(config_service.read().unwrap().font_size);
@@ -93,6 +98,7 @@ impl<'a> Workspace<'a> {
                 window_size: (640, 480),
             },
             image_ids,
+            clipboard_context,
         }
     }
 
@@ -207,6 +213,13 @@ impl<'a> Workspace<'a> {
         let action = Self::detect_action(text, modifier_state);
         match action {
             Action::Input(str) => self.tile_manager.send_input(str),
+            Action::Paste => {
+                let Ok(content) = self.clipboard_context.get_contents() else {
+                    return;
+                };
+
+                self.tile_manager.send_input(&content);
+            }
             Action::SplitHorizontal => {
                 let id = self.tile_id_set.iter().next().unwrap();
                 let new_id = self.tile_manager.split_horizontal(*id);
@@ -260,9 +273,18 @@ impl<'a> Workspace<'a> {
 
     fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
         if modifier_state.contains(ModifiersState::CONTROL)
-            && modifier_state.contains(ModifiersState::SHIFT)
+            && modifier_state.contains(ModifiersState::ALT)
         {
             return Action::DumpDebugInfo;
+        }
+
+        // ペースト
+        if (modifier_state.contains(ModifiersState::CONTROL)
+            || modifier_state.contains(ModifiersState::SUPER))
+            && modifier_state.contains(ModifiersState::SHIFT)
+            && input == "v"
+        {
+            return Action::Paste;
         }
 
         // Ctrl+<1~4>

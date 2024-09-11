@@ -2,6 +2,9 @@ pub enum Action<'a> {
     // 入力
     Input(&'a str),
 
+    // ペースト
+    Paste,
+
     // 画面分割
     SplitHorizontal,
 
