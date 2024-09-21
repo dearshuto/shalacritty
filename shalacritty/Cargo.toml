@@ -1,0 +1,33 @@
+[package]
+name = "shalacritty"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.73"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# 2024 年 8 月 17 日のリビジョン
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5abb4b7" }
+
+bytemuck = { version = "*", features = ["derive"] }
+clap = { version = "4.4.18", features = ["derive"] }
+copypasta = "*"
+crossfont = { version = "0.8.0" }
+image = "0.24.7"
+nalgebra = "0.32.3"
+notify = { version = "5.0.0-pre.16" }
+raw-window-handle = "0.6.0"
+serde = { version = "1.0.104", features = ["derive"] }
+toml = { version = "0.8.6" }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.4.1", features = ["v4", "macro-diagnostics"] }
+winit = "0.29.3"
+
+wgpu = { version = "22.0.0", features = ["vulkan-portability"] }
+
+[build-dependencies]
+naga = { version = "0.20.0", features = ["glsl-in", "spv-out", "wgsl-out"] }
+
+[dev-dependencies]
+bmp = "*"
