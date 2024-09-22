@@ -1,0 +1,13 @@
+[package]
+name = "shalacritty_macro"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+shalacritty_core = { path = "../shalacritty_core" }
+
+quote = "1.0.18"
+syn = { version = "2.0" }

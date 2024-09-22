@@ -6,6 +6,8 @@ use std::{collections::HashSet, sync::Arc};
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
+use shalacritty_core::IProfilerSubject;
+use shalacritty_macro::profile;
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -19,7 +21,13 @@ use crate::{
 
 use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
-pub struct Workspace<'a> {
+pub trait IWorkspaceCallback {
+    fn begin(&mut self, time: std::time::SystemTime, id: &str);
+
+    fn end(&mut self, time: std::time::SystemTime, id: &str);
+}
+
+pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     #[allow(dead_code)]
     config_service: Arc<ConfigService>,
@@ -44,10 +52,18 @@ pub struct Workspace<'a> {
     image_ids: Vec<ImageId>,
 
     clipboard_context: ClipboardContext,
+
+    callback: TCallback,
 }
 
-impl<'a> Workspace<'a> {
+impl<'a> Workspace<'a, ()> {
     pub fn new() -> Self {
+        Self::new_with_callback(())
+    }
+}
+
+impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
+    pub fn new_with_callback(callback: TCallback) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
@@ -99,6 +115,7 @@ impl<'a> Workspace<'a> {
             },
             image_ids,
             clipboard_context,
+            callback,
         }
     }
 
@@ -118,8 +135,12 @@ impl<'a> Workspace<'a> {
 
     pub fn update(&mut self) {
         // 設定の差分検出
+        self.callback
+            .begin(std::time::SystemTime::now(), "Config Diff");
         self.config_diff
             .update(&self.config_service.read().unwrap());
+        self.callback
+            .end(std::time::SystemTime::now(), "Config Diff");
 
         self.tile_manager.update();
 
@@ -359,4 +380,16 @@ impl BackgroundRendererContext {
     pub fn set_active_image_id(&mut self, id: Option<ImageId>) {
         self.active_id = id;
     }
+}
+
+impl IWorkspaceCallback for () {
+    fn begin(&mut self, _time: std::time::SystemTime, _id: &str) {}
+
+    fn end(&mut self, _time: std::time::SystemTime, _id: &str) {}
+}
+
+impl<'a, T: IWorkspaceCallback> IProfilerSubject for Workspace<'a, T> {
+    fn begin(&self, _id: &str) {}
+
+    fn end(&self) {}
 }

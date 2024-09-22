@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
-members = [ "profiler","shalacritty"]
+members = [ "profiler","shalacritty", "shalacritty_core", "shalacritty_macro"]
 default-members = ["shalacritty"]
