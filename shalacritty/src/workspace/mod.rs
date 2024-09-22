@@ -19,7 +19,13 @@ use crate::{
 
 use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
 
-pub struct Workspace<'a> {
+pub trait IWorkspaceCallback {
+    fn begin(&mut self, time: std::time::SystemTime, id: &str);
+
+    fn end(&mut self, time: std::time::SystemTime, id: &str);
+}
+
+pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     #[allow(dead_code)]
     config_service: Arc<ConfigService>,
@@ -44,10 +50,19 @@ pub struct Workspace<'a> {
     image_ids: Vec<ImageId>,
 
     clipboard_context: ClipboardContext,
+
+    callback: TCallback,
 }
 
-impl<'a> Workspace<'a> {
+// 互換性保持用
+impl<'a> Workspace<'a, ()> {
     pub fn new() -> Self {
+        Self::new_with_callback(())
+    }
+}
+
+impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
+    pub fn new_with_callback(callback: TCallback) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
@@ -99,6 +114,7 @@ impl<'a> Workspace<'a> {
             },
             image_ids,
             clipboard_context,
+            callback,
         }
     }
 
@@ -118,8 +134,12 @@ impl<'a> Workspace<'a> {
 
     pub fn update(&mut self) {
         // 設定の差分検出
+        self.callback
+            .begin(std::time::SystemTime::now(), "config_diff");
         self.config_diff
             .update(&self.config_service.read().unwrap());
+        self.callback
+            .end(std::time::SystemTime::now(), "config_diff");
 
         self.tile_manager.update();
 
@@ -359,4 +379,10 @@ impl BackgroundRendererContext {
     pub fn set_active_image_id(&mut self, id: Option<ImageId>) {
         self.active_id = id;
     }
+}
+
+impl IWorkspaceCallback for () {
+    fn begin(&mut self, _time: std::time::SystemTime, _id: &str) {}
+
+    fn end(&mut self, _time: std::time::SystemTime, _id: &str) {}
 }
