@@ -1,6 +1,9 @@
 use eframe::egui;
 
-fn main() -> eframe::Result {
+#[tokio::main]
+async fn main() -> eframe::Result {
+    profiler_core::Server::serve(([0, 0, 0, 0], 3030)).await;
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()

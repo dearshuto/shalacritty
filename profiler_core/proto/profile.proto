@@ -2,24 +2,29 @@
 
 syntax = "proto3";
 
-option java_multiple_files = true;
-option java_package = "io.grpc.examples.helloworld";
-option java_outer_classname = "HelloWorldProto";
+package profile_core;
 
-package helloworld;
-
-// The greeting service definition.
-service Greeter {
-  // Sends a greeting
-  rpc SayHello (HelloRequest) returns (HelloReply) {}
+// プロファイル一覧を取得するリクエスト
+message ProfileListRequest {
+    repeated uint64 id_list = 1;
 }
 
-// The request message containing the user's name.
-message HelloRequest {
-  string name = 1;
+// プロファイル一覧の識別子
+message ProfileListResponse {
+    repeated uint64 id_list = 1;
 }
 
-// The response message containing the greetings
-message HelloReply {
-  string message = 1;
+message ProfileRequest {
+    repeated uint64 id_list = 1;
+}
+
+message ProfileResponse {
+    repeated string message = 1;
+}
+
+// Echo is the echo service.
+service Profile {
+    rpc RequestProfileList(ProfileListRequest) returns (ProfileListResponse) {}
+
+    rpc RequestProfile(ProfileRequest) returns (ProfileResponse) {}
 }
