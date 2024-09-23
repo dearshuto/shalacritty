@@ -12,7 +12,13 @@ use crate::workspace::Workspace;
 pub struct App {}
 
 impl App {
-    pub async fn run() {
+    pub async fn run(is_profile_server_enabled: bool) {
+        let profiler_server_task = tokio::spawn(async move {
+            if is_profile_server_enabled {
+                profiler_core::Server::serve(([0, 0, 0, 0], 3030)).await;
+            }
+        });
+
         let mut modifiers_state = ModifiersState::empty();
 
         let event_loop = EventLoopBuilder::new().build().unwrap();
@@ -94,5 +100,7 @@ impl App {
                 _ => {}
             })
             .unwrap();
+
+        profiler_server_task.await.unwrap();
     }
 }

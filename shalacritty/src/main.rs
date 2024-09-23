@@ -4,11 +4,15 @@ use shalacritty::App;
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {}
+struct Args {
+    /// プロファイル機能の有効性
+    #[arg(long("enable-profile-server"), default_value_t = false)]
+    is_profile_server_enabled: bool,
+}
 
 #[tokio::main]
 async fn main() {
-    let _args = Args::parse();
+    let args = Args::parse();
 
-    App::run().await;
+    App::run(args.is_profile_server_enabled).await;
 }
