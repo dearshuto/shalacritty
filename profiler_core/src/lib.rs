@@ -1,3 +1,11 @@
+mod client;
+mod detail;
+mod server;
+
+pub use client::Client;
+pub use detail::{ProfileListRequest, ProfileListResponse};
+pub use server::Server;
+
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }

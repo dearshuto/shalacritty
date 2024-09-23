@@ -1,4 +1,9 @@
 [workspace]
 resolver = "2"
-members = [ "profiler", "profiler_core","shalacritty"]
+members = ["profiler", "profiler_core", "shalacritty"]
 default-members = ["shalacritty"]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"

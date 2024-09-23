@@ -7,3 +7,4 @@ edition = "2021"
 profiler_core = { path = "../profiler_core" }
 
 eframe = "0.28.1"
+tokio.workspace = true
