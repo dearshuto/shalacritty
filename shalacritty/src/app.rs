@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use tokio::sync::oneshot;
 use winit::{
     event::{ElementState, Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
@@ -13,9 +14,11 @@ pub struct App {}
 
 impl App {
     pub async fn run(is_profile_server_enabled: bool) {
+        let (tx, rx) = oneshot::channel::<()>();
+
         let profiler_server_task = tokio::spawn(async move {
             if is_profile_server_enabled {
-                profiler_core::Server::serve(([0, 0, 0, 0], 3030)).await;
+                profiler_core::Server::serve(([0, 0, 0, 0], 3030), rx).await;
             }
         });
 
@@ -101,6 +104,10 @@ impl App {
             })
             .unwrap();
 
+        // サーバーば起動していたら終了要求を出す
+        if is_profile_server_enabled {
+            tx.send(()).unwrap();
+        }
         profiler_server_task.await.unwrap();
     }
 }

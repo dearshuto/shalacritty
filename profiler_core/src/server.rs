@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use tokio::sync::oneshot::Receiver;
 use warp::{
     reply::{Reply, Response},
     Filter,
@@ -22,15 +23,20 @@ pub struct Server {}
 
 impl Server {
     // ([127, 0, 0, 1], 3030)
-    pub async fn serve<TAddr>(addr: TAddr)
+    pub async fn serve<TAddr, T>(addr: TAddr, receiver: Receiver<T>)
     where
         TAddr: Into<SocketAddr>,
+        T: Send + Sync + 'static,
     {
         let profile = warp::path("profile")
             .and(warp::get())
             // .and(warp::query::<ProfileListRequest>())
             .and_then(Self::get);
-        warp::serve(profile).run(addr.into()).await;
+        let (_addr, future) =
+            warp::serve(profile).bind_with_graceful_shutdown(addr.into(), async move {
+                receiver.await.ok();
+            });
+        future.await;
     }
 
     #[allow(dead_code)]
