@@ -27,11 +27,12 @@ impl Profile {
 }
 
 pub struct Client {
+    client: reqwest::Client,
     base_url: Url,
 }
 
 impl Client {
-    pub async fn connect<D>(url: D) -> Result<Self, ()>
+    pub fn connect<D>(url: D) -> Result<Self, ()>
     where
         D: IntoUrl,
     {
@@ -39,19 +40,32 @@ impl Client {
             return Err(());
         };
 
-        Ok(Self { base_url: url })
+        let Ok(client) = reqwest::Client::builder().build() else {
+            return Err(());
+        };
+
+        Ok(Self {
+            client,
+            base_url: url,
+        })
     }
 
-    pub async fn request_profile(
-        &mut self,
-        _request: &ProfileListRequest,
-    ) -> Result<Vec<Profile>, ()> {
+    pub async fn request_profile(&self, _request: &ProfileListRequest) -> Result<Vec<Profile>, ()> {
         let mut url = self.base_url.clone();
         url.set_path("profile");
         // url.set_query(Some("id=0"));
         // url.set_query(Some("id=1"));
 
-        let Ok(response) = reqwest::get(url).await else {
+        let Ok(request) = self
+            .client
+            .get(url)
+            .timeout(std::time::Duration::from_millis(1000))
+            .build()
+        else {
+            return Err(());
+        };
+
+        let Ok(response) = self.client.execute(request).await else {
             return Err(());
         };
 

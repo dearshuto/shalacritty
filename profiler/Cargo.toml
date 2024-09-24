@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 profiler_core = { path = "../profiler_core" }
-futures = "*"
 
 eframe = "0.28.1"
+reqwest = "*"
 tokio.workspace = true
