@@ -56,6 +56,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 
 // 互換性保持用
 impl<'a> Workspace<'a, ()> {
+    #[allow(unused)]
     pub fn new() -> Self {
         Self::new_with_callback(())
     }
@@ -141,7 +142,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.callback
             .end(std::time::SystemTime::now(), "config_diff");
 
+        self.callback
+            .begin(std::time::SystemTime::now(), "TileManager::update()");
         self.tile_manager.update();
+        self.callback
+            .end(std::time::SystemTime::now(), "TileManager::update()");
 
         let is_config_dirty = self.config_diff.is_dirty();
         let background = self.config_diff.consume_clear_color();
@@ -172,7 +177,15 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 }
             }
 
+            self.callback.begin(
+                std::time::SystemTime::now(),
+                "TileManager::enumerate_content()",
+            );
             let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
+            self.callback.end(
+                std::time::SystemTime::now(),
+                "TileManager::enumerate_content()",
+            );
 
             // グリフの抽出
             let glyph_texture_patches: Vec<GlyphTexturePatch> = self
@@ -187,6 +200,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 .collect();
 
             let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
+
+            self.callback.begin(
+                std::time::SystemTime::now(),
+                "ContentPlotter::calculate_diff()",
+            );
             let diff = self.content_plotter.calculate_diff(
                 contents.into_iter(),
                 &Point {
@@ -195,6 +213,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 },
                 &self.glyph_manager,
                 (window.inner_size().width, window.inner_size().height),
+            );
+            self.callback.end(
+                std::time::SystemTime::now(),
+                "ContentPlotter::calculate_diff()",
             );
 
             let update_params =

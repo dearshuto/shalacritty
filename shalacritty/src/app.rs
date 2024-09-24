@@ -1,5 +1,10 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
+use profiler_core::IServerBackend;
 use tokio::sync::oneshot;
 use winit::{
     event::{ElementState, Event, StartCause, WindowEvent},
@@ -8,17 +13,19 @@ use winit::{
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-use crate::workspace::Workspace;
+use crate::workspace::{IWorkspaceCallback, Workspace};
 
 pub struct App {}
 
 impl App {
     pub async fn run(is_profile_server_enabled: bool) {
-        let (tx, rx) = oneshot::channel::<()>();
+        let server_backend = ServerBackend::new();
+        let server_backend_local = server_backend.clone();
 
+        let (tx, rx) = oneshot::channel::<()>();
         let profiler_server_task = tokio::spawn(async move {
             if is_profile_server_enabled {
-                profiler_core::Server::serve(([0, 0, 0, 0], 3030), rx).await;
+                profiler_core::Server::serve(([0, 0, 0, 0], 3030), server_backend_local, rx).await;
             }
         });
 
@@ -27,7 +34,7 @@ impl App {
         let event_loop = EventLoopBuilder::new().build().unwrap();
 
         // ひとつだけウィンドウを起動しておく
-        let mut workspace = Workspace::new();
+        let mut workspace = Workspace::new_with_callback(server_backend);
         workspace.spawn_window(&event_loop).await;
 
         let timer_length = Duration::from_millis(10);
@@ -109,5 +116,84 @@ impl App {
             tx.send(()).unwrap();
         }
         profiler_server_task.await.unwrap();
+    }
+}
+
+#[derive(Clone)]
+struct ServerBackendImpl {
+    begin_table: HashMap<String, std::time::SystemTime>,
+    duration: HashMap<String, VecDeque<std::time::Duration>>,
+}
+
+#[derive(Clone)]
+struct ServerBackend {
+    server_backend_impl: Arc<Mutex<ServerBackendImpl>>,
+}
+
+impl ServerBackend {
+    pub fn new() -> Self {
+        Self {
+            server_backend_impl: Arc::new(Mutex::new(ServerBackendImpl {
+                begin_table: Default::default(),
+                duration: Default::default(),
+            })),
+        }
+    }
+}
+
+impl IServerBackend for ServerBackend {
+    fn count(&self) -> usize {
+        self.server_backend_impl.lock().unwrap().duration.len()
+    }
+
+    fn key(&self, index: usize) -> String {
+        let binding = self.server_backend_impl.lock().unwrap();
+        let key = binding.duration.keys().nth(index).unwrap();
+        key.to_string()
+    }
+
+    fn cache_count(&self, key: &str) -> usize {
+        let binding = self.server_backend_impl.lock().unwrap();
+        binding.duration[key].len()
+    }
+
+    fn duration(&self, key: &str, index: usize) -> std::time::Duration {
+        let binding = self.server_backend_impl.lock().unwrap();
+        let queue = binding.duration.get(key).unwrap();
+        queue[index]
+    }
+}
+
+impl IWorkspaceCallback for ServerBackend {
+    fn begin(&mut self, time: std::time::SystemTime, id: &str) {
+        self.server_backend_impl
+            .lock()
+            .unwrap()
+            .begin_table
+            .insert(id.to_string(), time);
+    }
+
+    fn end(&mut self, time: std::time::SystemTime, id: &str) {
+        let mut binding = self.server_backend_impl.lock().unwrap();
+        let Some(begin) = binding.begin_table.get(id) else {
+            return;
+        };
+
+        let duration = time.duration_since(*begin).unwrap();
+        let Some(queue) = binding.duration.get_mut(id) else {
+            // 初回挿入
+            binding
+                .duration
+                .insert(id.to_string(), VecDeque::from([duration]));
+            return;
+        };
+
+        // 新しいデータは末尾に挿入
+        queue.push_back(duration);
+
+        // キャッシュするのは最大 100 個まで
+        if 100 <= queue.len() {
+            queue.pop_front();
+        }
     }
 }
