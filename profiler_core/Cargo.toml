@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+serde_json.workspace = true
 reqwest = "*"
 tonic = "0.12.2"
 prost = "*"
 warp = "0.3"
 tokio.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 
 [build-dependencies]
 tonic-build = { version = "*", features = ["prost"] }

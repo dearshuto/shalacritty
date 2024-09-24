@@ -4,27 +4,20 @@ syntax = "proto3";
 
 package profile_core;
 
+message Profile {
+    uint64 id = 1;
+
+    string name = 2;
+
+    repeated uint64 tick_span_nano_list = 3;
+}
+
 // プロファイル一覧を取得するリクエスト
 message ProfileListRequest {
     repeated uint64 id_list = 1;
 }
 
-// プロファイル一覧の識別子
+// プロファイル一覧
 message ProfileListResponse {
-    repeated uint64 id_list = 1;
-}
-
-message ProfileRequest {
-    repeated uint64 id_list = 1;
-}
-
-message ProfileResponse {
-    repeated string message = 1;
-}
-
-// Echo is the echo service.
-service Profile {
-    rpc RequestProfileList(ProfileListRequest) returns (ProfileListResponse) {}
-
-    rpc RequestProfile(ProfileRequest) returns (ProfileResponse) {}
+    repeated Profile profile_list = 1;
 }
