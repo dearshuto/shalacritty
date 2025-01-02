@@ -6,6 +6,7 @@ use std::{collections::HashSet, sync::Arc};
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
+use tokio::runtime::Runtime;
 use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -54,16 +55,8 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     callback: TCallback,
 }
 
-// 互換性保持用
-impl<'a> Workspace<'a, ()> {
-    #[allow(unused)]
-    pub fn new() -> Self {
-        Self::new_with_callback(())
-    }
-}
-
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
-    pub fn new_with_callback(callback: TCallback) -> Self {
+    pub fn new_with_callback(runtime: Arc<Runtime>, callback: TCallback) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
@@ -73,7 +66,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
-        let mut image_cache = ImageCache::new();
+        let mut image_cache = ImageCache::new(runtime);
         let mut image_ids = Vec::default();
         if let Ok(config_service) = config_service.read() {
             for path in &config_service.background.path {
