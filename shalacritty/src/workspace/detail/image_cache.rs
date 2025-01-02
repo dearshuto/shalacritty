@@ -14,7 +14,7 @@ use notify::{
     event::{CreateKind, RemoveKind},
     RecommendedWatcher, RecursiveMode, Watcher,
 };
-use tokio::task::JoinHandle;
+use tokio::{runtime::Runtime, task::JoinHandle};
 use uuid::Uuid;
 
 #[derive(Debug, Hash, Clone, Copy, Eq, PartialEq)]
@@ -29,8 +29,8 @@ pub struct ImageCache {
 }
 
 impl ImageCache {
-    pub fn new() -> Self {
-        let image_cache_internal = Arc::new(Mutex::new(ImageCacheInternal::new()));
+    pub fn new(runtime: Arc<Runtime>) -> Self {
+        let image_cache_internal = Arc::new(Mutex::new(ImageCacheInternal::new(runtime)));
         let watcher: RecommendedWatcher =
             notify::recommended_watcher(EventHanlder::new(image_cache_internal.clone())).unwrap();
 
@@ -163,6 +163,8 @@ impl notify::EventHandler for EventHanlder {
 }
 
 struct ImageCacheInternal {
+    runtime: Arc<Runtime>,
+
     path_id_table: HashMap<String, ImageId>,
 
     image_table: Arc<Mutex<HashMap<ImageId, DynamicImage>>>,
@@ -173,8 +175,9 @@ struct ImageCacheInternal {
 }
 
 impl ImageCacheInternal {
-    pub fn new() -> Self {
+    pub fn new(runtime: Arc<Runtime>) -> Self {
         Self {
+            runtime,
             path_id_table: HashMap::default(),
             image_table: Arc::default(),
             generation_table: HashMap::default(),
@@ -194,7 +197,7 @@ impl ImageCacheInternal {
         // 画像の読み込みは非同期化
         let image_table_local = self.image_table.clone();
         let path_local = path.as_ref().to_path_buf();
-        let task = tokio::spawn(async move {
+        let task = self.runtime.spawn(async move {
             // 画像を読み込んでキャッシュ
             let Some(image) = Self::load_image(path_local) else {
                 return;
@@ -237,7 +240,7 @@ impl ImageCacheInternal {
         let id_local = id;
         let image_table_local = self.image_table.clone();
         let path_str_local = path_str.to_string();
-        let task = tokio::spawn(async move {
+        let task = self.runtime.spawn(async move {
             // ファイルが画像として不正なデータになってたらデータを破棄する
             let Some(image) = Self::load_image(path_str_local) else {
                 image_table_local.lock().unwrap().remove(&id_local);

@@ -19,7 +19,7 @@ pub struct App {}
 
 impl App {
     pub fn run(is_profile_server_enabled: bool) {
-        let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+        let runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
@@ -37,7 +37,7 @@ impl App {
 
         // ひとつだけウィンドウを起動しておく
         let mut workspace = runtime.block_on(async {
-            let mut workspace = Workspace::new_with_callback(server_backend);
+            let mut workspace = Workspace::new_with_callback(runtime.clone(), server_backend);
             workspace.spawn_window(&event_loop).await;
 
             workspace
