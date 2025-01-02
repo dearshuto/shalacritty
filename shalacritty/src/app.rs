@@ -18,12 +18,14 @@ use crate::workspace::{IWorkspaceCallback, Workspace};
 pub struct App {}
 
 impl App {
-    pub async fn run(is_profile_server_enabled: bool) {
+    pub fn run(is_profile_server_enabled: bool) {
+        let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
 
         let (tx, rx) = oneshot::channel::<()>();
-        let profiler_server_task = tokio::spawn(async move {
+        let profiler_server_task = runtime.spawn(async move {
             if is_profile_server_enabled {
                 profiler_core::Server::serve(([0, 0, 0, 0], 3030), server_backend_local, rx).await;
             }
@@ -34,8 +36,12 @@ impl App {
         let event_loop = EventLoopBuilder::new().build().unwrap();
 
         // ひとつだけウィンドウを起動しておく
-        let mut workspace = Workspace::new_with_callback(server_backend);
-        workspace.spawn_window(&event_loop).await;
+        let mut workspace = runtime.block_on(async {
+            let mut workspace = Workspace::new_with_callback(server_backend);
+            workspace.spawn_window(&event_loop).await;
+
+            workspace
+        });
 
         let timer_length = Duration::from_millis(10);
         event_loop
@@ -115,7 +121,10 @@ impl App {
         if is_profile_server_enabled {
             tx.send(()).unwrap();
         }
-        profiler_server_task.await.unwrap();
+
+        runtime.block_on(async {
+            profiler_server_task.await.unwrap();
+        });
     }
 }
 
