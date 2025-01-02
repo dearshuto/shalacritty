@@ -1,10 +1,7 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path};
 
-use wgpu::WasmNotSendSync;
-use winit::{
-    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
-    window::WindowId,
-};
+use wgpu::SurfaceTarget;
+use winit::window::WindowId;
 
 use super::{
     content_plotter::{Diff, GlyphTexturePatch},
@@ -143,9 +140,9 @@ where
         &mut self,
         id: WindowId,
         instance: &wgpu::Instance,
-        window: Arc<TWindow>,
+        window: TWindow,
     ) where
-        TWindow: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 'a,
+        TWindow: Into<SurfaceTarget<'a>>,
     {
         let surface = instance.create_surface(window).unwrap();
         let adapter = instance
