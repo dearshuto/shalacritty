@@ -10,9 +10,7 @@ struct Args {
     is_profile_server_enabled: bool,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
-
-    App::run(args.is_profile_server_enabled).await;
+    App::run(args.is_profile_server_enabled);
 }
