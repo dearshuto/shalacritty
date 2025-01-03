@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["profiler", "profiler_core", "shalacritty"]
+members = ["profiler", "profiler_core", "shalacritty", "vw"]
 default-members = ["shalacritty"]
 
 [workspace.dependencies]
