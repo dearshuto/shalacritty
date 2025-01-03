@@ -8,6 +8,7 @@ rust-version = "1.73"
 
 [dependencies]
 profiler_core = { path = "../profiler_core" }
+vw = { path = "../vw" }
 
 # 2024 年 12 月 29 日のリビジョン
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "7bd3b89" }
