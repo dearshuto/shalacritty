@@ -1,0 +1,10 @@
+[package]
+name = "asura"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 2024 年 12 月 29 日のリビジョン
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "7bd3b89" }
+
+uuid = { version = "*", features = ["v7"] }
