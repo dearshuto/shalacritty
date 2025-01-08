@@ -6,11 +6,9 @@ use crossfont::{BitmapBuffer, RasterizedGlyph};
 // glyph_manager.rs の実装も以降予定だが、その途中なので特殊な参照をして、
 // 一時的に detail を直接使わせてもらう
 use term_gfx::detail::FontEngine;
+use term_gfx::detail::{CharacterData, GlyphWriter, IGlyphManager};
 
-use super::{
-    content_plotter::GlyphTexturePatch,
-    detail::{CharacterData, GlyphWriter, IGlyphManager},
-};
+use super::content_plotter::GlyphTexturePatch;
 
 pub struct CharacterClipRect {
     pub uv_begin: [f32; 2],

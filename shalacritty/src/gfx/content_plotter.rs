@@ -7,7 +7,12 @@ use nalgebra::{Matrix3, Vector2};
 
 use crate::util::{DiffCalculator, IDiffCalculator};
 
-use super::{detail::GlyphImagePatch, GlyphManager};
+use super::GlyphManager;
+
+// TODO: content_plotter.rs の実装を term-gfx に移行する
+// 移行途中なので一時的に detail を参照しています
+// 将来的に detail は private になる予定
+use term_gfx::detail::GlyphImagePatch;
 
 pub trait IContent {
     type TColor;
