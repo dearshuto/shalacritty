@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crossfont::{BitmapBuffer, RasterizedGlyph};
 
-use super::detail::FontEngine;
+// 描画関係はすべて term-gfx に隠蔽する予定
+// glyph_manager.rs の実装も以降予定だが、その途中なので特殊な参照をして、
+// 一時的に detail を直接使わせてもらう
+use term_gfx::detail::FontEngine;
 
 use super::{
     content_plotter::GlyphTexturePatch,

@@ -8,6 +8,7 @@ rust-version = "1.73"
 
 [dependencies]
 profiler_core = { path = "../profiler_core" }
+term-gfx = { path = "../term-gfx" }
 vw = { path = "../vw" }
 
 # 2024 年 12 月 29 日のリビジョン
