@@ -4,9 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ash = {version =  "0.38.0", default-features = false, features = ["linked", "debug", "std"]}
+ash-window = "*"
 crossfont = { version = "0.8.0" }
-naga = { version = "23.1.0", features = ["spv-in"] }
+naga = { version = "23.1.0", features = ["glsl-in", "spv-in"] }
+raw-window-handle = "0.6.0"
+wgpu = "23.0"
+
+# backend のインスタンスを辞書として管理するための ID として利用
+# 将来的に配列管理に移行するか、管理のデータ構造を選択できるようにして、
+# uuid に依存しないようにしたい
+uuid = {version = "*", features = ["v4"] }
 
 [dev-dependencies]
 bmp = "*"
 naga = { version = "23.1.0", features = ["glsl-in", "spv-out"] }
+winit = "0.30"
