@@ -203,7 +203,7 @@ mod tests {
     use bmp::Image;
     use crossfont::RasterizedGlyph;
 
-    use crate::gfx::detail::FontEngine;
+    use crate::detail::FontEngine;
 
     use super::{GlyphWriter, IGlyphManager};
 
