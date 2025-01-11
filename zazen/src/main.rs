@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event};
@@ -17,18 +17,62 @@ fn main() -> Result<()> {
     app_result
 }
 
-struct App;
+struct App {
+    #[allow(dead_code)]
+    virtual_window_manager: vw::VirtualWindowManager,
+
+    #[allow(dead_code)]
+    multiplexer: asura::Multiplexer,
+
+    window_shell_table: HashMap<vw::VirtualWindowId, asura::ShellId>,
+}
+
+impl Drop for App {
+    fn drop(&mut self) {}
+}
 
 impl App {
     pub fn new() -> Self {
-        Self {}
+        let virtual_window_manager = vw::VirtualWindowManager::new();
+        let virtual_window_id = virtual_window_manager.ids()[0];
+
+        let mut multiplexer = asura::Multiplexer::new();
+        let shell_id = multiplexer.spawn(640, 480);
+
+        Self {
+            virtual_window_manager,
+            multiplexer,
+            window_shell_table: HashMap::from([(virtual_window_id, shell_id)]),
+        }
     }
 
     /// Run the app until the user exits.
-    fn run(self, mut terminal: DefaultTerminal) -> Result<()> {
+    fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         let duration = Duration::from_millis(16);
         loop {
-            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
+            terminal.draw(|frame| {
+                // 描画領域を更新
+                self.virtual_window_manager
+                    .resize_root(frame.area().width as u32, frame.area().height as u32);
+
+                // 描画領域をシェルに反映
+                for (virtual_window_id, shell_id) in &self.window_shell_table {
+                    let Some(virtual_window) = self
+                        .virtual_window_manager
+                        .try_get_virtual_window(*virtual_window_id)
+                    else {
+                        continue;
+                    };
+
+                    self.multiplexer.resize(
+                        *shell_id,
+                        virtual_window.width(),
+                        virtual_window.height(),
+                    );
+                }
+
+                frame.render_widget(&self, frame.area())
+            })?;
             while event::poll(duration)? {
                 if let Event::Key(_key) = event::read()? {
                     return Ok(());
@@ -43,6 +87,8 @@ impl Widget for &App {
     where
         Self: Sized,
     {
+        // TODO: ここで VirtualWindowManager のサイズを反映していく
+
         let areas = Layout::vertical([Constraint::Ratio(1, 2); 2]).split(area);
 
         let messages: Vec<ListItem> = vec![
