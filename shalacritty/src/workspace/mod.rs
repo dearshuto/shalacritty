@@ -7,7 +7,7 @@ use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use tokio::runtime::Runtime;
-use winit::{event_loop::EventLoopWindowTarget, keyboard::ModifiersState, window::WindowId};
+use winit::{event_loop::ActiveEventLoop, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
     gfx::{
@@ -112,7 +112,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         }
     }
 
-    pub async fn spawn_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) {
+    pub async fn spawn_window(&mut self, event_loop: &ActiveEventLoop) {
         let id = self.window_manager.create_window(event_loop).await;
         let window = self.window_manager.try_get_window(id).unwrap();
         let window_size = window.inner_size();

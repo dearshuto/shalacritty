@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use winit::{
     dpi::PhysicalSize,
-    event_loop::EventLoopWindowTarget,
-    window::{Window, WindowBuilder, WindowId},
+    event_loop::ActiveEventLoop,
+    window::{Window, WindowAttributes, WindowId},
 };
 
 pub struct WindowManager {
@@ -21,14 +21,13 @@ impl WindowManager {
         }
     }
 
-    pub async fn create_window<T>(&mut self, event_loop: &EventLoopWindowTarget<T>) -> WindowId {
+    pub async fn create_window(&mut self, event_loop: &ActiveEventLoop) -> WindowId {
         // カラーターゲットの最大値を 2048x2048 に設定しているのでウィンドウサイズもそれを超えないようにしている
-        let window = WindowBuilder::new()
+        let window_attributes = WindowAttributes::default()
             .with_transparent(true)
             .with_min_inner_size(PhysicalSize::new(300, 300))
-            .with_max_inner_size(PhysicalSize::new(4096, 4096))
-            .build(event_loop)
-            .unwrap();
+            .with_max_inner_size(PhysicalSize::new(4096, 4096));
+        let window = event_loop.create_window(window_attributes).unwrap();
         window.set_ime_allowed(true);
 
         let id = window.id();
