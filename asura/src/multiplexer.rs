@@ -50,7 +50,13 @@ impl Multiplexer {
 
         let mut buffer = String::new();
         self.teletype_manager.get_content(handle.id(), |x| {
+            let mut y = 0;
             for i in x.display_iter {
+                // 行が変わったら改行コードを挿入
+                if y < i.point.line.0 {
+                    buffer.push('\n');
+                    y = i.point.line.0;
+                }
                 buffer.push(i.c);
             }
         });
