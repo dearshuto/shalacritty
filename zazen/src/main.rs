@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event};
@@ -38,6 +38,10 @@ impl App {
 
         let mut multiplexer = asura::Multiplexer::new();
         let shell_id = multiplexer.spawn(640, 480);
+
+        let mut shell_event = multiplexer.subscribe_shell_event(shell_id);
+        multiplexer.input(shell_id, String::from_str("pwd\n").unwrap().as_bytes());
+        shell_event.wait_signaled();
 
         Self {
             virtual_window_manager,
@@ -91,10 +95,11 @@ impl Widget for &App {
 
         let areas = Layout::vertical([Constraint::Ratio(1, 2); 2]).split(area);
 
-        let messages: Vec<ListItem> = vec![
-            ListItem::new(Line::from(Span::raw("Hello First World!"))),
-            ListItem::new(Line::from(Span::raw("Hello Second World!"))),
-        ];
+        // 表示要素を ratatui のオブジェクトに変換
+        let id = self.window_shell_table.values().next().unwrap();
+        let content = self.multiplexer.enumerate_content(*id).unwrap();
+        let messages = content.lines().map(|str| ListItem::new(str));
+
         List::new(messages)
             .block(Block::default().borders(Borders::ALL).title(format!(
                 "First Area: {}x{}",
