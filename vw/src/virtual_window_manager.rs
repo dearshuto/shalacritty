@@ -81,7 +81,7 @@ impl VirtualWindowManager {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize_root(&mut self, width: u32, height: u32) {
         let Some(root_windows) = self.hierarchy_table.get(&self.root_window_id) else {
             return;
         };
@@ -93,6 +93,11 @@ impl VirtualWindowManager {
             window.width = width;
             window.height = height;
         }
+    }
+
+    pub fn resize(&mut self, _id: VirtualWindowId, _width: u32, _height: u32) {
+        // TODO: 特定のウィンドウをリサイズする実装をする
+        todo!();
     }
 
     /// 既存の仮想ウィンドウを横方向に分割して下側に新たなウィンドウを作成します

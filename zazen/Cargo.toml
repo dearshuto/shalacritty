@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+asura = { path = "../asura" }
+vw = { path = "../vw" }
+
 color-eyre = "0.6.3"
 crossterm = "0.28.1"
 ratatui = "0.29"

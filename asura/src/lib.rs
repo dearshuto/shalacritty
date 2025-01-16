@@ -5,3 +5,4 @@ mod shell_id;
 
 pub use multiplexer::Multiplexer;
 pub use shell_event::ShellEvent;
+pub use shell_id::ShellId;
