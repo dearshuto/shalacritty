@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use raw_window_handle::{DisplayHandle, WindowHandle};
+use wgpu::RenderBundleDescriptor;
 
 use crate::{
     backends::BackendVk,
@@ -14,25 +15,81 @@ struct Instance<TBackend: IBackend> {
     index_buffer_id: TBackend::BufferId,
 }
 
-pub struct Renderer<TBackend: IBackend> {
-    backend: TBackend,
-
-    instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
+pub trait IRenderDecorator {
+    fn render(&self);
 }
 
-impl Renderer<BackendVk> {
-    pub fn new() -> Self {
-        Self::new_with()
+struct RenderDecoratorConcrete;
+impl IRenderDecorator for RenderDecoratorConcrete {
+    fn render(&self) {}
+}
+
+struct RenderDecoratorAdapter<T: IRenderDecorator, U: IRenderDecorator> {
+    decorator: T,
+    internal_impl: U,
+}
+impl<T: IRenderDecorator, U: IRenderDecorator> IRenderDecorator for RenderDecoratorAdapter<T, U> {
+    fn render(&self) {
+        self.internal_impl.render();
+        self.decorator.render();
     }
 }
 
-impl<TBackend: IBackend> Renderer<TBackend> {
-    pub fn new_with() -> Self {
+struct RendererBuilder<T: IRenderDecorator> {
+    decorator: T,
+}
+
+impl RendererBuilder<RenderDecoratorConcrete> {
+    fn new() -> Self {
+        Self {
+            decorator: RenderDecoratorConcrete,
+        }
+    }
+}
+
+impl<T: IRenderDecorator> RendererBuilder<T> {
+    pub fn build(self) -> Renderer<BackendVk, T> {
+        Renderer::new(self.decorator)
+    }
+
+    pub fn decorate<U: IRenderDecorator>(
+        self,
+        decorator: U,
+    ) -> RendererBuilder<RenderDecoratorAdapter<U, T>> {
+        let adapter = RenderDecoratorAdapter {
+            decorator,
+            internal_impl: self.decorator,
+        };
+        RendererBuilder { decorator: adapter }
+    }
+}
+
+pub struct Renderer<TBackend: IBackend, TDecorator: IRenderDecorator> {
+    backend: TBackend,
+
+    instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
+
+    decorator: TDecorator,
+}
+
+impl<TDecorator: IRenderDecorator> Renderer<BackendVk, TDecorator> {
+    pub fn new(decorator: TDecorator) -> Self {
+        Self::new_with(decorator)
+    }
+}
+
+impl<TBackend: IBackend, TDecorator: IRenderDecorator> Renderer<TBackend, TDecorator> {
+    pub fn builder() -> RendererBuilder<RenderDecoratorConcrete> {
+        RendererBuilder::new()
+    }
+
+    fn new_with(decorator: TDecorator) -> Renderer<TBackend, TDecorator> {
         let backend: TBackend = TBackend::new();
 
         Self {
             backend,
             instance_table: HashMap::default(),
+            decorator,
         }
     }
 
@@ -92,7 +149,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
     }
 }
 
-impl<TBackend: IBackend> Drop for Renderer<TBackend> {
+impl<TBackend: IBackend, T: IRenderDecorator> Drop for Renderer<TBackend, T> {
     fn drop(&mut self) {
         self.instance_table.retain(|key, value| {
             self.backend.destroy_buffer(*key, value.index_buffer_id);
