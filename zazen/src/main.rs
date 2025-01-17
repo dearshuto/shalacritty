@@ -1,10 +1,8 @@
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use color_eyre::{eyre::Ok, Result};
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Layout},
-    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Widget},
     DefaultTerminal,
 };
@@ -78,8 +76,48 @@ impl App {
                 frame.render_widget(&self, frame.area())
             })?;
             while event::poll(duration)? {
-                if let Event::Key(_key) = event::read()? {
-                    return Ok(());
+                let Event::Key(key) = event::read()? else {
+                    continue;
+                };
+
+                match key.kind {
+                    KeyEventKind::Press => {
+                        let id = self.window_shell_table.values().next().unwrap();
+                        let code = key.code;
+                        let bytes: Vec<u8> = match code {
+                            event::KeyCode::Backspace => vec![0x0008],
+                            event::KeyCode::Enter => "\n".as_bytes().to_vec(),
+                            // event::KeyCode::Left => todo!(),
+                            // event::KeyCode::Right => todo!(),
+                            // event::KeyCode::Up => todo!(),
+                            // event::KeyCode::Down => todo!(),
+                            // event::KeyCode::Home => todo!(),
+                            // event::KeyCode::End => todo!(),
+                            // event::KeyCode::PageUp => todo!(),
+                            // event::KeyCode::PageDown => todo!(),
+                            // event::KeyCode::Tab => todo!(),
+                            // event::KeyCode::BackTab => todo!(),
+                            // event::KeyCode::Delete => todo!(),
+                            // event::KeyCode::Insert => todo!(),
+                            // event::KeyCode::F(_) => todo!(),
+                            event::KeyCode::Char(c) => c.to_string().as_bytes().to_vec(),
+                            // event::KeyCode::Null => todo!(),
+                            event::KeyCode::Esc => return Ok(()),
+                            // event::KeyCode::CapsLock => todo!(),
+                            // event::KeyCode::ScrollLock => todo!(),
+                            // event::KeyCode::NumLock => todo!(),
+                            // event::KeyCode::PrintScreen => todo!(),
+                            // event::KeyCode::Pause => todo!(),
+                            // event::KeyCode::Menu => todo!(),
+                            // event::KeyCode::KeypadBegin => todo!(),
+                            // event::KeyCode::Media(media_key_code) => todo!(),
+                            // event::KeyCode::Modifier(modifier_key_code) => todo!(),
+                            _ => vec![],
+                        };
+                        self.multiplexer.input(*id, &bytes);
+                    }
+                    KeyEventKind::Repeat => todo!(),
+                    KeyEventKind::Release => todo!(),
                 }
             }
         }
@@ -91,25 +129,17 @@ impl Widget for &App {
     where
         Self: Sized,
     {
-        // TODO: ここで VirtualWindowManager のサイズを反映していく
-
-        let areas = Layout::vertical([Constraint::Ratio(1, 2); 2]).split(area);
-
         // 表示要素を ratatui のオブジェクトに変換
         let id = self.window_shell_table.values().next().unwrap();
         let content = self.multiplexer.enumerate_content(*id).unwrap();
         let messages = content.lines().map(|str| ListItem::new(str));
 
         List::new(messages)
-            .block(Block::default().borders(Borders::ALL).title(format!(
-                "First Area: {}x{}",
-                areas[0].width, areas[0].height
-            )))
-            .render(areas[0], buf);
-
-        let messages = vec![ListItem::new(Line::from(Span::raw("Hello New World!")))];
-        List::new(messages)
-            .block(Block::default().borders(Borders::ALL).title("Second Area"))
-            .render(areas[1], buf);
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("{}x{}", area.width, area.height)),
+            )
+            .render(area, buf);
     }
 }
