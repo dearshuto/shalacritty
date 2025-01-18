@@ -707,7 +707,7 @@ impl IBackend for BackendVk {
         };
 
         let index_ptr =
-            unsafe { device.map_memory(*device_memory, 0, 10, ash::vk::MemoryMapFlags::empty()) }
+            unsafe { device.map_memory(*device_memory, 0, 64, ash::vk::MemoryMapFlags::empty()) }
                 .unwrap();
 
         Ok(MapHandle {

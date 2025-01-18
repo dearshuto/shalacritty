@@ -54,13 +54,24 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .unwrap();
 
         if let Ok(mut handle) = self.backend.map_buffer(target_id, vertex_buffer_id) {
-            handle.write(0 /*offset*/, &[]);
+            let data = bytemuck::cast_slice(&[0.0f32, 1.0, -1.0, -1.0, 1.0, -1.0]);
+            handle.write(0, data);
+            self.backend
+                .flush_buffer(target_id, vertex_buffer_id, 0 /*offset*/, 64);
         }
 
         let index_buffer_id = self
             .backend
             .allocate_buffer(target_id, 64, BufferUsage::IndexBuffer)
             .unwrap();
+        if let Ok(mut handle) = self.backend.map_buffer(target_id, index_buffer_id) {
+            let data = bytemuck::cast_slice(&[0u32, 1, 2]);
+            handle.write(0, data);
+            // self.backend
+            //     .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, data.len());
+            self.backend
+                .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, 64);
+        }
 
         self.instance_table.insert(
             target_id,
