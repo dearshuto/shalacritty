@@ -175,6 +175,8 @@ impl IBackend for BackendVk {
     ) -> Result<Self::RenderTargetId, ()> {
         let instance = unsafe {
             let appinfo = ash::vk::ApplicationInfo::default()
+                .application_name(c"MyName")
+                .engine_name(c"MyName")
                 .application_version(0)
                 .engine_version(0)
                 .api_version(ash::vk::make_api_version(0, 1, 0, 0));
