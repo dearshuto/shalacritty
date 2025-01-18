@@ -123,17 +123,17 @@ impl IShellManager for MultiplexersAdapter {
 
         let send_data: std::borrow::Cow<[u8]> = match input {
             // 上
-            "ArrowUp" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
-            "\u{f700}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x41]),
+            "ArrowUp" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_up()),
+            "\u{f700}" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_up()),
             // 下
-            "ArrowDown" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
-            "\u{f701}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x42]),
+            "ArrowDown" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_down()),
+            "\u{f701}" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_down()),
             // 左
-            "ArrowLeft" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
-            "\u{f702}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x44]),
+            "ArrowLeft" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_left()),
+            "\u{f702}" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_left()),
             // 右
-            "ArrowRight" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
-            "\u{f703}" => std::borrow::Cow::Borrowed(&[0x1b, 0x5b, 0x43]),
+            "ArrowRight" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_right()),
+            "\u{f703}" => std::borrow::Cow::Borrowed(asura::util::Unicode::allow_right()),
             _ => std::borrow::Cow::Owned(bytes),
         };
 
