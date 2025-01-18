@@ -7,6 +7,7 @@ rust-version = "1.73"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+asura = { path = "../asura" }
 profiler_core = { path = "../profiler_core" }
 term-gfx = { path = "../term-gfx" }
 vw = { path = "../vw" }

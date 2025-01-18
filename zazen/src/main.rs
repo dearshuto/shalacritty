@@ -85,8 +85,8 @@ impl App {
                         let id = self.window_shell_table.values().next().unwrap();
                         let code = key.code;
                         let bytes: Vec<u8> = match code {
-                            event::KeyCode::Backspace => vec![0x0008],
-                            event::KeyCode::Enter => "\n".as_bytes().to_vec(),
+                            event::KeyCode::Backspace => asura::util::Unicode::backspace().to_vec(),
+                            event::KeyCode::Enter => asura::util::Unicode::enter().to_vec(),
                             // event::KeyCode::Left => todo!(),
                             // event::KeyCode::Right => todo!(),
                             // event::KeyCode::Up => todo!(),
