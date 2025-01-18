@@ -48,6 +48,7 @@ pub struct BackendVk {
     frame_buffers_table: HashMap<RenderTargetId, [ash::vk::Framebuffer; 2]>,
     fence_table: HashMap<RenderTargetId, ash::vk::Fence>,
     semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
+    presentation_semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
 
     // デバイスメモリーとバッファーは 1:1 対応しているので同じ id を割り振っておく
     buffer_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::Buffer>>,
@@ -159,6 +160,7 @@ impl IBackend for BackendVk {
             command_buffer_table: HashMap::default(),
             fence_table: HashMap::default(),
             semaphore_table: HashMap::default(),
+            presentation_semaphore_table: HashMap::default(),
             buffer_table: HashMap::default(),
             device_memory_table: HashMap::default(),
             render_pass_table: HashMap::default(),
@@ -389,9 +391,10 @@ impl IBackend for BackendVk {
         };
 
         // セマフォ
-        // 最終的には完全非同期実行にしたいが、簡略化のために同期待ちとして利用するのでひとつだけ生成
         let semaphore_create_info = ash::vk::SemaphoreCreateInfo::default();
         let semaphore = unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
+        let presentation_semaphore =
+            unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
 
         // インスタンスの保持
         let id = RenderTargetId {
@@ -415,6 +418,8 @@ impl IBackend for BackendVk {
             .insert(id, [present_image_view[0], present_image_view[1]]);
         self.fence_table.insert(id, fence);
         self.semaphore_table.insert(id, semaphore);
+        self.presentation_semaphore_table
+            .insert(id, presentation_semaphore);
 
         Ok(id)
     }
@@ -776,6 +781,9 @@ impl IBackend for BackendVk {
         let Some(semaphore) = self.semaphore_table.get(&target_id) else {
             return;
         };
+        let Some(presentation_semaphore) = self.semaphore_table.get(&target_id) else {
+            return;
+        };
 
         // レンダーパス
         let Some(render_pass) = self.render_pass_table.get(&render_params.render_target_id) else {
@@ -836,17 +844,14 @@ impl IBackend for BackendVk {
 
         // フレームバッファを要求
         let (present_index, _) = unsafe {
-            swapchain_loader.acquire_next_image(*swapchain, u64::MAX, *semaphore, *fence)
+            swapchain_loader.acquire_next_image(
+                *swapchain,
+                u64::MAX,
+                *semaphore,
+                ash::vk::Fence::null(),
+            )
         }
         .unwrap();
-
-        // フレームバッファー要求の待ち
-        // TODO: 完全非同期化
-        unsafe {
-            device.wait_for_fences(&[*fence], true, u64::MAX /*timeout*/)
-        }
-        .unwrap();
-        unsafe { device.reset_fences(&[*fence]) }.unwrap();
 
         // コマンド作成開始
         let command_buffer_begin_info = ash::vk::CommandBufferBeginInfo::default()
@@ -926,7 +931,7 @@ impl IBackend for BackendVk {
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
-        let signal_semaphores = [];
+        let signal_semaphores = [*presentation_semaphore];
         let wait_semaphores = [*semaphore];
         let command_buffers = [command_buffer];
         let submit_info = ash::vk::SubmitInfo::default()
@@ -937,7 +942,7 @@ impl IBackend for BackendVk {
         unsafe { device.queue_submit(*queue, &[submit_info], *fence) }.unwrap();
 
         // 画面に表示
-        let wait_semaphors = [];
+        let wait_semaphors = [*presentation_semaphore];
         let swapchains = [*swapchain];
         // TODO: ダブルバッファー対応
         let image_indices = [present_index];
@@ -957,16 +962,8 @@ impl Drop for BackendVk {
                 unsafe { device.queue_wait_idle(queue) }.unwrap()
             }
 
-            unsafe { device.device_wait_idle() }.unwrap();
-
             // フェンス
             if let Some(fence) = self.fence_table.remove(render_target_id) {
-                // コマンドの完了まち
-                unsafe {
-                    device.wait_for_fences(&[fence], true, u64::MAX /*timeout*/)
-                }
-                .unwrap();
-
                 unsafe { device.destroy_fence(fence, None) }
             }
 
@@ -1022,6 +1019,9 @@ impl Drop for BackendVk {
 
             // セマフォ
             if let Some(semaphore) = self.semaphore_table.remove(render_target_id) {
+                unsafe { device.destroy_semaphore(semaphore, None) }
+            }
+            if let Some(semaphore) = self.presentation_semaphore_table.remove(render_target_id) {
                 unsafe { device.destroy_semaphore(semaphore, None) }
             }
 
