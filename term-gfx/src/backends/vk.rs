@@ -479,6 +479,7 @@ impl IBackend for BackendVk {
             .location(0)
             .format(ash::vk::Format::R32G32_SFLOAT)];
         let vertex_binding_descriptions = [ash::vk::VertexInputBindingDescription::default()
+            .input_rate(ash::vk::VertexInputRate::VERTEX)
             .binding(0)
             .stride(size_of::<f32>() as u32 * 2)];
         let pipeline_vertex_input_state_create_info =
@@ -551,6 +552,10 @@ impl IBackend for BackendVk {
             polygon_mode: ash::vk::PolygonMode::FILL,
             ..Default::default()
         };
+        let depth_stencil_state = ash::vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(false)
+            .depth_write_enable(false)
+            .depth_bounds_test_enable(false);
         let color_blend_attachment_states = [ash::vk::PipelineColorBlendAttachmentState {
             blend_enable: 0,
             ..Default::default()
@@ -566,6 +571,7 @@ impl IBackend for BackendVk {
             .stages(&shader_stage_create_infos)
             .vertex_input_state(&pipeline_vertex_input_state_create_info)
             // .dynamic_state(&dynamic_state)
+            .depth_stencil_state(&depth_stencil_state)
             .multisample_state(&multisample_state_info)
             .viewport_state(&&viewport_state_info)
             .rasterization_state(&rasterization_info)
@@ -648,7 +654,8 @@ impl IBackend for BackendVk {
         let memory_type_index = Self::find_memorytype_index(
             &buffer_requirement,
             &device_memory_properties,
-            ash::vk::MemoryPropertyFlags::HOST_VISIBLE,
+            ash::vk::MemoryPropertyFlags::HOST_VISIBLE
+                | ash::vk::MemoryPropertyFlags::HOST_COHERENT,
         )
         .unwrap();
         let memory_allocate_info = ash::vk::MemoryAllocateInfo::default()
@@ -848,6 +855,16 @@ impl IBackend for BackendVk {
         .unwrap();
         unsafe { device.reset_fences(&[*fence]) }.unwrap();
 
+        // コマンドバッファーのクリア
+        unsafe {
+            device
+                .reset_command_buffer(
+                    command_buffer,
+                    ash::vk::CommandBufferResetFlags::RELEASE_RESOURCES,
+                )
+                .expect("Reset command buffer failed.");
+        }
+
         // コマンド作成開始
         let command_buffer_begin_info = ash::vk::CommandBufferBeginInfo::default()
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -870,6 +887,7 @@ impl IBackend for BackendVk {
                 },
             })
             .clear_values(&clear_values);
+
         unsafe {
             device.cmd_begin_render_pass(
                 command_buffer,
@@ -886,6 +904,27 @@ impl IBackend for BackendVk {
                 *pipeline,
             )
         }
+
+        // unsafe {
+        //     device.cmd_set_viewport(
+        //         command_buffer,
+        //         0,
+        //         &[ash::vk::Viewport::default()
+        //             .x(0.0)
+        //             .y(0.0)
+        //             .width(640.0)
+        //             .height(480.0)
+        //             .min_depth(0.0)
+        //             .max_depth(1.0)],
+        //     );
+        //     device.cmd_set_scissor(
+        //         command_buffer,
+        //         0,
+        //         &[ash::vk::Rect2D::default()
+        //             .offset(ash::vk::Offset2D::default().x(0).y(0))
+        //             .extent(ash::vk::Extent2D::default().width(640).height(480))],
+        //     );
+        // }
 
         // 頂点バッファ
         unsafe {
@@ -916,9 +955,11 @@ impl IBackend for BackendVk {
                 render_params.instance_count,
                 0, /*first_index*/
                 0, /*vertex_offset*/
-                0, /*first_instance*/
+                1, /*first_instance*/
             );
         }
+        // println!("{:?}", render_params);
+        // unsafe { device.cmd_draw(command_buffer, 3, 1, 0, 0) }
 
         // レンダーパス終わり
         unsafe { device.cmd_end_render_pass(command_buffer) }
@@ -1080,10 +1121,10 @@ pub struct MapHandle {
 
 impl IMapHandle for MapHandle {
     fn write(&mut self, _offset: usize, data: &[u8]) {
-        let mut index_slice = unsafe {
+        let mut index_slice: Align<u8> = unsafe {
             Align::new(
                 self.index_ptr,
-                align_of::<u32>() as u64,
+                align_of::<u8>() as u64,
                 data.len() as ash::vk::DeviceSize,
             )
         };
