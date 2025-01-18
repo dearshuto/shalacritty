@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use raw_window_handle::HasDisplayHandle;
 use wgpu::rwh::HasWindowHandle;
@@ -68,7 +68,6 @@ impl<TBackend: term_gfx::IBackend> ApplicationHandler for App<TBackend> {
         // TODO: 更新タイミングの厳密な管理
         if let Some(window) = &self.window {
             window.request_redraw();
-            std::thread::sleep(Duration::from_millis(20));
         }
 
         match event {
