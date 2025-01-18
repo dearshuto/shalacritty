@@ -62,6 +62,7 @@ pub trait IMapHandle {
     fn write(&mut self, offset: usize, data: &[u8]);
 }
 
+#[derive(Debug)]
 pub struct RenderParams<TRenderTargetId, TPipelineId, TBufferId> {
     pub render_target_id: TRenderTargetId,
     pub pipelie_id: TPipelineId,
