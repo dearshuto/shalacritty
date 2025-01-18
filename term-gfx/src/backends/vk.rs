@@ -556,10 +556,9 @@ impl IBackend for BackendVk {
             polygon_mode: ash::vk::PolygonMode::FILL,
             ..Default::default()
         };
-        let color_blend_attachment_states = [ash::vk::PipelineColorBlendAttachmentState {
-            blend_enable: 0,
-            ..Default::default()
-        }];
+        let color_blend_attachment_states = [ash::vk::PipelineColorBlendAttachmentState::default()
+            .blend_enable(false)
+            .color_write_mask(ash::vk::ColorComponentFlags::RGBA)];
         let color_blend_state = ash::vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
@@ -1083,7 +1082,7 @@ impl IMapHandle for MapHandle {
         let mut index_slice = unsafe {
             Align::new(
                 self.index_ptr,
-                align_of::<u32>() as u64,
+                align_of::<u8>() as u64,
                 data.len() as ash::vk::DeviceSize,
             )
         };
