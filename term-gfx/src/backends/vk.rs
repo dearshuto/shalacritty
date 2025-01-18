@@ -1083,7 +1083,7 @@ impl IMapHandle for MapHandle {
         let mut index_slice = unsafe {
             Align::new(
                 self.index_ptr,
-                align_of::<u32>() as u64,
+                align_of::<u8>() as u64,
                 data.len() as ash::vk::DeviceSize,
             )
         };
