@@ -21,3 +21,6 @@ uuid = {version = "*", features = ["v4"] }
 bmp = "*"
 naga = { version = "23.1.0", features = ["glsl-in", "spv-out"] }
 winit = "0.30"
+
+[build-dependencies]
+naga = { version = "23.1.0", features = ["glsl-in", "spv-out"] }
