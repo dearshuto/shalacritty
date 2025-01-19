@@ -509,11 +509,21 @@ impl IBackend for BackendVk {
         let subpass_description = [ash::vk::SubpassDescription::default()
             .color_attachments(&color_attachments)
             .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS)];
+        let dependencies = [vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ..Default::default()
+        }];
         let render_pass = unsafe {
             device.create_render_pass(
                 &ash::vk::RenderPassCreateInfo::default()
                     .attachments(&renderpass_attachments)
                     .subpasses(&subpass_description),
+                // なくてもいいらしい
+                // .dependencies(&dependencies)
                 None,
             )
         }
@@ -559,6 +569,20 @@ impl IBackend for BackendVk {
         let color_blend_attachment_states = [ash::vk::PipelineColorBlendAttachmentState::default()
             .blend_enable(false)
             .color_write_mask(ash::vk::ColorComponentFlags::RGBA)];
+        let noop_stencil_state = vk::StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::KEEP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            ..Default::default()
+        };
+        let depth_stencil_state = ash::vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(false)
+            .depth_write_enable(false)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false)
+            .front(noop_stencil_state)
+            .back(noop_stencil_state);
         let color_blend_state = ash::vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op(vk::LogicOp::CLEAR)
             .attachments(&color_blend_attachment_states);
@@ -573,6 +597,7 @@ impl IBackend for BackendVk {
             .multisample_state(&multisample_state_info)
             .viewport_state(&&viewport_state_info)
             .rasterization_state(&rasterization_info)
+            // .depth_stencil_state(&depth_stencil_state) // なくてもいいらしい
             .color_blend_state(&&color_blend_state)
             .render_pass(render_pass)
             .input_assembly_state(&input_assembly_state)
