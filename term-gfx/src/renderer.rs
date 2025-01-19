@@ -46,7 +46,14 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .register_surface(window_handle, display_handle)
             .unwrap();
 
-        let pipeline_id = self.backend.create_pipeline(target_id, &[], &[]).unwrap();
+        let pipeline_id = self
+            .backend
+            .create_pipeline(
+                target_id,
+                include_bytes!("../res/hello_triangle.vs.spv"),
+                include_bytes!("../res/hello_triangle.fs.spv"),
+            )
+            .unwrap();
 
         let vertex_buffer_id = self
             .backend

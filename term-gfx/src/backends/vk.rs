@@ -83,27 +83,6 @@ impl BackendVk {
             .map(|(index, _memory_type)| index as _)
     }
 
-    fn convert_shader(source: &str, stage: naga::ShaderStage) -> Vec<u32> {
-        let mut front = naga::front::glsl::Frontend::default();
-        let module = front
-            .parse(&naga::front::glsl::Options::from(stage), source)
-            .unwrap();
-
-        let module_info = naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
-        naga::back::spv::write_vec(
-            &module,
-            &module_info,
-            &naga::back::spv::Options::default(),
-            None,
-        )
-        .unwrap()
-    }
-
     unsafe extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
         message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -427,8 +406,8 @@ impl IBackend for BackendVk {
     fn create_pipeline(
         &mut self,
         id: Self::RenderTargetId,
-        _vertex_shader_spv: &[u8],
-        _pixel_shader_spv: &[u8],
+        vertex_shader_spv: &[u8],
+        pixel_shader_spv: &[u8],
     ) -> Result<Self::PipelineId, ()> {
         let Some(device) = self.device_table.get(&id) else {
             return Err(());
@@ -438,19 +417,22 @@ impl IBackend for BackendVk {
             return Err(());
         };
 
-        let vertex_shader_spv = Self::convert_shader(
-            include_str!("../../res/hello_triangle.vs.glsl"),
-            naga::ShaderStage::Vertex,
-        );
-        let pixel_shader_spv = Self::convert_shader(
-            include_str!("../../res/hello_triangle.fs.glsl"),
-            naga::ShaderStage::Fragment,
-        );
-
+        let vertex_shader_spv = unsafe {
+            &*std::ptr::slice_from_raw_parts(
+                vertex_shader_spv.as_ptr() as *const u32,
+                vertex_shader_spv.len() / 4,
+            )
+        };
+        let pixel_shader_spv = unsafe {
+            &*std::ptr::slice_from_raw_parts(
+                pixel_shader_spv.as_ptr() as *const u32,
+                pixel_shader_spv.len() / 4,
+            )
+        };
         let vertex_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(&vertex_shader_spv);
+            vk::ShaderModuleCreateInfo::default().code(vertex_shader_spv);
         let pixel_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(&pixel_shader_spv);
+            vk::ShaderModuleCreateInfo::default().code(pixel_shader_spv);
 
         let vertex_shader_module =
             unsafe { device.create_shader_module(&vertex_shader_module_create_info, None) }
