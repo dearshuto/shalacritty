@@ -52,8 +52,11 @@ pub trait IBackend {
         size: usize,
     );
 
+    fn acquire_next_image(&mut self, id: Self::RenderTargetId) -> Result<u32, ()>;
+
     fn render(
         &self,
+        process_frame: u32,
         render_params: RenderParams<Self::RenderTargetId, Self::PipelineId, Self::BufferId>,
     );
 }

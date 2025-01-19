@@ -749,8 +749,32 @@ impl IBackend for BackendVk {
         unsafe { device.flush_mapped_memory_ranges(&[range]) }.unwrap();
     }
 
+    fn acquire_next_image(&mut self, id: Self::RenderTargetId) -> Result<u32, ()> {
+        // スワップチェーン
+        let Some(swapchain_loader) = self.swapchain_loader_table.get(&id) else {
+            return Err(());
+        };
+        let Some(swapchain) = self.swapchain_table.get(&id) else {
+            return Err(());
+        };
+
+        // フレームバッファを要求
+        let (present_index, _) = unsafe {
+            swapchain_loader.acquire_next_image(
+                *swapchain,
+                u64::MAX,
+                *semaphore,
+                ash::vk::Fence::null(),
+            )
+        }
+        .unwrap();
+
+        Ok(present_index)
+    }
+
     fn render(
         &self,
+        process_frame: u32,
         render_params: RenderParams<Self::RenderTargetId, Self::PipelineId, Self::BufferId>,
     ) {
         let target_id = render_params.render_target_id;
