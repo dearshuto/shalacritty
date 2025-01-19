@@ -8,9 +8,15 @@ pub enum BufferUsage {
     UnorderedAccessBuffer,
 }
 
+pub enum DescriptorType {
+    ConstantBuffer,
+    StorageBuffer,
+}
+
 pub trait IBackend {
     type RenderTargetId: Hash + Eq + Copy + Clone;
     type PipelineId: Hash + Eq + Copy + Clone;
+    type DescriptorSetId: Hash + Eq + Copy + Clone;
     type BufferId: Hash + Eq + Copy + Clone;
     type MapHandle: IMapHandle;
 
@@ -28,6 +34,21 @@ pub trait IBackend {
         vertex_shader_spv: &[u8],
         pixel_shader_spv: &[u8],
     ) -> Result<Self::PipelineId, ()>;
+
+    fn allocate_descriptor_set(
+        &mut self,
+        id: Self::RenderTargetId,
+        pipeline_id: Self::PipelineId,
+    ) -> Result<Self::DescriptorSetId, ()>;
+
+    fn update_descriptors(
+        &mut self,
+        update_descriptors_params: &UpdateDescriptorsParams<
+            Self::RenderTargetId,
+            Self::DescriptorSetId,
+            Self::BufferId,
+        >,
+    );
 
     fn allocate_buffer(
         &mut self,
@@ -54,7 +75,12 @@ pub trait IBackend {
 
     fn render(
         &self,
-        render_params: RenderParams<Self::RenderTargetId, Self::PipelineId, Self::BufferId>,
+        render_params: RenderParams<
+            Self::RenderTargetId,
+            Self::PipelineId,
+            Self::DescriptorSetId,
+            Self::BufferId,
+        >,
     );
 }
 
@@ -63,11 +89,26 @@ pub trait IMapHandle {
 }
 
 #[derive(Debug)]
-pub struct RenderParams<TRenderTargetId, TPipelineId, TBufferId> {
+pub struct RenderParams<TRenderTargetId, TPipelineId, TDescriptorSetId, TBufferId> {
     pub render_target_id: TRenderTargetId,
     pub pipelie_id: TPipelineId,
+    pub descriptor_set_id: Option<TDescriptorSetId>,
     pub vertex_buffer_id: TBufferId,
     pub index_buffer_id: TBufferId,
     pub index_count: u32,
     pub instance_count: u32,
+}
+
+#[derive(Debug)]
+pub struct UpdateBufferInfo<TBufferId> {
+    pub id: TBufferId,
+    pub offset: usize,
+    pub size: usize,
+}
+
+#[derive(Debug)]
+pub struct UpdateDescriptorsParams<TRenderTargetId, TDescriptorSetId, TBufferId> {
+    pub render_target_id: TRenderTargetId,
+    pub descriptor_set_id: TDescriptorSetId,
+    pub buffer_info: Vec<UpdateBufferInfo<TBufferId>>,
 }
