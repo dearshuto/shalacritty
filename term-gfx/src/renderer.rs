@@ -54,7 +54,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .unwrap();
 
         if let Ok(mut handle) = self.backend.map_buffer(target_id, vertex_buffer_id) {
-            let data = bytemuck::cast_slice(&[0.0f32, 1.0, -1.0, -1.0, 1.0, -1.0]);
+            let data = bytemuck::cast_slice(&[-0.5f32, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5]);
             handle.write(0, data);
             self.backend
                 .flush_buffer(target_id, vertex_buffer_id, 0 /*offset*/, 64);
@@ -65,7 +65,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .allocate_buffer(target_id, 64, BufferUsage::IndexBuffer)
             .unwrap();
         if let Ok(mut handle) = self.backend.map_buffer(target_id, index_buffer_id) {
-            let data = bytemuck::cast_slice(&[0u32, 1, 2]);
+            let data = bytemuck::cast_slice(&[0u32, 1, 2, 0, 2, 3]);
             handle.write(0, data);
             // self.backend
             //     .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, data.len());
@@ -96,8 +96,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             pipelie_id: instance.pipeline_id,
             vertex_buffer_id: instance.vertex_buffer_id,
             index_buffer_id: instance.index_buffer_id,
-            index_count: 3,
-            instance_count: 1,
+            index_count: 6,
+            instance_count: 2,
         };
         self.backend.render(render_params);
     }
