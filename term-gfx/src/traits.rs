@@ -54,8 +54,9 @@ pub trait IBackend {
 
     fn render(
         &self,
+        wait_frame_index: u32,
         render_params: RenderParams<Self::RenderTargetId, Self::PipelineId, Self::BufferId>,
-    );
+    ) -> Result<u32, ()>;
 }
 
 pub trait IMapHandle {

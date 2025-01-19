@@ -47,6 +47,7 @@ pub struct BackendVk {
     swapchain_image_view_table: HashMap<RenderTargetId, [ash::vk::ImageView; 2]>,
     frame_buffers_table: HashMap<RenderTargetId, [ash::vk::Framebuffer; 2]>,
     fence_table: HashMap<RenderTargetId, ash::vk::Fence>,
+    display_fence_table: HashMap<RenderTargetId, [ash::vk::Fence; 2]>,
     semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
     presentation_semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
 
@@ -65,6 +66,8 @@ pub struct BackendVk {
 
     // シェーダー
     shader_table: HashMap<RenderTargetId, Vec<ash::vk::ShaderModule>>,
+
+    current_display_fence_index_table: HashMap<RenderTargetId, u32>,
 }
 
 impl BackendVk {
@@ -159,6 +162,8 @@ impl IBackend for BackendVk {
             command_pool: HashMap::default(),
             command_buffer_table: HashMap::default(),
             fence_table: HashMap::default(),
+            display_fence_table: HashMap::default(),
+            current_display_fence_index_table: HashMap::default(),
             semaphore_table: HashMap::default(),
             presentation_semaphore_table: HashMap::default(),
             buffer_table: HashMap::default(),
@@ -384,10 +389,13 @@ impl IBackend for BackendVk {
         };
 
         // フェンス
-        let fence = {
+        let (fence, display_fence0, display_fence1) = {
             let fence_create_info =
                 ash::vk::FenceCreateInfo::default().flags(ash::vk::FenceCreateFlags::SIGNALED);
-            unsafe { device.create_fence(&fence_create_info, None) }.unwrap()
+            let fence = unsafe { device.create_fence(&fence_create_info, None) }.unwrap();
+            let display_fence0 = unsafe { device.create_fence(&fence_create_info, None) }.unwrap();
+            let display_fence1 = unsafe { device.create_fence(&fence_create_info, None) }.unwrap();
+            (fence, display_fence0, display_fence1)
         };
 
         // セマフォ
@@ -417,6 +425,9 @@ impl IBackend for BackendVk {
         self.swapchain_image_view_table
             .insert(id, [present_image_view[0], present_image_view[1]]);
         self.fence_table.insert(id, fence);
+        self.display_fence_table
+            .insert(id, [display_fence0, display_fence1]);
+        self.current_display_fence_index_table.insert(id, 0);
         self.semaphore_table.insert(id, semaphore);
         self.presentation_semaphore_table
             .insert(id, presentation_semaphore);
@@ -775,6 +786,9 @@ impl IBackend for BackendVk {
         let Some(fence) = self.fence_table.get(&target_id) else {
             return;
         };
+        let Some(display_fences) = self.display_fence_table.get(&target_id) else {
+            return;
+        };
 
         // セマフォ
         let Some(semaphore) = self.semaphore_table.get(&target_id) else {
@@ -832,23 +846,18 @@ impl IBackend for BackendVk {
             return;
         };
 
-        // コマンドの完了まち
+        // GPU 待ち
+        // 実装の簡略化のためにコマンド同期とディスプレイ同期はまとめちゃってる
         unsafe {
-            device.wait_for_fences(&[*fence], true, u64::MAX /*timeout*/)
+            device.wait_for_fences(&[*fence, *display_fence], true, u64::MAX /*timeout*/)
         }
         .unwrap();
 
         // フェンスのシグナルをクリア
-        unsafe { device.reset_fences(&[*fence]) }.unwrap();
+        unsafe { device.reset_fences(&[*fence, *display_fence]) }.unwrap();
 
-        // フレームバッファを要求
         let (present_index, _) = unsafe {
-            swapchain_loader.acquire_next_image(
-                *swapchain,
-                u64::MAX,
-                *semaphore,
-                ash::vk::Fence::null(),
-            )
+            swapchain_loader.acquire_next_image(*swapchain, u64::MAX, *semaphore, *display_fence)
         }
         .unwrap();
 
