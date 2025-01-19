@@ -841,6 +841,10 @@ impl IBackend for BackendVk {
         // フェンスのシグナルをクリア
         unsafe { device.reset_fences(&[*fence]) }.unwrap();
 
+        // ダブルバッファーのシグナル待ちエラーを抑制
+        // TODO: ダブルバッファーの良さを引き出せてないので正式実装を考える
+        unsafe { device.queue_wait_idle(*queue) }.unwrap();
+
         // フレームバッファを要求
         let (present_index, _) = unsafe {
             swapchain_loader.acquire_next_image(
