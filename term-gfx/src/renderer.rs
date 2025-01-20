@@ -1,15 +1,27 @@
 use std::collections::HashMap;
 
+use bytemuck::{Pod, Zeroable};
 use raw_window_handle::{DisplayHandle, WindowHandle};
 
 use crate::{
     backends::BackendVk,
-    traits::{BufferUsage, IMapHandle, RenderParams},
+    traits::{BufferUsage, IMapHandle, RenderParams, UpdateBufferInfo, UpdateDescriptorsParams},
     IBackend,
 };
 
+#[repr(C)]
+#[derive(Debug, Pod, Copy, Clone, Zeroable)]
+pub struct CharacterData {
+    pub transform0: [f32; 4],
+    pub transform1: [f32; 4],
+    pub fore_ground_color: [f32; 4],
+    pub uv_bl: [f32; 2],
+    pub uv_tr: [f32; 2],
+}
+
 struct Instance<TBackend: IBackend> {
     pipeline_id: TBackend::PipelineId,
+    descriptor_set_id: Option<TBackend::DescriptorSetId>,
     vertex_buffer_id: TBackend::BufferId,
     index_buffer_id: TBackend::BufferId,
 }
@@ -50,8 +62,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .backend
             .create_pipeline(
                 target_id,
-                include_bytes!("../res/hello_triangle.vs.spv"),
-                include_bytes!("../res/hello_triangle.fs.spv"),
+                include_bytes!("../res/character.vs.spv"),
+                include_bytes!("../res/character.fs.spv"),
             )
             .unwrap();
 
@@ -80,10 +92,67 @@ impl<TBackend: IBackend> Renderer<TBackend> {
                 .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, 64);
         }
 
+        // 文字ごとの情報
+        let character_ssbo = self
+            .backend
+            .allocate_buffer(target_id, 256, BufferUsage::UnorderedAccessBuffer)
+            .unwrap();
+        if let Ok(mut handle) = self.backend.map_buffer(target_id, character_ssbo) {
+            let data = bytemuck::cast_slice(&[
+                CharacterData {
+                    transform0: [0.2, 0.0, 0.0, 0.5],
+                    transform1: [0.0, 0.2, 0.0, 0.5],
+                    fore_ground_color: [1.0, 0.0, 1.0, 1.0],
+                    uv_bl: [0.0, 0.0],
+                    uv_tr: [0.0, 0.0],
+                },
+                CharacterData {
+                    transform0: [0.2, 0.0, 0.0, -0.5],
+                    transform1: [0.0, 0.2, 0.0, 0.5],
+                    fore_ground_color: [1.0, 1.0, 1.0, 1.0],
+                    uv_bl: [0.0, 0.0],
+                    uv_tr: [0.0, 0.0],
+                },
+                CharacterData {
+                    transform0: [0.2, 0.0, 0.0, -0.5],
+                    transform1: [0.0, 0.2, 0.0, -0.5],
+                    fore_ground_color: [0.0, 0.0, 1.0, 1.0],
+                    uv_bl: [0.0, 0.0],
+                    uv_tr: [0.0, 0.0],
+                },
+                CharacterData {
+                    transform0: [0.2, 0.0, 0.0, 0.5],
+                    transform1: [0.0, 0.2, 0.0, -0.5],
+                    fore_ground_color: [1.0, 1.0, 0.0, 1.0],
+                    uv_bl: [0.0, 0.0],
+                    uv_tr: [0.0, 0.0],
+                },
+            ]);
+            handle.write(0, data);
+
+            self.backend
+                .flush_buffer(target_id, character_ssbo, 0 /*offset*/, 64);
+        }
+
+        let descriptor_set_id = self
+            .backend
+            .allocate_descriptor_set(target_id, pipeline_id)
+            .unwrap();
+        self.backend.update_descriptors(&UpdateDescriptorsParams {
+            render_target_id: target_id,
+            descriptor_set_id,
+            buffer_info: vec![UpdateBufferInfo {
+                id: character_ssbo,
+                offset: 0,
+                size: std::mem::size_of::<CharacterData>() as usize * 4,
+            }],
+        });
+
         self.instance_table.insert(
             target_id,
             Instance {
                 pipeline_id,
+                descriptor_set_id: Some(descriptor_set_id),
                 vertex_buffer_id,
                 index_buffer_id,
             },
@@ -101,10 +170,11 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         let render_params = RenderParams {
             render_target_id: *render_target_id,
             pipelie_id: instance.pipeline_id,
+            descriptor_set_id: instance.descriptor_set_id,
             vertex_buffer_id: instance.vertex_buffer_id,
             index_buffer_id: instance.index_buffer_id,
             index_count: 6,
-            instance_count: 2,
+            instance_count: 4,
         };
         self.backend.render(render_params);
     }

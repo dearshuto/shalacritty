@@ -11,7 +11,7 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 use util::Align;
 
 use crate::{
-    traits::{IMapHandle, RenderParams},
+    traits::{IMapHandle, RenderParams, UpdateDescriptorsParams},
     IBackend,
 };
 
@@ -27,6 +27,11 @@ pub struct BufferId {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PipelineId {
+    internal: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct DescriptorSetId {
     internal: uuid::Uuid,
 }
 
@@ -59,6 +64,16 @@ pub struct BackendVk {
 
     // 描画パイプライン
     pipeline_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::Pipeline>>,
+
+    // デスクリプタープール
+    descriptor_pool_table: HashMap<RenderTargetId, ash::vk::DescriptorPool>,
+
+    // デスクリプターセット
+    descriptor_set_table: HashMap<RenderTargetId, HashMap<DescriptorSetId, ash::vk::DescriptorSet>>,
+
+    // デスクリプターセットレイアウト
+    descriptor_set_layout_table:
+        HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::DescriptorSetLayout>>,
 
     // パイプラインレイアウト
     pipeline_layout_table: HashMap<RenderTargetId, Vec<ash::vk::PipelineLayout>>,
@@ -110,11 +125,25 @@ impl BackendVk {
 
         vk::FALSE
     }
+
+    fn func(&self, id: RenderTargetId) {
+        let Some(device) = self.device_table.get(&id) else {
+            return;
+        };
+
+        let write_descriptor_sets = [ash::vk::WriteDescriptorSet::default()
+            .dst_binding(0)
+            // .dst_set()
+            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&[])];
+        unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
+    }
 }
 
 impl IBackend for BackendVk {
     type RenderTargetId = RenderTargetId;
     type PipelineId = PipelineId;
+    type DescriptorSetId = DescriptorSetId;
     type BufferId = BufferId;
     type MapHandle = MapHandle;
 
@@ -146,6 +175,9 @@ impl IBackend for BackendVk {
             pipeline_table: HashMap::default(),
             pipeline_layout_table: HashMap::default(),
             shader_table: HashMap::default(),
+            descriptor_pool_table: HashMap::default(),
+            descriptor_set_table: HashMap::default(),
+            descriptor_set_layout_table: HashMap::default(),
         }
     }
 
@@ -262,12 +294,14 @@ impl IBackend for BackendVk {
                 shader_clip_distance: 1,
                 ..Default::default()
             };
+            let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
             let priorities = [1.0];
             let queue_info = vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
                 .queue_priorities(&priorities);
             let device_extension_names_raw = [
                 ash::khr::swapchain::NAME.as_ptr(),
+                ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
@@ -375,6 +409,18 @@ impl IBackend for BackendVk {
         let presentation_semaphore =
             unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
 
+        // デスクリプタープール
+        // 決め打ちでバッファー領域を適当に確保
+        let descriptor_sizes = [ash::vk::DescriptorPoolSize::default()
+            .ty(ash::vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(16)];
+        let descriptor_pool_info = ash::vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&descriptor_sizes)
+            .flags(ash::vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET)
+            .max_sets(1);
+        let descriptor_pool =
+            unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }.unwrap();
+
         // インスタンスの保持
         let id = RenderTargetId {
             internal: uuid::Uuid::new_v4(),
@@ -399,6 +445,7 @@ impl IBackend for BackendVk {
         self.semaphore_table.insert(id, semaphore);
         self.presentation_semaphore_table
             .insert(id, presentation_semaphore);
+        self.descriptor_pool_table.insert(id, descriptor_pool);
 
         Ok(id)
     }
@@ -440,7 +487,21 @@ impl IBackend for BackendVk {
         let pixel_shader_module =
             unsafe { device.create_shader_module(&pixel_shader_module_create_info, None) }.unwrap();
 
-        let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default();
+        let descriptor_set_layout_bindings = [ash::vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(ash::vk::ShaderStageFlags::VERTEX)];
+        let descriptor_set_create_info = ash::vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&descriptor_set_layout_bindings);
+        let descriptor_set_layouts =
+            [
+                unsafe { device.create_descriptor_set_layout(&descriptor_set_create_info, None) }
+                    .unwrap(),
+            ];
+
+        let pipeline_layout_create_info =
+            vk::PipelineLayoutCreateInfo::default().set_layouts(&descriptor_set_layouts);
         let pipeline_layout =
             unsafe { device.create_pipeline_layout(&pipeline_layout_create_info, None) }.unwrap();
 
@@ -593,7 +654,107 @@ impl IBackend for BackendVk {
         self.frame_buffers_table
             .insert(id, [frame_buffers[0], frame_buffers[1]]);
 
+        self.descriptor_set_layout_table
+            .entry(id)
+            .and_modify(|table| {
+                table.insert(pipeline_id, descriptor_set_layouts[0]);
+            })
+            .or_insert(HashMap::from([(pipeline_id, descriptor_set_layouts[0])]));
+
         Ok(pipeline_id)
+    }
+
+    fn allocate_descriptor_set(
+        &mut self,
+        id: Self::RenderTargetId,
+        pipeline_id: Self::PipelineId,
+    ) -> Result<Self::DescriptorSetId, ()> {
+        let Some(device) = self.device_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(descriptor_pool) = self.descriptor_pool_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(descriptor_set_layout_table) = self.descriptor_set_layout_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(descriptor_set_layout) = descriptor_set_layout_table.get(&pipeline_id) else {
+            return Err(());
+        };
+
+        let descriptor_set_layouts = [*descriptor_set_layout];
+        let descriptor_set_allocate_info = ash::vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(*descriptor_pool)
+            .set_layouts(&descriptor_set_layouts);
+        let descriptor_sets =
+            unsafe { device.allocate_descriptor_sets(&descriptor_set_allocate_info) }.unwrap();
+
+        let descriptor_set_id = DescriptorSetId {
+            internal: uuid::Uuid::now_v7(),
+        };
+        self.descriptor_set_table
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(descriptor_set_id, descriptor_sets[0]);
+            })
+            .or_insert(HashMap::from([(descriptor_set_id, descriptor_sets[0])]));
+
+        Ok(descriptor_set_id)
+    }
+
+    fn update_descriptors(
+        &mut self,
+        update_descriptors_params: &UpdateDescriptorsParams<
+            Self::RenderTargetId,
+            Self::DescriptorSetId,
+            Self::BufferId,
+        >,
+    ) {
+        let render_target_id = update_descriptors_params.render_target_id;
+        let descriptor_set_id = update_descriptors_params.descriptor_set_id;
+
+        let Some(device) = self.device_table.get(&render_target_id) else {
+            return;
+        };
+
+        let Some(descriptor_set_table) = self.descriptor_set_table.get(&render_target_id) else {
+            return;
+        };
+
+        let Some(descriptor_set) = descriptor_set_table.get(&descriptor_set_id) else {
+            return;
+        };
+
+        let buffer_info: Vec<_> = update_descriptors_params
+            .buffer_info
+            .iter()
+            .filter_map(|info| {
+                let Some(buffer_table) = self.buffer_table.get(&render_target_id) else {
+                    return None;
+                };
+
+                let Some(buffer) = buffer_table.get(&info.id) else {
+                    return None;
+                };
+
+                Some(
+                    ash::vk::DescriptorBufferInfo::default()
+                        .offset(info.offset as ash::vk::DeviceSize)
+                        .range(info.size as ash::vk::DeviceSize)
+                        .buffer(*buffer),
+                )
+            })
+            .collect();
+
+        let write_descriptor_sets = [ash::vk::WriteDescriptorSet::default()
+            .dst_binding(0)
+            .dst_set(*descriptor_set)
+            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&buffer_info)];
+        unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
     }
 
     fn allocate_buffer(
@@ -733,7 +894,12 @@ impl IBackend for BackendVk {
 
     fn render(
         &self,
-        render_params: RenderParams<Self::RenderTargetId, Self::PipelineId, Self::BufferId>,
+        render_params: RenderParams<
+            Self::RenderTargetId,
+            Self::PipelineId,
+            Self::DescriptorSetId,
+            Self::BufferId,
+        >,
     ) {
         let target_id = render_params.render_target_id;
 
@@ -799,6 +965,11 @@ impl IBackend for BackendVk {
             return;
         };
 
+        // パイプラインレイアウト
+        let Some(pipeline_layouts) = self.pipeline_layout_table.get(&target_id) else {
+            return;
+        };
+
         // バッファー一覧
         let Some(buffer_table) = self.buffer_table.get(&target_id) else {
             return;
@@ -822,6 +993,8 @@ impl IBackend for BackendVk {
 
         // フェンスのシグナルをクリア
         unsafe { device.reset_fences(&[*fence]) }.unwrap();
+
+        unsafe { device.queue_wait_idle(*queue) }.unwrap();
 
         // フレームバッファを要求
         let (present_index, _) = unsafe {
@@ -893,6 +1066,28 @@ impl IBackend for BackendVk {
             );
         }
 
+        // リソースたち
+        // MEMO: ネストが深いのは改善できる？
+        if let Some(descriptor_set_id) = render_params.descriptor_set_id {
+            if let Some(descriptor_set_table) = self
+                .descriptor_set_table
+                .get(&render_params.render_target_id)
+            {
+                if let Some(descriptor_set) = descriptor_set_table.get(&descriptor_set_id) {
+                    unsafe {
+                        device.cmd_bind_descriptor_sets(
+                            command_buffer,
+                            ash::vk::PipelineBindPoint::GRAPHICS,
+                            pipeline_layouts[0],
+                            0,
+                            &[*descriptor_set],
+                            &[],
+                        )
+                    }
+                }
+            }
+        }
+
         // インスタンス描画
         // 一部パラメーターは固定
         unsafe {
@@ -941,6 +1136,27 @@ impl Drop for BackendVk {
             // キューの完了待ち
             if let Some(queue) = self.queue_table.remove(render_target_id) {
                 unsafe { device.queue_wait_idle(queue) }.unwrap()
+            }
+
+            // デスクリプター関係
+            if let Some(descriptor_set_layouts) =
+                self.descriptor_set_layout_table.remove(render_target_id)
+            {
+                for (_, descriptor_set_layout) in descriptor_set_layouts {
+                    unsafe { device.destroy_descriptor_set_layout(descriptor_set_layout, None) }
+                }
+            }
+            if let Some(descriptor_pool) = self.descriptor_pool_table.get(render_target_id) {
+                for table in self.descriptor_set_table.values() {
+                    for descriptor_set in table.values() {
+                        unsafe {
+                            device.free_descriptor_sets(*descriptor_pool, &[*descriptor_set])
+                        }
+                        .unwrap();
+                    }
+                }
+
+                unsafe { device.destroy_descriptor_pool(*descriptor_pool, None) };
             }
 
             // フェンス
