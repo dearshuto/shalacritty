@@ -56,7 +56,7 @@ pub struct BackendVk {
     swapchain_table: HashMap<RenderTargetId, ash::vk::SwapchainKHR>,
     swapchain_loader_table: HashMap<RenderTargetId, ash::khr::swapchain::Device>,
     swapchain_image_view_table: HashMap<RenderTargetId, [ash::vk::ImageView; 2]>,
-    frame_buffers_table: HashMap<RenderTargetId, [ash::vk::Framebuffer; 2]>,
+    frame_buffers_table: HashMap<RenderTargetId, HashMap<PipelineId, [ash::vk::Framebuffer; 2]>>,
     fence_table: HashMap<RenderTargetId, ash::vk::Fence>,
 
     //  セマフォ
@@ -67,7 +67,7 @@ pub struct BackendVk {
     device_memory_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::DeviceMemory>>,
 
     // レンダーパス
-    render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
+    render_pass_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::RenderPass>>,
 
     // 描画パイプライン
     pipeline_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::Pipeline>>,
@@ -684,9 +684,21 @@ impl IBackend for BackendVk {
                 vec.push(pixel_shader_module)
             })
             .or_insert(vec![vertex_shader_module, pixel_shader_module]);
-        self.render_pass_table.insert(id, render_pass);
+        self.render_pass_table
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(pipeline_id, render_pass);
+            })
+            .or_insert(HashMap::from([(pipeline_id, render_pass)]));
         self.frame_buffers_table
-            .insert(id, [frame_buffers[0], frame_buffers[1]]);
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(pipeline_id, [frame_buffers[0], frame_buffers[1]]);
+            })
+            .or_insert(HashMap::from([(
+                pipeline_id,
+                [frame_buffers[0], frame_buffers[1]],
+            )]));
 
         self.descriptor_set_layout_table
             .entry(id)
@@ -1042,15 +1054,22 @@ impl IBackend for BackendVk {
         };
 
         // レンダーパス
-        let Some(render_pass) = self.render_pass_table.get(&render_params.render_target_id) else {
+        let Some(render_pass_table) = self.render_pass_table.get(&render_params.render_target_id)
+        else {
+            return;
+        };
+        let Some(render_pass) = render_pass_table.get(&render_params.pipelie_id) else {
             return;
         };
 
         // フレームバッファー
-        let Some(frame_buffers) = self
+        let Some(frame_buffers_table) = self
             .frame_buffers_table
             .get(&render_params.render_target_id)
         else {
+            return;
+        };
+        let Some(frame_buffers) = frame_buffers_table.get(&render_params.pipelie_id) else {
             return;
         };
 
@@ -1324,8 +1343,10 @@ impl Drop for BackendVk {
             }
 
             // レンダーパス
-            if let Some(render_pass) = self.render_pass_table.remove(render_target_id) {
-                unsafe { device.destroy_render_pass(render_pass, None) }
+            if let Some(render_pass_table) = self.render_pass_table.remove(render_target_id) {
+                for render_pass in render_pass_table.values() {
+                    unsafe { device.destroy_render_pass(*render_pass, None) }
+                }
             }
 
             // シェーダー
@@ -1357,9 +1378,11 @@ impl Drop for BackendVk {
             }
 
             // フレームバッファー
-            if let Some(frame_buffers) = self.frame_buffers_table.remove(render_target_id) {
-                unsafe { device.destroy_framebuffer(frame_buffers[0], None) }
-                unsafe { device.destroy_framebuffer(frame_buffers[1], None) }
+            if let Some(frame_buffer_table) = self.frame_buffers_table.remove(render_target_id) {
+                for frame_buffers in frame_buffer_table.values() {
+                    unsafe { device.destroy_framebuffer(frame_buffers[0], None) }
+                    unsafe { device.destroy_framebuffer(frame_buffers[1], None) }
+                }
             }
 
             // スワップチェーンのイメージ

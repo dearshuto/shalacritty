@@ -220,6 +220,13 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             return;
         };
 
+        let Some(background_instance) = self
+            .background_rendering_instance_table
+            .get(&render_target_id)
+        else {
+            return;
+        };
+
         // 次のフレームを要求
         // フレームが使用可能になってから描画コマンドが実行されるようにセマフォを指定して同期をとる
         let next_image_index = self
@@ -229,6 +236,20 @@ impl<TBackend: IBackend> Renderer<TBackend> {
 
         // 描画コマンドを実行
         // 開始と完了はセマフォを指定してフレームとの同期をとる
+
+        // 背景の描画
+        let background_render_params = RenderParams {
+            render_target_id: *render_target_id,
+            pipelie_id: background_instance.pipeline_id,
+            descriptor_set_id: background_instance.descriptor_set_id,
+            vertex_buffer_id: background_instance.vertex_buffer_id,
+            index_buffer_id: background_instance.index_buffer_id,
+            index_count: 6,
+            instance_count: 1,
+        };
+        self.backend.render(background_render_params);
+
+        // 文字の描画
         let render_params = RenderParams {
             render_target_id: *render_target_id,
             process_index: next_image_index,
