@@ -127,6 +127,16 @@ pub struct Layout {
     resources: Vec<ResourceType>,
 }
 
+impl Layout {
+    pub fn inputs(&self) -> &[Input] {
+        &self.inputs
+    }
+
+    pub fn resources(&self) -> &[ResourceType] {
+        &self.resources
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

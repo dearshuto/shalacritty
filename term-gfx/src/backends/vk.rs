@@ -11,6 +11,7 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 use util::Align;
 
 use crate::{
+    detail,
     traits::{IMapHandle, RenderParams, UpdateDescriptorsParams},
     IBackend,
 };
@@ -464,6 +465,9 @@ impl IBackend for BackendVk {
             return Err(());
         };
 
+        let shader_reflection = detail::ShaderReflection::new();
+        let vertex_stage_layout = shader_reflection.parse(vertex_shader_spv).unwrap();
+
         let vertex_shader_spv = unsafe {
             &*std::ptr::slice_from_raw_parts(
                 vertex_shader_spv.as_ptr() as *const u32,
@@ -487,11 +491,27 @@ impl IBackend for BackendVk {
         let pixel_shader_module =
             unsafe { device.create_shader_module(&pixel_shader_module_create_info, None) }.unwrap();
 
-        let descriptor_set_layout_bindings = [ash::vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(ash::vk::ShaderStageFlags::VERTEX)];
+        let descriptor_set_layout_bindings: Vec<_> = vertex_stage_layout
+            .resources()
+            .iter()
+            .map(|resource| match resource {
+                detail::ResourceType::Uniform(binding) => {
+                    ash::vk::DescriptorSetLayoutBinding::default()
+                        .binding(*binding)
+                        .descriptor_type(ash::vk::DescriptorType::UNIFORM_BUFFER)
+                        .descriptor_count(1)
+                        .stage_flags(ash::vk::ShaderStageFlags::VERTEX)
+                }
+                detail::ResourceType::UnorderedAccessBuffer(binding) => {
+                    ash::vk::DescriptorSetLayoutBinding::default()
+                        .binding(*binding)
+                        .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
+                        .descriptor_count(1)
+                        .stage_flags(ash::vk::ShaderStageFlags::VERTEX)
+                }
+                _ => todo!(),
+            })
+            .collect();
         let descriptor_set_create_info = ash::vk::DescriptorSetLayoutCreateInfo::default()
             .bindings(&descriptor_set_layout_bindings);
         let descriptor_set_layouts =
