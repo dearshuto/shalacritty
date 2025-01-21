@@ -535,7 +535,13 @@ impl IBackend for BackendVk {
                 .vertex_binding_descriptions(&vertex_binding_descriptions);
         let input_assembly_state = ash::vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(ash::vk::PrimitiveTopology::TRIANGLE_LIST);
-        let _dynamic_state = ash::vk::PipelineDynamicStateCreateInfo::default();
+
+        let dynamic_states = [
+            ash::vk::DynamicState::VIEWPORT,
+            ash::vk::DynamicState::SCISSOR,
+        ];
+        let dynamic_state =
+            ash::vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
         let renderpass_attachments = [ash::vk::AttachmentDescription {
             format: ash::vk::Format::B8G8R8A8_UNORM,
@@ -612,7 +618,7 @@ impl IBackend for BackendVk {
         let graphics_pipeline_create_info = ash::vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stage_create_infos)
             .vertex_input_state(&pipeline_vertex_input_state_create_info)
-            // .dynamic_state(&dynamic_state)
+            .dynamic_state(&dynamic_state)
             .multisample_state(&multisample_state_info)
             .viewport_state(&&viewport_state_info)
             .rasterization_state(&rasterization_info)
@@ -1044,6 +1050,26 @@ impl IBackend for BackendVk {
                 ash::vk::PipelineBindPoint::GRAPHICS,
                 *pipeline,
             )
+        }
+
+        // ビューポートシザー
+        unsafe {
+            device.cmd_set_viewport(
+                command_buffer,
+                0,
+                &[ash::vk::Viewport::default()
+                    .x(0.0)
+                    .y(0.0)
+                    .width(640.0)
+                    .height(480.0)],
+            );
+
+            device.cmd_set_scissor(
+                command_buffer,
+                0,
+                &[ash::vk::Rect2D::default()
+                    .extent(ash::vk::Extent2D::default().width(640).height(480))],
+            );
         }
 
         // 頂点バッファ
