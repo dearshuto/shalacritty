@@ -32,6 +32,8 @@ pub struct Renderer<TBackend: IBackend> {
     backend: TBackend,
 
     instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
+
+    background_rendering_instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
 }
 
 impl Renderer<BackendVk> {
@@ -47,6 +49,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         Self {
             backend,
             instance_table: HashMap::default(),
+            background_rendering_instance_table: HashMap::default(),
         }
     }
 
@@ -58,6 +61,15 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         let target_id = self
             .backend
             .register_surface(window_handle, display_handle)
+            .unwrap();
+
+        let background_pipeline_id = self
+            .backend
+            .create_pipeline(
+                target_id,
+                include_bytes!("../res/background.vs.spv"),
+                include_bytes!("../res/background.fs.spv"),
+            )
             .unwrap();
 
         let pipeline_id = self
@@ -150,6 +162,19 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             }],
         });
 
+        // 背景描画
+        // 頂点バッファーとインデックスバッファーは使い回す
+        self.background_rendering_instance_table.insert(
+            target_id,
+            Instance {
+                pipeline_id: background_pipeline_id,
+                descriptor_set_id: None,
+                vertex_buffer_id,
+                index_buffer_id,
+            },
+        );
+
+        // 文字の描画
         self.instance_table.insert(
             target_id,
             Instance {

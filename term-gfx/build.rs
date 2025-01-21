@@ -1,4 +1,33 @@
 fn main() {
+    let mut binary = convert_shader(include_str!("res/background.vs"), naga::ShaderStage::Vertex);
+    let pte = binary.as_mut_ptr() as *mut u8;
+
+    unsafe {
+        std::fs::write(
+            "res/background.vs.spv",
+            std::ptr::slice_from_raw_parts_mut(pte, binary.len() * 4)
+                .as_ref()
+                .unwrap(),
+        )
+    }
+    .unwrap();
+
+    let mut binary = convert_shader(
+        include_str!("res/background.fs"),
+        naga::ShaderStage::Fragment,
+    );
+    let pte = binary.as_mut_ptr() as *mut u8;
+
+    unsafe {
+        std::fs::write(
+            "res/background.fs.spv",
+            std::ptr::slice_from_raw_parts_mut(pte, binary.len() * 4)
+                .as_ref()
+                .unwrap(),
+        )
+    }
+    .unwrap();
+
     let mut binary = convert_shader(
         include_str!("res/character.vs.glsl"),
         naga::ShaderStage::Vertex,
