@@ -126,19 +126,6 @@ impl BackendVk {
 
         vk::FALSE
     }
-
-    fn func(&self, id: RenderTargetId) {
-        let Some(device) = self.device_table.get(&id) else {
-            return;
-        };
-
-        let write_descriptor_sets = [ash::vk::WriteDescriptorSet::default()
-            .dst_binding(0)
-            // .dst_set()
-            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&[])];
-        unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
-    }
 }
 
 impl IBackend for BackendVk {
@@ -291,10 +278,6 @@ impl IBackend for BackendVk {
 
         // デバイス作成
         let device = unsafe {
-            let features = vk::PhysicalDeviceFeatures {
-                shader_clip_distance: 1,
-                ..Default::default()
-            };
             let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
             let priorities = [1.0];
             let queue_info = vk::DeviceQueueCreateInfo::default()
