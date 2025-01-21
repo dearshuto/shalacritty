@@ -83,7 +83,7 @@ pub struct BackendVk {
         HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::DescriptorSetLayout>>,
 
     // パイプラインレイアウト
-    pipeline_layout_table: HashMap<RenderTargetId, Vec<ash::vk::PipelineLayout>>,
+    pipeline_layout_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::PipelineLayout>>,
 
     // シェーダー
     shader_table: HashMap<RenderTargetId, Vec<ash::vk::ShaderModule>>,
@@ -395,13 +395,18 @@ impl IBackend for BackendVk {
 
         // デスクリプタープール
         // 決め打ちでバッファー領域を適当に確保
-        let descriptor_sizes = [ash::vk::DescriptorPoolSize::default()
-            .ty(ash::vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(16)];
+        let descriptor_sizes = [
+            ash::vk::DescriptorPoolSize::default()
+                .ty(ash::vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(16),
+            ash::vk::DescriptorPoolSize::default()
+                .ty(ash::vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(16),
+        ];
         let descriptor_pool_info = ash::vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&descriptor_sizes)
             .flags(ash::vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET)
-            .max_sets(1);
+            .max_sets(16);
         let descriptor_pool =
             unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }.unwrap();
 
@@ -668,8 +673,10 @@ impl IBackend for BackendVk {
             .or_insert(HashMap::from([(pipeline_id, pipeline[0])]));
         self.pipeline_layout_table
             .entry(id)
-            .and_modify(|vec| vec.push(pipeline_layout))
-            .or_insert(vec![pipeline_layout]);
+            .and_modify(|table| {
+                table.insert(pipeline_id, pipeline_layout);
+            })
+            .or_insert(HashMap::from([(pipeline_id, pipeline_layout)]));
         self.shader_table
             .entry(id)
             .and_modify(|vec| {
@@ -755,32 +762,54 @@ impl IBackend for BackendVk {
             return;
         };
 
-        let buffer_info: Vec<_> = update_descriptors_params
-            .buffer_info
-            .iter()
-            .filter_map(|info| {
-                let Some(buffer_table) = self.buffer_table.get(&render_target_id) else {
-                    return None;
-                };
+        let mut write_storage_buffer_info = Vec::default();
+        let mut write_uniform_buffer_info = Vec::default();
+        for info in &update_descriptors_params.buffer_info {
+            let Some(buffer_table) = self.buffer_table.get(&render_target_id) else {
+                continue;
+            };
 
-                let Some(buffer) = buffer_table.get(&info.id) else {
-                    return None;
-                };
+            let Some(buffer) = buffer_table.get(&info.id) else {
+                continue;
+            };
 
-                Some(
-                    ash::vk::DescriptorBufferInfo::default()
-                        .offset(info.offset as ash::vk::DeviceSize)
-                        .range(info.size as ash::vk::DeviceSize)
-                        .buffer(*buffer),
-                )
-            })
-            .collect();
+            let descriptor_buffer_info = ash::vk::DescriptorBufferInfo::default()
+                .offset(info.offset as ash::vk::DeviceSize)
+                .range(info.size as ash::vk::DeviceSize)
+                .buffer(*buffer);
+            match info.usage {
+                crate::traits::BufferDescriptorType::StorageBuffer => {
+                    write_storage_buffer_info.push(descriptor_buffer_info)
+                }
+                crate::traits::BufferDescriptorType::UniformBuffer => {
+                    write_uniform_buffer_info.push(descriptor_buffer_info)
+                }
+            }
+        }
 
-        let write_descriptor_sets = [ash::vk::WriteDescriptorSet::default()
-            .dst_binding(0)
-            .dst_set(*descriptor_set)
-            .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&buffer_info)];
+        let write_descriptor_sets = {
+            let mut sets = Vec::default();
+            if !write_storage_buffer_info.is_empty() {
+                sets.push(
+                    ash::vk::WriteDescriptorSet::default()
+                        .dst_binding(0)
+                        .dst_set(*descriptor_set)
+                        .descriptor_type(ash::vk::DescriptorType::STORAGE_BUFFER)
+                        .buffer_info(&write_storage_buffer_info),
+                );
+            }
+
+            if !write_uniform_buffer_info.is_empty() {
+                sets.push(
+                    ash::vk::WriteDescriptorSet::default()
+                        .dst_binding(0)
+                        .dst_set(*descriptor_set)
+                        .descriptor_type(ash::vk::DescriptorType::UNIFORM_BUFFER)
+                        .buffer_info(&write_uniform_buffer_info),
+                );
+            }
+            sets
+        };
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
     }
 
@@ -1037,6 +1066,9 @@ impl IBackend for BackendVk {
         let Some(pipeline_layouts) = self.pipeline_layout_table.get(&target_id) else {
             return;
         };
+        let Some(pipeline_layout) = pipeline_layouts.get(&render_params.pipelie_id) else {
+            return;
+        };
 
         // バッファー一覧
         let Some(buffer_table) = self.buffer_table.get(&target_id) else {
@@ -1153,7 +1185,7 @@ impl IBackend for BackendVk {
                         device.cmd_bind_descriptor_sets(
                             command_buffer,
                             ash::vk::PipelineBindPoint::GRAPHICS,
-                            pipeline_layouts[0],
+                            *pipeline_layout,
                             0,
                             &[*descriptor_set],
                             &[],
@@ -1305,8 +1337,8 @@ impl Drop for BackendVk {
 
             // パイプラインレイアウト
             if let Some(pipeline_layouts) = self.pipeline_layout_table.remove(render_target_id) {
-                for pipeline_layout in pipeline_layouts {
-                    unsafe { device.destroy_pipeline_layout(pipeline_layout, None) }
+                for pipeline_layout in pipeline_layouts.values() {
+                    unsafe { device.destroy_pipeline_layout(*pipeline_layout, None) }
                 }
             }
 

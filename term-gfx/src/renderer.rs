@@ -5,7 +5,10 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 
 use crate::{
     backends::BackendVk,
-    traits::{BufferUsage, IMapHandle, RenderParams, UpdateBufferInfo, UpdateDescriptorsParams},
+    traits::{
+        BufferDescriptorType, BufferUsage, IMapHandle, RenderParams, UpdateBufferInfo,
+        UpdateDescriptorsParams,
+    },
     IBackend,
 };
 
@@ -106,6 +109,26 @@ impl<TBackend: IBackend> Renderer<TBackend> {
                 .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, 64);
         }
 
+        // 背景描画
+        let background_constant_buffer_id = self
+            .backend
+            .allocate_buffer(target_id, 32, BufferUsage::UniformBuffer)
+            .unwrap();
+        let background_descriptor_set = self
+            .backend
+            .allocate_descriptor_set(target_id, background_pipeline_id)
+            .unwrap();
+        self.backend.update_descriptors(&UpdateDescriptorsParams {
+            render_target_id: target_id,
+            descriptor_set_id: background_descriptor_set,
+            buffer_info: vec![UpdateBufferInfo {
+                id: background_constant_buffer_id,
+                offset: 0,
+                size: 32,
+                usage: BufferDescriptorType::UniformBuffer,
+            }],
+        });
+
         // 文字ごとの情報
         let character_ssbo = self
             .backend
@@ -159,6 +182,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
                 id: character_ssbo,
                 offset: 0,
                 size: std::mem::size_of::<CharacterData>() as usize * 4,
+                usage: BufferDescriptorType::StorageBuffer,
             }],
         });
 
@@ -168,7 +192,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             target_id,
             Instance {
                 pipeline_id: background_pipeline_id,
-                descriptor_set_id: None,
+                descriptor_set_id: Some(background_descriptor_set),
                 vertex_buffer_id,
                 index_buffer_id,
             },
