@@ -112,7 +112,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         // 背景描画
         let background_constant_buffer_id = self
             .backend
-            .allocate_buffer(target_id, 32, BufferUsage::UniformBuffer)
+            .allocate_buffer(target_id, 64, BufferUsage::UniformBuffer)
             .unwrap();
         let background_descriptor_set = self
             .backend
