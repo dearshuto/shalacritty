@@ -9,6 +9,18 @@ use crate::{
     IBackend,
 };
 
+#[repr(align(16))]
+
+struct AlignedData {
+    data: [u8; 4096],
+}
+
+impl Default for AlignedData {
+    fn default() -> Self {
+        Self { data: [0; 4096] }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Pod, Copy, Clone, Zeroable)]
 pub struct CharacterData {
@@ -60,13 +72,13 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .register_surface(window_handle, display_handle)
             .unwrap();
 
+        let mut vs_spv = AlignedData::default();
+        let mut fs_spv = AlignedData::default();
+        vs_spv.data[0..2656].copy_from_slice(include_bytes!("../res/character.vs.spv"));
+        fs_spv.data[0..720].copy_from_slice(include_bytes!("../res/character.fs.spv"));
         let pipeline_id = self
             .backend
-            .create_pipeline(
-                target_id,
-                include_bytes!("../res/character.vs.spv"),
-                include_bytes!("../res/character.fs.spv"),
-            )
+            .create_pipeline(target_id, &vs_spv.data[0..2656], &fs_spv.data[0..720])
             .unwrap();
 
         let vertex_buffer_id = self

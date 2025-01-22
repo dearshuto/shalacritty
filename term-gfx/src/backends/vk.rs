@@ -66,6 +66,13 @@ pub struct BackendVk {
     buffer_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::Buffer>>,
     device_memory_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::DeviceMemory>>,
 
+    // ShaderObject のデバイス
+    shader_object_device_table:
+        HashMap<RenderTargetId, HashMap<PipelineId, ash::ext::shader_object::Device>>,
+
+    // シェーダーオブジェクト
+    shader_object_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::ShaderEXT>>,
+
     // レンダーパス
     render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
 
@@ -165,6 +172,8 @@ impl IBackend for BackendVk {
             semaphore_table: HashMap::default(),
             buffer_table: HashMap::default(),
             device_memory_table: HashMap::default(),
+            shader_object_device_table: HashMap::default(),
+            shader_object_table: HashMap::default(),
             render_pass_table: HashMap::default(),
             pipeline_table: HashMap::default(),
             pipeline_layout_table: HashMap::default(),
@@ -186,7 +195,7 @@ impl IBackend for BackendVk {
                 .engine_name(c"MyName")
                 .application_version(0)
                 .engine_version(0)
-                .api_version(ash::vk::make_api_version(0, 1, 0, 0));
+                .api_version(ash::vk::API_VERSION_1_2);
             let mut extension_names =
                 ash_window::enumerate_required_extensions(display_handle.as_raw())
                     .unwrap()
@@ -204,7 +213,10 @@ impl IBackend for BackendVk {
                 ash::vk::InstanceCreateFlags::default()
             };
 
-            let layer_names = [c"VK_LAYER_KHRONOS_validation"];
+            let layer_names = [
+                c"VK_LAYER_KHRONOS_validation",
+                c"VK_LAYER_KHRONOS_shader_object",
+            ];
             let layers_names_raw: Vec<*const c_char> = layer_names
                 .iter()
                 .map(|raw_name| raw_name.as_ptr())
@@ -285,6 +297,8 @@ impl IBackend for BackendVk {
         // デバイス作成
         let device = unsafe {
             let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
+            let mut ext_features =
+                ash::vk::PhysicalDeviceShaderObjectFeaturesEXT::default().shader_object(true);
             let priorities = [1.0];
             let queue_info = vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
@@ -292,13 +306,16 @@ impl IBackend for BackendVk {
             let device_extension_names_raw = [
                 ash::khr::swapchain::NAME.as_ptr(),
                 ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
+                ash::vk::KHR_DYNAMIC_RENDERING_NAME.as_ptr(),
+                ash::ext::shader_object::NAME.as_ptr(),
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
-                .enabled_features(&features);
+                .enabled_features(&features)
+                .push_next(&mut ext_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -458,6 +475,10 @@ impl IBackend for BackendVk {
         vertex_shader_spv: &[u8],
         pixel_shader_spv: &[u8],
     ) -> Result<Self::PipelineId, ()> {
+        let Some(instance) = self.instance_table.get(&id) else {
+            return Err(());
+        };
+
         let Some(device) = self.device_table.get(&id) else {
             return Err(());
         };
@@ -469,22 +490,22 @@ impl IBackend for BackendVk {
         let shader_reflection = detail::ShaderReflection::new();
         let vertex_stage_layout = shader_reflection.parse(vertex_shader_spv).unwrap();
 
-        let vertex_shader_spv = unsafe {
+        let vertex_shader_spv_aligned = unsafe {
             &*std::ptr::slice_from_raw_parts(
                 vertex_shader_spv.as_ptr() as *const u32,
                 vertex_shader_spv.len() / 4,
             )
         };
-        let pixel_shader_spv = unsafe {
+        let pixel_shader_spv_aligned = unsafe {
             &*std::ptr::slice_from_raw_parts(
                 pixel_shader_spv.as_ptr() as *const u32,
                 pixel_shader_spv.len() / 4,
             )
         };
         let vertex_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(vertex_shader_spv);
+            vk::ShaderModuleCreateInfo::default().code(vertex_shader_spv_aligned);
         let pixel_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(pixel_shader_spv);
+            vk::ShaderModuleCreateInfo::default().code(pixel_shader_spv_aligned);
 
         let vertex_shader_module =
             unsafe { device.create_shader_module(&vertex_shader_module_create_info, None) }
@@ -665,6 +686,34 @@ impl IBackend for BackendVk {
         let pipeline_id = PipelineId {
             internal: uuid::Uuid::new_v4(),
         };
+
+        // ShaderObject
+        {
+            let shader_object_device = ash::ext::shader_object::Device::new(instance, &device);
+            let create_info = [
+                ash::vk::ShaderCreateInfoEXT::default()
+                    // .flags(ash::vk::ShaderCreateFlagsEXT::LINK_STAGE)
+                    .set_layouts(&descriptor_set_layouts)
+                    .stage(ash::vk::ShaderStageFlags::VERTEX)
+                    .next_stage(ash::vk::ShaderStageFlags::FRAGMENT)
+                    .name(c"main")
+                    .code_type(ash::vk::ShaderCodeTypeEXT::SPIRV)
+                    .code(vertex_shader_spv),
+                ash::vk::ShaderCreateInfoEXT::default()
+                    // .flags(ash::vk::ShaderCreateFlagsEXT::LINK_STAGE)
+                    .set_layouts(&descriptor_set_layouts)
+                    .stage(ash::vk::ShaderStageFlags::FRAGMENT)
+                    .name(c"main")
+                    .code_type(ash::vk::ShaderCodeTypeEXT::SPIRV)
+                    .code(pixel_shader_spv),
+            ];
+            let shader_objects =
+                unsafe { shader_object_device.create_shaders(&create_info, None) }.unwrap();
+            for shader_object in shader_objects {
+                unsafe { shader_object_device.destroy_shader(shader_object, None) }
+            }
+        }
+
         self.pipeline_table
             .entry(id)
             .and_modify(|id| {
