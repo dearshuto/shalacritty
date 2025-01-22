@@ -76,6 +76,12 @@ pub trait IBackend {
         size: usize,
     );
 
+    fn acquire_next_frame(
+        &mut self,
+        id: Self::RenderTargetId,
+        semaphore_id: Self::SemaphoreId,
+    ) -> Result<u32, ()>;
+
     fn render(
         &self,
         render_params: RenderParams<
@@ -86,6 +92,13 @@ pub trait IBackend {
             Self::BufferId,
         >,
     );
+
+    fn present(
+        &self,
+        process_index: u32,
+        id: Self::RenderTargetId,
+        wait_semaphore_id: Self::SemaphoreId,
+    );
 }
 
 pub trait IMapHandle {
@@ -94,6 +107,7 @@ pub trait IMapHandle {
 
 #[derive(Debug)]
 pub struct RenderParams<TRenderTargetId, TSemaporeId, TPipelineId, TDescriptorSetId, TBufferId> {
+    pub process_index: u32,
     pub render_target_id: TRenderTargetId,
     pub acquire_next_frame_semaphore_id: TSemaporeId,
     pub queue_submit_signal_semaphore_id: TSemaporeId,
