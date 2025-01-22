@@ -572,7 +572,7 @@ impl IBackend for BackendVk {
         let renderpass_attachments = [ash::vk::AttachmentDescription {
             format: ash::vk::Format::B8G8R8A8_UNORM,
             samples: ash::vk::SampleCountFlags::TYPE_1,
-            load_op: ash::vk::AttachmentLoadOp::CLEAR,
+            load_op: ash::vk::AttachmentLoadOp::LOAD,
             store_op: ash::vk::AttachmentStoreOp::STORE,
             final_layout: ash::vk::ImageLayout::PRESENT_SRC_KHR,
             ..Default::default()
@@ -1043,12 +1043,11 @@ impl IBackend for BackendVk {
             return;
         };
         let Some(acquire_next_frame_semaphore) =
-            semaphore_table.get(&render_params.acquire_next_frame_semaphore_id)
+            semaphore_table.get(&render_params.wait_semaphore_id)
         else {
             return;
         };
-        let Some(queue_submit_semaphore) =
-            semaphore_table.get(&render_params.queue_submit_signal_semaphore_id)
+        let Some(queue_submit_semaphore) = semaphore_table.get(&render_params.signal_semaphore_id)
         else {
             return;
         };

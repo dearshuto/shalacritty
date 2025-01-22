@@ -14,6 +14,13 @@ use crate::{
 
 #[repr(C)]
 #[derive(Debug, Pod, Copy, Clone, Zeroable)]
+pub struct BackgroundView {
+    pub texcoord_transform0: [f32; 4],
+    pub texcoord_transform1: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Pod, Copy, Clone, Zeroable)]
 pub struct CharacterData {
     pub transform0: [f32; 4],
     pub transform1: [f32; 4],
@@ -24,11 +31,15 @@ pub struct CharacterData {
 
 struct Instance<TBackend: IBackend> {
     pipeline_id: TBackend::PipelineId,
-    acquire_next_frame_semaphore_id: TBackend::SemaphoreId,
-    queue_submit_semaphore_id: TBackend::SemaphoreId,
     descriptor_set_id: Option<TBackend::DescriptorSetId>,
     vertex_buffer_id: TBackend::BufferId,
     index_buffer_id: TBackend::BufferId,
+}
+
+struct SyncSemaphores<TBackend: IBackend> {
+    acquire_next_image_semaphore_id: TBackend::SemaphoreId,
+    background_render_signal_semaphore_id: TBackend::SemaphoreId,
+    character_render_signal_semaphore_id: TBackend::SemaphoreId,
 }
 
 pub struct Renderer<TBackend: IBackend> {
@@ -37,6 +48,8 @@ pub struct Renderer<TBackend: IBackend> {
     instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
 
     background_rendering_instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
+
+    sync_semaphore_table: HashMap<TBackend::RenderTargetId, SyncSemaphores<TBackend>>,
 }
 
 impl Renderer<BackendVk> {
@@ -53,6 +66,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             backend,
             instance_table: HashMap::default(),
             background_rendering_instance_table: HashMap::default(),
+            sync_semaphore_table: HashMap::default(),
         }
     }
 
@@ -114,6 +128,25 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .backend
             .allocate_buffer(target_id, 64, BufferUsage::UniformBuffer)
             .unwrap();
+        if let Ok(mut handle) = self
+            .backend
+            .map_buffer(target_id, background_constant_buffer_id)
+        {
+            handle.write(
+                0,
+                bytemuck::cast_slice(&[BackgroundView {
+                    texcoord_transform0: [1.0, 0.0, 0.0, 0.0],
+                    texcoord_transform1: [0.0, 1.0, 0.0, 0.0],
+                }]),
+            );
+
+            self.backend.flush_buffer(
+                target_id,
+                background_constant_buffer_id,
+                0,
+                std::mem::size_of::<BackgroundView>(),
+            );
+        }
         let background_descriptor_set = self
             .backend
             .allocate_descriptor_set(target_id, background_pipeline_id)
@@ -203,11 +236,25 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             target_id,
             Instance {
                 pipeline_id,
-                acquire_next_frame_semaphore_id: self.backend.create_semaphore(target_id).unwrap(),
-                queue_submit_semaphore_id: self.backend.create_semaphore(target_id).unwrap(),
                 descriptor_set_id: Some(descriptor_set_id),
                 vertex_buffer_id,
                 index_buffer_id,
+            },
+        );
+
+        // 描画の同期用セマフォ
+        self.sync_semaphore_table.insert(
+            target_id,
+            SyncSemaphores {
+                acquire_next_image_semaphore_id: self.backend.create_semaphore(target_id).unwrap(),
+                background_render_signal_semaphore_id: self
+                    .backend
+                    .create_semaphore(target_id)
+                    .unwrap(),
+                character_render_signal_semaphore_id: self
+                    .backend
+                    .create_semaphore(target_id)
+                    .unwrap(),
             },
         );
 
@@ -227,11 +274,18 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             return;
         };
 
+        let Some(semaphores) = self.sync_semaphore_table.get(&render_target_id) else {
+            return;
+        };
+
         // 次のフレームを要求
         // フレームが使用可能になってから描画コマンドが実行されるようにセマフォを指定して同期をとる
         let next_image_index = self
             .backend
-            .acquire_next_frame(*render_target_id, instance.acquire_next_frame_semaphore_id)
+            .acquire_next_frame(
+                *render_target_id,
+                semaphores.acquire_next_image_semaphore_id,
+            )
             .unwrap();
 
         // 描画コマンドを実行
@@ -240,6 +294,9 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         // 背景の描画
         let background_render_params = RenderParams {
             render_target_id: *render_target_id,
+            process_index: next_image_index,
+            wait_semaphore_id: semaphores.acquire_next_image_semaphore_id,
+            signal_semaphore_id: semaphores.background_render_signal_semaphore_id,
             pipelie_id: background_instance.pipeline_id,
             descriptor_set_id: background_instance.descriptor_set_id,
             vertex_buffer_id: background_instance.vertex_buffer_id,
@@ -253,8 +310,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         let render_params = RenderParams {
             render_target_id: *render_target_id,
             process_index: next_image_index,
-            acquire_next_frame_semaphore_id: instance.acquire_next_frame_semaphore_id,
-            queue_submit_signal_semaphore_id: instance.queue_submit_semaphore_id,
+            wait_semaphore_id: semaphores.background_render_signal_semaphore_id,
+            signal_semaphore_id: semaphores.character_render_signal_semaphore_id,
             pipelie_id: instance.pipeline_id,
             descriptor_set_id: instance.descriptor_set_id,
             vertex_buffer_id: instance.vertex_buffer_id,
@@ -269,7 +326,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         self.backend.present(
             next_image_index,
             *render_target_id,
-            instance.queue_submit_semaphore_id,
+            semaphores.character_render_signal_semaphore_id,
         );
     }
 }

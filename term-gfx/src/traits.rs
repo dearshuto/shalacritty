@@ -109,8 +109,13 @@ pub trait IMapHandle {
 pub struct RenderParams<TRenderTargetId, TSemaporeId, TPipelineId, TDescriptorSetId, TBufferId> {
     pub process_index: u32,
     pub render_target_id: TRenderTargetId,
-    pub acquire_next_frame_semaphore_id: TSemaporeId,
-    pub queue_submit_signal_semaphore_id: TSemaporeId,
+
+    // 描画コマンドの開始をシグナルするセマフォ
+    pub wait_semaphore_id: TSemaporeId,
+
+    // 描画コマンドの完了時にシグナルするセマフォ
+    pub signal_semaphore_id: TSemaporeId,
+
     pub pipelie_id: TPipelineId,
     pub descriptor_set_id: Option<TDescriptorSetId>,
     pub vertex_buffer_id: TBufferId,
