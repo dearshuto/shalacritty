@@ -7,7 +7,6 @@ use std::{
 
 use ash::ext::debug_utils;
 use ash::*;
-use nv::acquire_winrt_display;
 use raw_window_handle::{DisplayHandle, WindowHandle};
 use util::Align;
 
@@ -920,6 +919,51 @@ impl IBackend for BackendVk {
         unsafe { device.flush_mapped_memory_ranges(&[range]) }.unwrap();
     }
 
+    fn acquire_next_frame(
+        &mut self,
+        id: Self::RenderTargetId,
+        semaphore_id: Self::SemaphoreId,
+    ) -> Result<u32, ()> {
+        let Some(device) = self.device_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(queue) = self.queue_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(swapchain_loader) = self.swapchain_loader_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(swapchain) = self.swapchain_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(semaphore_table) = self.semaphore_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(semaphore) = semaphore_table.get(&semaphore_id) else {
+            return Err(());
+        };
+
+        unsafe { device.queue_wait_idle(*queue) }.unwrap();
+
+        // フレームバッファを要求
+        let (present_index, _) = unsafe {
+            swapchain_loader.acquire_next_image(
+                *swapchain,
+                u64::MAX,
+                *semaphore,
+                ash::vk::Fence::null(),
+            )
+        }
+        .unwrap();
+
+        Ok(present_index)
+    }
+
     fn render(
         &self,
         render_params: RenderParams<
@@ -981,18 +1025,6 @@ impl IBackend for BackendVk {
             return;
         };
 
-        // スワップチェーン
-        let Some(swapchain_loader) = self
-            .swapchain_loader_table
-            .get(&render_params.render_target_id)
-        else {
-            println!("AA");
-            return;
-        };
-        let Some(swapchain) = self.swapchain_table.get(&render_params.render_target_id) else {
-            return;
-        };
-
         // パイプライン
         let Some(pipeline_table) = self.pipeline_table.get(&target_id) else {
             return;
@@ -1030,19 +1062,6 @@ impl IBackend for BackendVk {
         // フェンスのシグナルをクリア
         unsafe { device.reset_fences(&[*fence]) }.unwrap();
 
-        unsafe { device.queue_wait_idle(*queue) }.unwrap();
-
-        // フレームバッファを要求
-        let (present_index, _) = unsafe {
-            swapchain_loader.acquire_next_image(
-                *swapchain,
-                u64::MAX,
-                *acquire_next_frame_semaphore,
-                ash::vk::Fence::null(),
-            )
-        }
-        .unwrap();
-
         // コマンド作成開始
         let command_buffer_begin_info = ash::vk::CommandBufferBeginInfo::default()
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -1056,7 +1075,7 @@ impl IBackend for BackendVk {
         }];
         let render_pass_begin_info = ash::vk::RenderPassBeginInfo::default()
             .render_pass(*render_pass)
-            .framebuffer(frame_buffers[present_index as usize])
+            .framebuffer(frame_buffers[render_params.process_index as usize])
             .render_area(ash::vk::Rect2D {
                 offset: ash::vk::Offset2D { x: 0, y: 0 },
                 extent: ash::vk::Extent2D {
@@ -1172,12 +1191,40 @@ impl IBackend for BackendVk {
             .wait_semaphores(&wait_semaphores)
             .signal_semaphores(&signal_semaphores);
         unsafe { device.queue_submit(*queue, &[submit_info], *fence) }.unwrap();
+    }
+
+    fn present(
+        &self,
+        process_index: u32,
+        id: Self::RenderTargetId,
+        wait_semaphore_id: Self::SemaphoreId,
+    ) {
+        // セマフォ
+        let Some(semaphore_table) = self.semaphore_table.get(&id) else {
+            return;
+        };
+        let Some(semaphore) = semaphore_table.get(&wait_semaphore_id) else {
+            return;
+        };
+
+        // スワップチェーン
+        let Some(swapchain) = self.swapchain_table.get(&id) else {
+            return;
+        };
+        let Some(swapchain_loader) = self.swapchain_loader_table.get(&id) else {
+            return;
+        };
+
+        // キュー
+        let Some(queue) = self.queue_table.get(&id) else {
+            return;
+        };
 
         // 画面に表示
-        let wait_semaphors = [*queue_submit_semaphore];
+        let wait_semaphors = [*semaphore];
         let swapchains = [*swapchain];
         // TODO: ダブルバッファー対応
-        let image_indices = [present_index];
+        let image_indices = [process_index];
         let present_info = ash::vk::PresentInfoKHR::default()
             .wait_semaphores(&wait_semaphors)
             .swapchains(&swapchains)

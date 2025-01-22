@@ -165,14 +165,24 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         Ok(target_id)
     }
 
-    pub fn render(&self) {
+    pub fn render(&mut self) {
         let render_target_id = self.instance_table.keys().next().unwrap();
         let Some(instance) = self.instance_table.get(&render_target_id) else {
             return;
         };
 
+        // 次のフレームを要求
+        // フレームが使用可能になってから描画コマンドが実行されるようにセマフォを指定して同期をとる
+        let next_image_index = self
+            .backend
+            .acquire_next_frame(*render_target_id, instance.acquire_next_frame_semaphore_id)
+            .unwrap();
+
+        // 描画コマンドを実行
+        // 開始と完了はセマフォを指定してフレームとの同期をとる
         let render_params = RenderParams {
             render_target_id: *render_target_id,
+            process_index: next_image_index,
             acquire_next_frame_semaphore_id: instance.acquire_next_frame_semaphore_id,
             queue_submit_signal_semaphore_id: instance.queue_submit_semaphore_id,
             pipelie_id: instance.pipeline_id,
@@ -183,6 +193,14 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             instance_count: 4,
         };
         self.backend.render(render_params);
+
+        // 描画結果をウィンドウに表示する
+        // 描画コマンドが完了してから実行されるようにセマフォで同期をとる
+        self.backend.present(
+            next_image_index,
+            *render_target_id,
+            instance.queue_submit_semaphore_id,
+        );
     }
 }
 
