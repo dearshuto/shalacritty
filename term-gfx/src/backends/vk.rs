@@ -7,6 +7,7 @@ use std::{
 
 use ash::ext::debug_utils;
 use ash::*;
+use nv::acquire_winrt_display;
 use raw_window_handle::{DisplayHandle, WindowHandle};
 use util::Align;
 
@@ -18,6 +19,11 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct RenderTargetId {
+    internal: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct SemaphoreId {
     internal: uuid::Uuid,
 }
 
@@ -53,8 +59,9 @@ pub struct BackendVk {
     swapchain_image_view_table: HashMap<RenderTargetId, [ash::vk::ImageView; 2]>,
     frame_buffers_table: HashMap<RenderTargetId, [ash::vk::Framebuffer; 2]>,
     fence_table: HashMap<RenderTargetId, ash::vk::Fence>,
-    semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
-    presentation_semaphore_table: HashMap<RenderTargetId, ash::vk::Semaphore>,
+
+    //  セマフォ
+    semaphore_table: HashMap<RenderTargetId, HashMap<SemaphoreId, ash::vk::Semaphore>>,
 
     // デバイスメモリーとバッファーは 1:1 対応しているので同じ id を割り振っておく
     buffer_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::Buffer>>,
@@ -143,6 +150,7 @@ impl BackendVk {
 
 impl IBackend for BackendVk {
     type RenderTargetId = RenderTargetId;
+    type SemaphoreId = SemaphoreId;
     type PipelineId = PipelineId;
     type DescriptorSetId = DescriptorSetId;
     type BufferId = BufferId;
@@ -169,7 +177,6 @@ impl IBackend for BackendVk {
             command_buffer_table: HashMap::default(),
             fence_table: HashMap::default(),
             semaphore_table: HashMap::default(),
-            presentation_semaphore_table: HashMap::default(),
             buffer_table: HashMap::default(),
             device_memory_table: HashMap::default(),
             render_pass_table: HashMap::default(),
@@ -404,12 +411,6 @@ impl IBackend for BackendVk {
             unsafe { device.create_fence(&fence_create_info, None) }.unwrap()
         };
 
-        // セマフォ
-        let semaphore_create_info = ash::vk::SemaphoreCreateInfo::default();
-        let semaphore = unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
-        let presentation_semaphore =
-            unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
-
         // デスクリプタープール
         // 決め打ちでバッファー領域を適当に確保
         let descriptor_sizes = [ash::vk::DescriptorPoolSize::default()
@@ -443,12 +444,30 @@ impl IBackend for BackendVk {
         self.swapchain_image_view_table
             .insert(id, [present_image_view[0], present_image_view[1]]);
         self.fence_table.insert(id, fence);
-        self.semaphore_table.insert(id, semaphore);
-        self.presentation_semaphore_table
-            .insert(id, presentation_semaphore);
         self.descriptor_pool_table.insert(id, descriptor_pool);
 
         Ok(id)
+    }
+
+    fn create_semaphore(&mut self, id: Self::RenderTargetId) -> Result<Self::SemaphoreId, ()> {
+        let Some(device) = self.device_table.get(&id) else {
+            return Err(());
+        };
+
+        // セマフォ
+        let semaphore_create_info = ash::vk::SemaphoreCreateInfo::default();
+        let semaphore = unsafe { device.create_semaphore(&semaphore_create_info, None) }.unwrap();
+
+        let semaphore_id = SemaphoreId {
+            internal: uuid::Uuid::now_v7(),
+        };
+        self.semaphore_table
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(semaphore_id, semaphore);
+            })
+            .or_insert(HashMap::from([(semaphore_id, semaphore)]));
+        Ok(semaphore_id)
     }
 
     fn create_pipeline(
@@ -922,6 +941,7 @@ impl IBackend for BackendVk {
         &self,
         render_params: RenderParams<
             Self::RenderTargetId,
+            Self::SemaphoreId,
             Self::PipelineId,
             Self::DescriptorSetId,
             Self::BufferId,
@@ -951,10 +971,17 @@ impl IBackend for BackendVk {
         };
 
         // セマフォ
-        let Some(semaphore) = self.semaphore_table.get(&target_id) else {
+        let Some(semaphore_table) = self.semaphore_table.get(&target_id) else {
             return;
         };
-        let Some(presentation_semaphore) = self.semaphore_table.get(&target_id) else {
+        let Some(acquire_next_frame_semaphore) =
+            semaphore_table.get(&render_params.acquire_next_frame_semaphore_id)
+        else {
+            return;
+        };
+        let Some(queue_submit_semaphore) =
+            semaphore_table.get(&render_params.queue_submit_signal_semaphore_id)
+        else {
             return;
         };
 
@@ -1027,7 +1054,7 @@ impl IBackend for BackendVk {
             swapchain_loader.acquire_next_image(
                 *swapchain,
                 u64::MAX,
-                *semaphore,
+                *acquire_next_frame_semaphore,
                 ash::vk::Fence::null(),
             )
         }
@@ -1153,8 +1180,8 @@ impl IBackend for BackendVk {
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
-        let signal_semaphores = [*presentation_semaphore];
-        let wait_semaphores = [*semaphore];
+        let signal_semaphores = [*queue_submit_semaphore];
+        let wait_semaphores = [*acquire_next_frame_semaphore];
         let command_buffers = [command_buffer];
         let submit_info = ash::vk::SubmitInfo::default()
             .command_buffers(&command_buffers)
@@ -1164,7 +1191,7 @@ impl IBackend for BackendVk {
         unsafe { device.queue_submit(*queue, &[submit_info], *fence) }.unwrap();
 
         // 画面に表示
-        let wait_semaphors = [*presentation_semaphore];
+        let wait_semaphors = [*queue_submit_semaphore];
         let swapchains = [*swapchain];
         // TODO: ダブルバッファー対応
         let image_indices = [present_index];
@@ -1261,11 +1288,10 @@ impl Drop for BackendVk {
             }
 
             // セマフォ
-            if let Some(semaphore) = self.semaphore_table.remove(render_target_id) {
-                unsafe { device.destroy_semaphore(semaphore, None) }
-            }
-            if let Some(semaphore) = self.presentation_semaphore_table.remove(render_target_id) {
-                unsafe { device.destroy_semaphore(semaphore, None) }
+            if let Some(semaphore_table) = self.semaphore_table.remove(render_target_id) {
+                for semaphore in semaphore_table.values() {
+                    unsafe { device.destroy_semaphore(*semaphore, None) }
+                }
             }
 
             // フレームバッファー
