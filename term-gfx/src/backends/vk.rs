@@ -576,9 +576,14 @@ impl IBackend for BackendVk {
             attachment: 0,
             layout: ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         }];
-        let subpass_description = [ash::vk::SubpassDescription::default()
-            .color_attachments(&color_attachments)
-            .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS)];
+        let subpass_description = [
+            ash::vk::SubpassDescription::default()
+                .color_attachments(&color_attachments)
+                .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
+            ash::vk::SubpassDescription::default()
+                .color_attachments(&color_attachments)
+                .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
+        ];
         let render_pass = unsafe {
             device.create_render_pass(
                 &ash::vk::RenderPassCreateInfo::default()
@@ -1175,6 +1180,8 @@ impl IBackend for BackendVk {
                 0, /*first_instance*/
             );
         }
+
+        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
 
         // レンダーパス終わり
         unsafe { device.cmd_end_render_pass(command_buffer) }
