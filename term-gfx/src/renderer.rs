@@ -21,6 +21,8 @@ pub struct CharacterData {
 
 struct Instance<TBackend: IBackend> {
     pipeline_id: TBackend::PipelineId,
+    acquire_next_frame_semaphore_id: TBackend::SemaphoreId,
+    queue_submit_semaphore_id: TBackend::SemaphoreId,
     descriptor_set_id: Option<TBackend::DescriptorSetId>,
     vertex_buffer_id: TBackend::BufferId,
     index_buffer_id: TBackend::BufferId,
@@ -152,6 +154,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             target_id,
             Instance {
                 pipeline_id,
+                acquire_next_frame_semaphore_id: self.backend.create_semaphore(target_id).unwrap(),
+                queue_submit_semaphore_id: self.backend.create_semaphore(target_id).unwrap(),
                 descriptor_set_id: Some(descriptor_set_id),
                 vertex_buffer_id,
                 index_buffer_id,
@@ -169,6 +173,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
 
         let render_params = RenderParams {
             render_target_id: *render_target_id,
+            acquire_next_frame_semaphore_id: instance.acquire_next_frame_semaphore_id,
+            queue_submit_signal_semaphore_id: instance.queue_submit_semaphore_id,
             pipelie_id: instance.pipeline_id,
             descriptor_set_id: instance.descriptor_set_id,
             vertex_buffer_id: instance.vertex_buffer_id,

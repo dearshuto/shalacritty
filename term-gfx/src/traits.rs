@@ -15,6 +15,7 @@ pub enum DescriptorType {
 
 pub trait IBackend {
     type RenderTargetId: Hash + Eq + Copy + Clone;
+    type SemaphoreId: Hash + Eq + Copy + Clone;
     type PipelineId: Hash + Eq + Copy + Clone;
     type DescriptorSetId: Hash + Eq + Copy + Clone;
     type BufferId: Hash + Eq + Copy + Clone;
@@ -27,6 +28,8 @@ pub trait IBackend {
         window_handle: WindowHandle,
         display_handle: DisplayHandle,
     ) -> Result<Self::RenderTargetId, ()>;
+
+    fn create_semaphore(&mut self, id: Self::RenderTargetId) -> Result<Self::SemaphoreId, ()>;
 
     fn create_pipeline(
         &mut self,
@@ -77,6 +80,7 @@ pub trait IBackend {
         &self,
         render_params: RenderParams<
             Self::RenderTargetId,
+            Self::SemaphoreId,
             Self::PipelineId,
             Self::DescriptorSetId,
             Self::BufferId,
@@ -89,8 +93,10 @@ pub trait IMapHandle {
 }
 
 #[derive(Debug)]
-pub struct RenderParams<TRenderTargetId, TPipelineId, TDescriptorSetId, TBufferId> {
+pub struct RenderParams<TRenderTargetId, TSemaporeId, TPipelineId, TDescriptorSetId, TBufferId> {
     pub render_target_id: TRenderTargetId,
+    pub acquire_next_frame_semaphore_id: TSemaporeId,
+    pub queue_submit_signal_semaphore_id: TSemaporeId,
     pub pipelie_id: TPipelineId,
     pub descriptor_set_id: Option<TDescriptorSetId>,
     pub vertex_buffer_id: TBufferId,
