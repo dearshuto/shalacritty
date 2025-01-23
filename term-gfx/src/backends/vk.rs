@@ -1227,6 +1227,8 @@ impl IBackend for BackendVk {
             shader_object_device.cmd_set_cull_mode(command_buffer, ash::vk::CullModeFlags::NONE);
             shader_object_device.cmd_set_polygon_mode(command_buffer, ash::vk::PolygonMode::FILL);
             shader_object_device
+                .cmd_set_front_face(command_buffer, ash::vk::FrontFace::COUNTER_CLOCKWISE);
+            shader_object_device
                 .cmd_set_rasterization_samples(command_buffer, ash::vk::SampleCountFlags::TYPE_1);
             shader_object_device.cmd_set_primitive_restart_enable(command_buffer, true);
             shader_object_device.cmd_set_primitive_topology(
@@ -1238,12 +1240,7 @@ impl IBackend for BackendVk {
                 ash::vk::SampleCountFlags::TYPE_1,
                 &[ash::vk::SampleMask::MAX],
             );
-            shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, true);
-            shader_object_device.cmd_set_color_write_mask(
-                command_buffer,
-                0,
-                &[ash::vk::ColorComponentFlags::RGBA],
-            );
+            shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, false);
 
             // 深度テスト
             shader_object_device.cmd_set_depth_test_enable(command_buffer, false);
@@ -1252,8 +1249,13 @@ impl IBackend for BackendVk {
             shader_object_device.cmd_set_stencil_test_enable(command_buffer, false);
 
             // ブレンドステート
-            shader_object_device.cmd_set_color_blend_enable(command_buffer, 0, &[1]);
-            shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, true);
+            shader_object_device.cmd_set_color_blend_enable(command_buffer, 0, &[0]);
+            shader_object_device.cmd_set_color_write_mask(
+                command_buffer,
+                0,
+                &[ash::vk::ColorComponentFlags::RGBA],
+            );
+            shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, false);
 
             // 頂点ステート
             shader_object_device.cmd_set_vertex_input(
@@ -1261,7 +1263,8 @@ impl IBackend for BackendVk {
                 &[ash::vk::VertexInputBindingDescription2EXT::default()
                     .binding(0)
                     .divisor(1)
-                    .stride(std::mem::size_of::<f32> as u32 * 2)
+                    // .stride(std::mem::size_of::<f32> as u32 * 2)
+                    .stride(8)
                     .input_rate(ash::vk::VertexInputRate::VERTEX)],
                 &[ash::vk::VertexInputAttributeDescription2EXT::default()
                     .location(0)
@@ -1343,6 +1346,7 @@ impl IBackend for BackendVk {
                 &[], // BufferMemoryBariier
                 &[ash::vk::ImageMemoryBarrier::default()
                     .image(swapchain_images[render_params.process_index as usize])
+                    .src_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
                     .old_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
                     .subresource_range(
