@@ -194,7 +194,7 @@ impl IBackend for BackendVk {
                 .engine_name(c"MyName")
                 .application_version(0)
                 .engine_version(0)
-                .api_version(ash::vk::API_VERSION_1_2);
+                .api_version(ash::vk::API_VERSION_1_3);
             let mut extension_names =
                 ash_window::enumerate_required_extensions(display_handle.as_raw())
                     .unwrap()
@@ -298,6 +298,8 @@ impl IBackend for BackendVk {
             let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
             let mut ext_features =
                 ash::vk::PhysicalDeviceShaderObjectFeaturesEXT::default().shader_object(true);
+            let mut dynamic_rendering_features =
+                ash::vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
             let priorities = [1.0];
             let queue_info = vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
@@ -314,7 +316,8 @@ impl IBackend for BackendVk {
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
-                .push_next(&mut ext_features);
+                .push_next(&mut ext_features)
+                .push_next(&mut dynamic_rendering_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -1209,7 +1212,12 @@ impl IBackend for BackendVk {
                 ash::vk::SampleCountFlags::TYPE_1,
                 &[ash::vk::SampleMask::default()],
             );
-            shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, false);
+            shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, true);
+            shader_object_device.cmd_set_color_write_mask(
+                command_buffer,
+                0,
+                &[ash::vk::ColorComponentFlags::RGBA],
+            );
 
             // 深度テスト
             shader_object_device.cmd_set_depth_test_enable(command_buffer, false);
