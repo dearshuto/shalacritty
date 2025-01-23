@@ -1145,31 +1145,6 @@ impl IBackend for BackendVk {
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
 
-        // レンダーパス
-        let clear_values = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.1, 0.2, 0.3, 0.0],
-            },
-        }];
-        // let render_pass_begin_info = ash::vk::RenderPassBeginInfo::default()
-        //     .render_pass(*render_pass)
-        //     .framebuffer(frame_buffers[render_params.process_index as usize])
-        //     .render_area(ash::vk::Rect2D {
-        //         offset: ash::vk::Offset2D { x: 0, y: 0 },
-        //         extent: ash::vk::Extent2D {
-        //             width: 640,
-        //             height: 480,
-        //         },
-        //     })
-        //     .clear_values(&clear_values);
-        // unsafe {
-        //     device.cmd_begin_render_pass(
-        //         command_buffer,
-        //         &render_pass_begin_info,
-        //         ash::vk::SubpassContents::INLINE,
-        //     )
-        // };
-
         let swapchain = self.swapchain_table.get(&target_id).unwrap();
         let swapchain_loader = self.swapchain_loader_table.get(&target_id).unwrap();
         let swapchain_images =
@@ -1211,7 +1186,11 @@ impl IBackend for BackendVk {
                         .load_op(ash::vk::AttachmentLoadOp::CLEAR)
                         .store_op(ash::vk::AttachmentStoreOp::STORE)
                         .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .clear_value(ash::vk::ClearValue::default())
+                        .clear_value(ash::vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.1, 0.2, 0.3, 0.0],
+                            },
+                        })
                         .image_view(present_image_views[render_params.process_index as usize])]),
             )
         }
@@ -1257,7 +1236,7 @@ impl IBackend for BackendVk {
             shader_object_device.cmd_set_sample_mask(
                 command_buffer,
                 ash::vk::SampleCountFlags::TYPE_1,
-                &[ash::vk::SampleMask::default()],
+                &[ash::vk::SampleMask::MAX],
             );
             shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, true);
             shader_object_device.cmd_set_color_write_mask(
@@ -1273,6 +1252,7 @@ impl IBackend for BackendVk {
             shader_object_device.cmd_set_stencil_test_enable(command_buffer, false);
 
             // ブレンドステート
+            shader_object_device.cmd_set_color_blend_enable(command_buffer, 0, &[1]);
             shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, true);
 
             // 頂点ステート
@@ -1280,6 +1260,7 @@ impl IBackend for BackendVk {
                 command_buffer,
                 &[ash::vk::VertexInputBindingDescription2EXT::default()
                     .binding(0)
+                    .divisor(1)
                     .stride(std::mem::size_of::<f32> as u32 * 2)
                     .input_rate(ash::vk::VertexInputRate::VERTEX)],
                 &[ash::vk::VertexInputAttributeDescription2EXT::default()
