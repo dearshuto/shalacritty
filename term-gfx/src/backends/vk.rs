@@ -67,11 +67,10 @@ pub struct BackendVk {
     device_memory_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::DeviceMemory>>,
 
     // ShaderObject のデバイス
-    shader_object_device_table:
-        HashMap<RenderTargetId, HashMap<PipelineId, ash::ext::shader_object::Device>>,
+    shader_object_device_table: HashMap<RenderTargetId, ash::ext::shader_object::Device>,
 
     // シェーダーオブジェクト
-    shader_object_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::ShaderEXT>>,
+    shader_object_table: HashMap<RenderTargetId, Vec<ash::vk::ShaderEXT>>,
 
     // レンダーパス
     render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
@@ -709,9 +708,10 @@ impl IBackend for BackendVk {
             ];
             let shader_objects =
                 unsafe { shader_object_device.create_shaders(&create_info, None) }.unwrap();
-            for shader_object in shader_objects {
-                unsafe { shader_object_device.destroy_shader(shader_object, None) }
-            }
+
+            self.shader_object_device_table
+                .insert(id, shader_object_device);
+            self.shader_object_table.insert(id, shader_objects);
         }
 
         self.pipeline_table
@@ -1035,6 +1035,14 @@ impl IBackend for BackendVk {
             return;
         };
 
+        let Some(shader_object_device) = self.shader_object_device_table.get(&target_id) else {
+            return;
+        };
+
+        let Some(shader_objects) = self.shader_object_table.get(&target_id) else {
+            return;
+        };
+
         // キュー
         let Some(queue) = self.queue_table.get(&target_id) else {
             return;
@@ -1121,67 +1129,85 @@ impl IBackend for BackendVk {
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
 
-        // レンダーパス
-        let clear_values = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.1, 0.2, 0.3, 0.0],
-            },
-        }];
-        let render_pass_begin_info = ash::vk::RenderPassBeginInfo::default()
-            .render_pass(*render_pass)
-            .framebuffer(frame_buffers[render_params.process_index as usize])
-            .render_area(ash::vk::Rect2D {
-                offset: ash::vk::Offset2D { x: 0, y: 0 },
-                extent: ash::vk::Extent2D {
-                    width: 640,
-                    height: 480,
-                },
-            })
-            .clear_values(&clear_values);
+        // シェーダー
         unsafe {
-            device.cmd_begin_render_pass(
+            shader_object_device.cmd_bind_shaders(
                 command_buffer,
-                &render_pass_begin_info,
-                ash::vk::SubpassContents::INLINE,
-            )
-        };
-
-        // パイプライン
-        unsafe {
-            device.cmd_bind_pipeline(
-                command_buffer,
-                ash::vk::PipelineBindPoint::GRAPHICS,
-                *pipeline,
+                &[
+                    ash::vk::ShaderStageFlags::VERTEX,
+                    ash::vk::ShaderStageFlags::FRAGMENT,
+                ],
+                &shader_objects,
             )
         }
 
-        // ビューポートシザー
         unsafe {
-            device.cmd_set_viewport(
+            // ビューポートシザー
+            shader_object_device.cmd_set_viewport_with_count(
                 command_buffer,
-                0,
                 &[ash::vk::Viewport::default()
                     .x(0.0)
                     .y(0.0)
                     .width(640.0)
                     .height(480.0)],
             );
-
-            device.cmd_set_scissor(
+            shader_object_device.cmd_set_scissor_with_count(
                 command_buffer,
-                0,
                 &[ash::vk::Rect2D::default()
                     .extent(ash::vk::Extent2D::default().width(640).height(480))],
+            );
+
+            // ラスタライズ
+            shader_object_device.cmd_set_cull_mode(command_buffer, ash::vk::CullModeFlags::NONE);
+            shader_object_device.cmd_set_polygon_mode(command_buffer, ash::vk::PolygonMode::FILL);
+            shader_object_device
+                .cmd_set_rasterization_samples(command_buffer, ash::vk::SampleCountFlags::TYPE_1);
+            shader_object_device.cmd_set_primitive_restart_enable(command_buffer, true);
+            shader_object_device.cmd_set_primitive_topology(
+                command_buffer,
+                ash::vk::PrimitiveTopology::TRIANGLE_LIST,
+            );
+            shader_object_device.cmd_set_sample_mask(
+                command_buffer,
+                ash::vk::SampleCountFlags::TYPE_1,
+                &[ash::vk::SampleMask::default()],
+            );
+            shader_object_device.cmd_set_rasterizer_discard_enable(command_buffer, false);
+
+            // 深度テスト
+            shader_object_device.cmd_set_depth_test_enable(command_buffer, false);
+            shader_object_device.cmd_set_depth_write_enable(command_buffer, false);
+            shader_object_device.cmd_set_depth_bias_enable(command_buffer, false);
+            shader_object_device.cmd_set_stencil_test_enable(command_buffer, false);
+
+            // ブレンドステート
+            shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, false);
+
+            // 頂点ステート
+            shader_object_device.cmd_set_vertex_input(
+                command_buffer,
+                &[ash::vk::VertexInputBindingDescription2EXT::default()
+                    .binding(0)
+                    .stride(16)
+                    .divisor(1)
+                    .input_rate(ash::vk::VertexInputRate::VERTEX)],
+                &[ash::vk::VertexInputAttributeDescription2EXT::default()
+                    .location(0)
+                    .binding(0)
+                    .offset(0)
+                    .format(ash::vk::Format::R32G32_SFLOAT)],
             );
         }
 
         // 頂点バッファ
         unsafe {
-            device.cmd_bind_vertex_buffers(
+            shader_object_device.cmd_bind_vertex_buffers2(
                 command_buffer,
-                0, /*first_binding*/
+                0,
                 &[*vertex_buffer],
-                &[0], /*offsets*/
+                &[0],
+                None,
+                None,
             )
         }
 
@@ -1220,21 +1246,16 @@ impl IBackend for BackendVk {
         // インスタンス描画
         // 一部パラメーターは固定
         unsafe {
-            device.cmd_draw_indexed(
-                command_buffer,
-                render_params.index_count,
-                render_params.instance_count,
-                0, /*first_index*/
-                0, /*vertex_offset*/
-                0, /*first_instance*/
-            );
+            device.cmd_draw(command_buffer, 3, 1, 0, 0)
+            // device.cmd_draw_indexed(
+            //     command_buffer,
+            //     render_params.index_count,
+            //     render_params.instance_count,
+            //     0, /*first_index*/
+            //     0, /*vertex_offset*/
+            //     0, /*first_instance*/
+            // );
         }
-
-        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
-
-        // レンダーパス終わり
-        unsafe { device.cmd_end_render_pass(command_buffer) }
-
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
@@ -1295,6 +1316,15 @@ impl Drop for BackendVk {
             // キューの完了待ち
             if let Some(queue) = self.queue_table.remove(render_target_id) {
                 unsafe { device.queue_wait_idle(queue) }.unwrap()
+            }
+
+            // ShaderObject
+            if let Some(device) = self.shader_object_device_table.remove(&render_target_id) {
+                for shader_objects in self.shader_object_table.values() {
+                    for shader_object in shader_objects {
+                        unsafe { device.destroy_shader(*shader_object, None) }
+                    }
+                }
             }
 
             // デスクリプター関係
