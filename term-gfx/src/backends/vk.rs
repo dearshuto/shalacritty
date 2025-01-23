@@ -1274,7 +1274,7 @@ impl IBackend for BackendVk {
                 command_buffer,
                 &[ash::vk::VertexInputBindingDescription2EXT::default()
                     .binding(0)
-                    .stride(16)
+                    .stride(std::mem::size_of::<f32> as u32 * 2)
                     .divisor(1)
                     .input_rate(ash::vk::VertexInputRate::VERTEX)],
                 &[ash::vk::VertexInputAttributeDescription2EXT::default()
@@ -1329,7 +1329,6 @@ impl IBackend for BackendVk {
             }
         }
 
-        println!("12");
         // インスタンス描画
         // 一部パラメーターは固定
         unsafe {
@@ -1343,12 +1342,10 @@ impl IBackend for BackendVk {
             );
         }
 
-        println!("AAA");
-        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
+        // unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
 
         // レンダーパス終わり
         unsafe { device.cmd_end_rendering(command_buffer) }
-        println!("bdfg");
 
         unsafe {
             device.cmd_pipeline_barrier(
@@ -1373,7 +1370,6 @@ impl IBackend for BackendVk {
             )
         }
 
-        println!("CCC");
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
