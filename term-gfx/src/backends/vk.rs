@@ -300,6 +300,9 @@ impl IBackend for BackendVk {
                 ash::vk::PhysicalDeviceShaderObjectFeaturesEXT::default().shader_object(true);
             let mut dynamic_rendering_features =
                 ash::vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
+            let mut attribute_divisor_features =
+                ash::vk::PhysicalDeviceVertexAttributeDivisorFeaturesEXT::default()
+                    .vertex_attribute_instance_rate_zero_divisor(true);
             let priorities = [1.0];
             let queue_info = vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
@@ -309,6 +312,7 @@ impl IBackend for BackendVk {
                 ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
                 ash::vk::KHR_DYNAMIC_RENDERING_NAME.as_ptr(),
                 ash::ext::shader_object::NAME.as_ptr(),
+                ash::khr::vertex_attribute_divisor::NAME.as_ptr(),
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
@@ -317,7 +321,9 @@ impl IBackend for BackendVk {
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
                 .push_next(&mut ext_features)
-                .push_next(&mut dynamic_rendering_features);
+                .push_next(&mut dynamic_rendering_features)
+                .push_next(&mut attribute_divisor_features);
+
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -1275,7 +1281,6 @@ impl IBackend for BackendVk {
                 &[ash::vk::VertexInputBindingDescription2EXT::default()
                     .binding(0)
                     .stride(std::mem::size_of::<f32> as u32 * 2)
-                    .divisor(1)
                     .input_rate(ash::vk::VertexInputRate::VERTEX)],
                 &[ash::vk::VertexInputAttributeDescription2EXT::default()
                     .location(0)
