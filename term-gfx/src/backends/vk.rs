@@ -1118,6 +1118,13 @@ impl IBackend for BackendVk {
             return;
         };
 
+        let Some(present_image_views) = self
+            .swapchain_image_view_table
+            .get(&render_params.render_target_id)
+        else {
+            return;
+        };
+
         // コマンドの完了まち
         unsafe {
             device.wait_for_fences(&[*fence], true, u64::MAX /*timeout*/)
@@ -1133,11 +1140,11 @@ impl IBackend for BackendVk {
         unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
 
         // レンダーパス
-        // let clear_values = [vk::ClearValue {
-        //     color: vk::ClearColorValue {
-        //         float32: [0.1, 0.2, 0.3, 0.0],
-        //     },
-        // }];
+        let clear_values = [vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.1, 0.2, 0.3, 0.0],
+            },
+        }];
         // let render_pass_begin_info = ash::vk::RenderPassBeginInfo::default()
         //     .render_pass(*render_pass)
         //     .framebuffer(frame_buffers[render_params.process_index as usize])
@@ -1156,6 +1163,35 @@ impl IBackend for BackendVk {
         //         ash::vk::SubpassContents::INLINE,
         //     )
         // };
+
+        let swapchain = self.swapchain_table.get(&target_id).unwrap();
+        let swapchain_loader = self.swapchain_loader_table.get(&target_id).unwrap();
+        let swapchain_images =
+            unsafe { swapchain_loader.get_swapchain_images(*swapchain) }.unwrap();
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ash::vk::DependencyFlags::empty(),
+                &[], // MemoryBariier
+                &[], // BufferMemoryBariier
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .image(swapchain_images[render_params.process_index as usize])
+                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .new_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )],
+            )
+        }
+
         unsafe {
             device.cmd_begin_rendering(
                 command_buffer,
@@ -1165,7 +1201,12 @@ impl IBackend for BackendVk {
                             .extent(ash::vk::Extent2D::default().width(640).height(480)),
                     )
                     .layer_count(1)
-                    .color_attachments(&[ash::vk::RenderingAttachmentInfo::default()]),
+                    .color_attachments(&[ash::vk::RenderingAttachmentInfo::default()
+                        .load_op(ash::vk::AttachmentLoadOp::CLEAR)
+                        .store_op(ash::vk::AttachmentStoreOp::STORE)
+                        .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .clear_value(ash::vk::ClearValue::default())
+                        .image_view(present_image_views[render_params.process_index as usize])]),
             )
         }
 
@@ -1226,7 +1267,7 @@ impl IBackend for BackendVk {
             shader_object_device.cmd_set_stencil_test_enable(command_buffer, false);
 
             // ブレンドステート
-            shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, false);
+            shader_object_device.cmd_set_alpha_to_coverage_enable(command_buffer, true);
 
             // 頂点ステート
             shader_object_device.cmd_set_vertex_input(
@@ -1288,6 +1329,7 @@ impl IBackend for BackendVk {
             }
         }
 
+        println!("12");
         // インスタンス描画
         // 一部パラメーターは固定
         unsafe {
@@ -1301,11 +1343,37 @@ impl IBackend for BackendVk {
             );
         }
 
+        println!("AAA");
         unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
 
         // レンダーパス終わり
         unsafe { device.cmd_end_rendering(command_buffer) }
+        println!("bdfg");
 
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                ash::vk::DependencyFlags::empty(),
+                &[], // MemoryBariier
+                &[], // BufferMemoryBariier
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .image(swapchain_images[render_params.process_index as usize])
+                    .old_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )],
+            )
+        }
+
+        println!("CCC");
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
