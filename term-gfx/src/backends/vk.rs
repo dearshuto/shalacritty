@@ -1129,6 +1129,43 @@ impl IBackend for BackendVk {
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
 
+        // レンダーパス
+        // let clear_values = [vk::ClearValue {
+        //     color: vk::ClearColorValue {
+        //         float32: [0.1, 0.2, 0.3, 0.0],
+        //     },
+        // }];
+        // let render_pass_begin_info = ash::vk::RenderPassBeginInfo::default()
+        //     .render_pass(*render_pass)
+        //     .framebuffer(frame_buffers[render_params.process_index as usize])
+        //     .render_area(ash::vk::Rect2D {
+        //         offset: ash::vk::Offset2D { x: 0, y: 0 },
+        //         extent: ash::vk::Extent2D {
+        //             width: 640,
+        //             height: 480,
+        //         },
+        //     })
+        //     .clear_values(&clear_values);
+        // unsafe {
+        //     device.cmd_begin_render_pass(
+        //         command_buffer,
+        //         &render_pass_begin_info,
+        //         ash::vk::SubpassContents::INLINE,
+        //     )
+        // };
+        unsafe {
+            device.cmd_begin_rendering(
+                command_buffer,
+                &ash::vk::RenderingInfo::default()
+                    .render_area(
+                        ash::vk::Rect2D::default()
+                            .extent(ash::vk::Extent2D::default().width(640).height(480)),
+                    )
+                    .layer_count(1)
+                    .color_attachments(&[ash::vk::RenderingAttachmentInfo::default()]),
+            )
+        }
+
         // シェーダー
         unsafe {
             shader_object_device.cmd_bind_shaders(
@@ -1246,16 +1283,21 @@ impl IBackend for BackendVk {
         // インスタンス描画
         // 一部パラメーターは固定
         unsafe {
-            device.cmd_draw(command_buffer, 3, 1, 0, 0)
-            // device.cmd_draw_indexed(
-            //     command_buffer,
-            //     render_params.index_count,
-            //     render_params.instance_count,
-            //     0, /*first_index*/
-            //     0, /*vertex_offset*/
-            //     0, /*first_instance*/
-            // );
+            device.cmd_draw_indexed(
+                command_buffer,
+                render_params.index_count,
+                render_params.instance_count,
+                0, /*first_index*/
+                0, /*vertex_offset*/
+                0, /*first_instance*/
+            );
         }
+
+        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
+
+        // レンダーパス終わり
+        unsafe { device.cmd_end_rendering(command_buffer) }
+
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         // コマンドの提出
