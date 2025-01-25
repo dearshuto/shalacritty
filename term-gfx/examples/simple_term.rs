@@ -38,7 +38,7 @@ impl<TBackend: term_gfx::IBackend> ApplicationHandler for App<TBackend> {
         // レンダラーのバックエンドで実装簡略化のために 640x480 を決め打ちしているのでここでも制限をかける
         let window_attribute = WindowAttributes::default()
             .with_inner_size(winit::dpi::PhysicalSize::new(640, 480))
-            .with_resizable(false);
+            .with_resizable(true);
         let window = event_loop.create_window(window_attribute).unwrap();
         let window_handle = window.window_handle().unwrap();
         let display_handle = window.display_handle().unwrap();
