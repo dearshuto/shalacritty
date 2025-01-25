@@ -577,9 +577,19 @@ impl IBackend for BackendVk {
             layout: ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         }];
         let subpass_description = [
+            // 背景
             ash::vk::SubpassDescription::default()
                 .color_attachments(&color_attachments)
                 .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
+            // 文字
+            ash::vk::SubpassDescription::default()
+                .color_attachments(&color_attachments)
+                .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
+            // カーソル
+            ash::vk::SubpassDescription::default()
+                .color_attachments(&color_attachments)
+                .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
+            // 矩形(拡張予定)
             ash::vk::SubpassDescription::default()
                 .color_attachments(&color_attachments)
                 .pipeline_bind_point(ash::vk::PipelineBindPoint::GRAPHICS),
@@ -1181,6 +1191,9 @@ impl IBackend for BackendVk {
             );
         }
 
+        // 未実装のサブパス分は未使用のまま見送る
+        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
+        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
         unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
 
         // レンダーパス終わり
