@@ -824,6 +824,7 @@ impl IBackend for BackendVk {
             crate::traits::BufferUsage::UnorderedAccessBuffer => {
                 ash::vk::BufferUsageFlags::STORAGE_BUFFER
             }
+            crate::traits::BufferUsage::CopySource => ash::vk::BufferUsageFlags::TRANSFER_SRC,
         };
         let buffer_create_info = ash::vk::BufferCreateInfo::default()
             .usage(buffer_usafe_flag)

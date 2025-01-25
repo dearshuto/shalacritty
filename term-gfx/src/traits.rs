@@ -6,6 +6,7 @@ pub enum BufferUsage {
     VertexBuffer,
     UniformBuffer,
     UnorderedAccessBuffer,
+    CopySource,
 }
 
 pub enum DescriptorType {
