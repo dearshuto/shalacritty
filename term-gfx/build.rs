@@ -1,35 +1,40 @@
 fn main() {
-    let mut binary = convert_shader(
-        include_str!("res/character.vs.glsl"),
-        naga::ShaderStage::Vertex,
-    );
-    let pte = binary.as_mut_ptr() as *mut u8;
-
-    unsafe {
-        std::fs::write(
+    let source_and_output_path_iter = [
+        (
+            include_str!("res/background.vs"),
+            naga::ShaderStage::Vertex,
+            "res/background.vs.spv",
+        ),
+        (
+            include_str!("res/background.fs"),
+            naga::ShaderStage::Fragment,
+            "res/background.fs.spv",
+        ),
+        (
+            include_str!("res/character.vs.glsl"),
+            naga::ShaderStage::Vertex,
             "res/character.vs.spv",
-            std::ptr::slice_from_raw_parts_mut(pte, binary.len() * 4)
-                .as_ref()
-                .unwrap(),
-        )
-    }
-    .unwrap();
-
-    let mut binary = convert_shader(
-        include_str!("res/character.fs.glsl"),
-        naga::ShaderStage::Fragment,
-    );
-    let pte = binary.as_mut_ptr() as *mut u8;
-
-    unsafe {
-        std::fs::write(
+        ),
+        (
+            include_str!("res/character.fs.glsl"),
+            naga::ShaderStage::Fragment,
             "res/character.fs.spv",
-            std::ptr::slice_from_raw_parts_mut(pte, binary.len() * 4)
-                .as_ref()
-                .unwrap(),
-        )
+        ),
+    ];
+    for (soruce, stage, output_path) in source_and_output_path_iter {
+        let mut binary = convert_shader(soruce, stage);
+        let pte = binary.as_mut_ptr() as *mut u8;
+
+        unsafe {
+            std::fs::write(
+                output_path,
+                std::ptr::slice_from_raw_parts_mut(pte, binary.len() * 4)
+                    .as_ref()
+                    .unwrap(),
+            )
+        }
+        .unwrap();
     }
-    .unwrap();
 }
 
 fn convert_shader(source: &str, stage: naga::ShaderStage) -> Vec<u32> {
