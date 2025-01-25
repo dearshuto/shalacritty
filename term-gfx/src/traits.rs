@@ -99,6 +99,7 @@ pub trait IBackend {
             Self::PipelineId,
             Self::DescriptorSetId,
             Self::BufferId,
+            Self::ImageId,
         >,
     );
 
@@ -131,7 +132,25 @@ pub struct AllocateImageParams {
 }
 
 #[derive(Debug)]
-pub struct RenderParams<TRenderTargetId, TSemaporeId, TPipelineId, TDescriptorSetId, TBufferId> {
+pub struct BufferImageCopyParams<TBufferId, TImageId> {
+    pub buffer_id: TBufferId,
+    pub image_id: TImageId,
+    pub buffer_offset: usize,
+    pub buffer_row_length: usize,
+    pub buffer_image_height: usize,
+    pub image_offset: (usize, usize),
+    pub image_size: (usize, usize),
+}
+
+#[derive(Debug)]
+pub struct RenderParams<
+    TRenderTargetId,
+    TSemaporeId,
+    TPipelineId,
+    TDescriptorSetId,
+    TBufferId,
+    TImageId,
+> {
     pub process_index: u32,
     pub render_target_id: TRenderTargetId,
     pub acquire_next_frame_semaphore_id: TSemaporeId,
@@ -142,6 +161,7 @@ pub struct RenderParams<TRenderTargetId, TSemaporeId, TPipelineId, TDescriptorSe
     pub index_buffer_id: TBufferId,
     pub index_count: u32,
     pub instance_count: u32,
+    pub buffer_image_copy_params: Option<BufferImageCopyParams<TBufferId, TImageId>>,
 }
 
 #[derive(Debug)]
