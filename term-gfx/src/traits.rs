@@ -32,12 +32,13 @@ pub trait IBackend {
 
     fn create_semaphore(&mut self, id: Self::RenderTargetId) -> Result<Self::SemaphoreId, ()>;
 
-    fn create_pipeline(
+    fn create_pipeline<T>(
         &mut self,
         id: Self::RenderTargetId,
-        vertex_shader_spv: &[u8],
-        pixel_shader_spv: &[u8],
-    ) -> Result<Self::PipelineId, ()>;
+        shader_code_provider: T,
+    ) -> Result<Self::PipelineId, ()>
+    where
+        T: IShaderCodeProvider;
 
     fn allocate_descriptor_set(
         &mut self,
@@ -104,6 +105,16 @@ pub trait IBackend {
 
 pub trait IMapHandle {
     fn write(&mut self, offset: usize, data: &[u8]);
+}
+
+pub trait IShaderCodeProvider {
+    fn get_background_vertex_shader_binary(&self) -> &[u32];
+
+    fn get_background_fragment_shader_binary(&self) -> &[u32];
+
+    fn get_character_vertex_shader_binary(&self) -> &[u32];
+
+    fn get_character_fragment_shader_binary(&self) -> &[u32];
 }
 
 #[derive(Debug)]

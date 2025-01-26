@@ -5,7 +5,10 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 
 use crate::{
     backends::BackendVk,
-    traits::{BufferUsage, IMapHandle, RenderParams, UpdateBufferInfo, UpdateDescriptorsParams},
+    traits::{
+        BufferUsage, IMapHandle, IShaderCodeProvider, RenderParams, UpdateBufferInfo,
+        UpdateDescriptorsParams,
+    },
     IBackend,
 };
 
@@ -60,13 +63,11 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             .register_surface(window_handle, display_handle)
             .unwrap();
 
+        let shader_code_provider = ShaderCodeProvider::new();
+
         let pipeline_id = self
             .backend
-            .create_pipeline(
-                target_id,
-                include_bytes!("../res/character.vs.spv"),
-                include_bytes!("../res/character.fs.spv"),
-            )
+            .create_pipeline(target_id, shader_code_provider)
             .unwrap();
 
         let vertex_buffer_id = self
@@ -211,5 +212,56 @@ impl<TBackend: IBackend> Drop for Renderer<TBackend> {
             self.backend.destroy_buffer(*key, value.vertex_buffer_id);
             false
         });
+    }
+}
+
+struct ShaderCodeProvider {
+    background_vertex_shader_binary: Vec<u32>,
+    background_fragment_shader_binary: Vec<u32>,
+    character_vertex_shader_binary: Vec<u32>,
+    character_fragment_shader_binary: Vec<u32>,
+}
+
+impl ShaderCodeProvider {
+    pub fn new() -> Self {
+        Self {
+            background_vertex_shader_binary: Self::convert(include_bytes!(
+                "../res/background.vs.spv"
+            )),
+            background_fragment_shader_binary: Self::convert(include_bytes!(
+                "../res/background.fs.spv"
+            )),
+            character_vertex_shader_binary: Self::convert(include_bytes!(
+                "../res/character.vs.spv"
+            )),
+            character_fragment_shader_binary: Self::convert(include_bytes!(
+                "../res/character.fs.spv"
+            )),
+        }
+    }
+
+    fn convert(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks(4)
+            .map(|x| (x[3] as u32) << 24 | (x[2] as u32) << 16 | (x[1] as u32) << 8 | x[0] as u32)
+            .collect()
+    }
+}
+
+impl IShaderCodeProvider for ShaderCodeProvider {
+    fn get_background_vertex_shader_binary(&self) -> &[u32] {
+        &self.background_vertex_shader_binary
+    }
+
+    fn get_background_fragment_shader_binary(&self) -> &[u32] {
+        &self.background_fragment_shader_binary
+    }
+
+    fn get_character_vertex_shader_binary(&self) -> &[u32] {
+        &self.character_vertex_shader_binary
+    }
+
+    fn get_character_fragment_shader_binary(&self) -> &[u32] {
+        &self.character_fragment_shader_binary
     }
 }
