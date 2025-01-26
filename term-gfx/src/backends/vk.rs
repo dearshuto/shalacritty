@@ -12,7 +12,7 @@ use util::Align;
 
 use crate::{
     detail,
-    traits::{IMapHandle, RenderParams, UpdateDescriptorsParams},
+    traits::{IMapHandle, IShaderCodeProvider, RenderParams, UpdateDescriptorsParams},
     IBackend,
 };
 
@@ -469,12 +469,14 @@ impl IBackend for BackendVk {
         Ok(semaphore_id)
     }
 
-    fn create_pipeline(
+    fn create_pipeline<T>(
         &mut self,
         id: Self::RenderTargetId,
-        vertex_shader_spv: &[u8],
-        pixel_shader_spv: &[u8],
-    ) -> Result<Self::PipelineId, ()> {
+        shader_code_provider: T,
+    ) -> Result<Self::PipelineId, ()>
+    where
+        T: IShaderCodeProvider,
+    {
         let Some(device) = self.device_table.get(&id) else {
             return Err(());
         };
@@ -484,24 +486,19 @@ impl IBackend for BackendVk {
         };
 
         let shader_reflection = detail::ShaderReflection::new();
-        let vertex_stage_layout = shader_reflection.parse(vertex_shader_spv).unwrap();
+        let vertex_stage_layout = shader_reflection
+            .parse_u32(
+                shader_code_provider
+                    .get_character_vertex_shader_binary()
+                    .iter()
+                    .map(|x| *x),
+            )
+            .unwrap();
 
-        let vertex_shader_spv = unsafe {
-            &*std::ptr::slice_from_raw_parts(
-                vertex_shader_spv.as_ptr() as *const u32,
-                vertex_shader_spv.len() / 4,
-            )
-        };
-        let pixel_shader_spv = unsafe {
-            &*std::ptr::slice_from_raw_parts(
-                pixel_shader_spv.as_ptr() as *const u32,
-                pixel_shader_spv.len() / 4,
-            )
-        };
-        let vertex_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(vertex_shader_spv);
-        let pixel_shader_module_create_info =
-            vk::ShaderModuleCreateInfo::default().code(pixel_shader_spv);
+        let vertex_shader_module_create_info = vk::ShaderModuleCreateInfo::default()
+            .code(shader_code_provider.get_character_vertex_shader_binary());
+        let pixel_shader_module_create_info = vk::ShaderModuleCreateInfo::default()
+            .code(shader_code_provider.get_character_fragment_shader_binary());
 
         let vertex_shader_module =
             unsafe { device.create_shader_module(&vertex_shader_module_create_info, None) }
