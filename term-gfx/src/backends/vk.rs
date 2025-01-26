@@ -66,6 +66,9 @@ pub struct BackendVk {
     buffer_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::Buffer>>,
     device_memory_table: HashMap<RenderTargetId, HashMap<BufferId, ash::vk::DeviceMemory>>,
 
+    // サンプラー
+    sampler_table: HashMap<RenderTargetId, ash::vk::Sampler>,
+
     // レンダーパス
     render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
 
@@ -172,6 +175,7 @@ impl IBackend for BackendVk {
             descriptor_pool_table: HashMap::default(),
             descriptor_set_table: HashMap::default(),
             descriptor_set_layout_table: HashMap::default(),
+            sampler_table: HashMap::default(),
         }
     }
 
@@ -405,6 +409,18 @@ impl IBackend for BackendVk {
         let descriptor_pool =
             unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }.unwrap();
 
+        // サンプラー
+        let sampler = unsafe {
+            let create_info = ash::vk::SamplerCreateInfo::default()
+                .mag_filter(ash::vk::Filter::LINEAR)
+                .min_filter(ash::vk::Filter::LINEAR)
+                .mipmap_mode(ash::vk::SamplerMipmapMode::NEAREST)
+                .address_mode_u(ash::vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(ash::vk::SamplerAddressMode::CLAMP_TO_EDGE);
+            device.create_sampler(&create_info, None)
+        }
+        .unwrap();
+
         // インスタンスの保持
         let id = RenderTargetId {
             internal: uuid::Uuid::new_v4(),
@@ -427,6 +443,7 @@ impl IBackend for BackendVk {
             .insert(id, [present_image_view[0], present_image_view[1]]);
         self.fence_table.insert(id, fence);
         self.descriptor_pool_table.insert(id, descriptor_pool);
+        self.sampler_table.insert(id, sampler);
 
         Ok(id)
     }
@@ -1296,6 +1313,11 @@ impl Drop for BackendVk {
                 }
 
                 unsafe { device.destroy_command_pool(command_pool, None) }
+            }
+
+            // サンプラー
+            for sampler in self.sampler_table.values() {
+                unsafe { device.destroy_sampler(*sampler, None) }
             }
 
             // デバイスメモリー
