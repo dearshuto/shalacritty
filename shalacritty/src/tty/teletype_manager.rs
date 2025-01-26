@@ -95,8 +95,8 @@ impl TeletypeManager {
             #[cfg(target_os = "windows")]
             shell: Some(Shell::new("cmd.exe".to_string(), Vec::default())),
             working_directory: None,
-            hold: true,
             env: HashMap::default(),
+            drain_on_exit: true,
         };
         let window_size = WindowSize {
             num_lines: 64,

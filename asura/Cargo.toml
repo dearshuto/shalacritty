@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# 2024 年 12 月 29 日のリビジョン
-alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "7bd3b89" }
+# 2025 年 1 月 15 日のリビジョン
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5e78d20" }
 
 uuid = { version = "*", features = ["v7"] }
