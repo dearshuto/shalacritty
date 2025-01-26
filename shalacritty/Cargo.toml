@@ -12,8 +12,8 @@ profiler_core = { path = "../profiler_core" }
 term-gfx = { path = "../term-gfx" }
 vw = { path = "../vw" }
 
-# 2024 年 12 月 29 日のリビジョン
-alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "7bd3b89" }
+# 2025 年 1 月 15 日のリビジョン
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5e78d20" }
 
 bytemuck = { version = "*", features = ["derive"] }
 clap = { version = "4.4.18", features = ["derive"] }
