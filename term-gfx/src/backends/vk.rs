@@ -12,7 +12,9 @@ use util::Align;
 
 use crate::{
     detail,
-    traits::{IMapHandle, IShaderCodeProvider, RenderParams, UpdateDescriptorsParams},
+    traits::{
+        AllocateImageParams, IMapHandle, IShaderCodeProvider, RenderParams, UpdateDescriptorsParams,
+    },
     IBackend,
 };
 
@@ -28,6 +30,11 @@ pub struct SemaphoreId {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct BufferId {
+    internal: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct ImageId {
     internal: uuid::Uuid,
 }
 
@@ -68,6 +75,10 @@ pub struct BackendVk {
 
     // サンプラー
     sampler_table: HashMap<RenderTargetId, ash::vk::Sampler>,
+
+    // イメージ
+    image_table: HashMap<RenderTargetId, HashMap<ImageId, ash::vk::Image>>,
+    image_device_memory_table: HashMap<RenderTargetId, HashMap<ImageId, ash::vk::DeviceMemory>>,
 
     // レンダーパス
     render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
@@ -143,6 +154,7 @@ impl IBackend for BackendVk {
     type PipelineId = PipelineId;
     type DescriptorSetId = DescriptorSetId;
     type BufferId = BufferId;
+    type ImageId = ImageId;
     type MapHandle = MapHandle;
 
     fn new() -> BackendVk {
@@ -168,6 +180,8 @@ impl IBackend for BackendVk {
             semaphore_table: HashMap::default(),
             buffer_table: HashMap::default(),
             device_memory_table: HashMap::default(),
+            image_table: HashMap::default(),
+            image_device_memory_table: HashMap::default(),
             render_pass_table: HashMap::default(),
             pipeline_table: HashMap::default(),
             pipeline_layout_table: HashMap::default(),
@@ -813,6 +827,78 @@ impl IBackend for BackendVk {
         unsafe { device.update_descriptor_sets(&write_descriptor_sets, &[]) };
     }
 
+    fn allocate_image(
+        &mut self,
+        id: Self::RenderTargetId,
+        params: &AllocateImageParams,
+    ) -> Result<Self::ImageId, ()> {
+        let Some(instance) = self.instance_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(physical_device) = self.physical_device_table.get(&id) else {
+            return Err(());
+        };
+
+        let Some(device) = self.device_table.get(&id) else {
+            return Err(());
+        };
+
+        let create_info = ash::vk::ImageCreateInfo::default()
+            .image_type(ash::vk::ImageType::TYPE_2D)
+            .extent(
+                ash::vk::Extent3D::default()
+                    .width(params.width)
+                    .height(params.height)
+                    .depth(1),
+            )
+            .format(ash::vk::Format::R8G8B8A8_UNORM)
+            .mip_levels(1)
+            .array_layers(1)
+            .samples(ash::vk::SampleCountFlags::TYPE_1)
+            .tiling(ash::vk::ImageTiling::OPTIMAL)
+            .usage(ash::vk::ImageUsageFlags::TRANSFER_DST | ash::vk::ImageUsageFlags::SAMPLED)
+            .sharing_mode(ash::vk::SharingMode::EXCLUSIVE)
+            .initial_layout(ash::vk::ImageLayout::UNDEFINED);
+        let image = unsafe { device.create_image(&create_info, None) }.unwrap();
+
+        let texture_requirement = unsafe { device.get_image_memory_requirements(image) };
+        let device_memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(*physical_device) };
+        let memory_index = Self::find_memorytype_index(
+            &texture_requirement,
+            &device_memory_properties,
+            ash::vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )
+        .unwrap();
+
+        let memory_allocate_info = ash::vk::MemoryAllocateInfo::default()
+            .allocation_size(texture_requirement.size)
+            .memory_type_index(memory_index);
+        let device_memory = unsafe { device.allocate_memory(&memory_allocate_info, None) }.unwrap();
+
+        unsafe { device.bind_image_memory(image, device_memory, 0) }.unwrap();
+
+        let image_id = ImageId {
+            internal: uuid::Uuid::now_v7(),
+        };
+
+        self.image_table
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(image_id, image);
+            })
+            .or_insert(HashMap::from([(image_id, image)]));
+        self.image_device_memory_table
+            .entry(id)
+            .and_modify(|x| {
+                x.insert(image_id, device_memory);
+            })
+            .or_insert(HashMap::from([(image_id, device_memory)]));
+
+        Ok(image_id)
+    }
+
     fn allocate_buffer(
         &mut self,
         id: Self::RenderTargetId,
@@ -1321,6 +1407,21 @@ impl Drop for BackendVk {
             if let Some(device_memory_table) = self.device_memory_table.remove(render_target_id) {
                 for device_memory in device_memory_table.values() {
                     unsafe { device.free_memory(*device_memory, None) }
+                }
+            }
+
+            if let Some(device_memory_table) =
+                self.image_device_memory_table.remove(render_target_id)
+            {
+                for device_memory in device_memory_table.values() {
+                    unsafe { device.free_memory(*device_memory, None) }
+                }
+            }
+
+            // イメージ
+            if let Some(image_table) = self.image_table.remove(render_target_id) {
+                for image in image_table.values() {
+                    unsafe { device.destroy_image(*image, None) }
                 }
             }
 
