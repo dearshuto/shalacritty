@@ -12,5 +12,6 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    App::run(args.is_profile_server_enabled);
+    let renderer = term_gfx::Renderer::new();
+    App::run(renderer, args.is_profile_server_enabled);
 }
