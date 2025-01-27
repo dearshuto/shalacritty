@@ -18,6 +18,7 @@ use crate::workspace::{IWorkspaceCallback, Workspace};
 
 pub struct App<'a> {
     runtime: Arc<tokio::runtime::Runtime>,
+    window_table: HashMap<winit::window::WindowId, winit::window::Window>,
     workspace: Workspace<'a, ServerBackend>,
     modifiers_state: ModifiersState,
     profiler_server_task: JoinHandle<()>,
@@ -42,6 +43,7 @@ impl<'a> App<'a> {
 
         Self {
             runtime,
+            window_table: HashMap::default(),
             workspace,
             modifiers_state: ModifiersState::default(),
             profiler_server_task,
@@ -146,9 +148,21 @@ impl IWorkspaceCallback for ServerBackend {
 impl<'a> ApplicationHandler for App<'a> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // ひとつだけウィンドウを起動しておく
+        let window_attributes = winit::window::WindowAttributes::default()
+            .with_transparent(true)
+            .with_min_inner_size(winit::dpi::PhysicalSize::new(300, 300))
+            .with_max_inner_size(winit::dpi::PhysicalSize::new(4096, 4096));
+        let window = event_loop.create_window(window_attributes).unwrap();
+        let (width, height) = (window.inner_size().width, window.inner_size().height);
+        let id = window.id();
+        window.set_ime_allowed(true);
+
         self.runtime.block_on(async {
-            self.workspace.spawn_window(event_loop).await;
+            self.workspace
+                .assign_window(id, &window, width, height)
+                .await;
         });
+        self.window_table.insert(id, window);
 
         let timer_length = Duration::from_millis(10);
         let control_flow = ControlFlow::WaitUntil(Instant::now() + timer_length);
@@ -158,9 +172,18 @@ impl<'a> ApplicationHandler for App<'a> {
     fn new_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, cause: StartCause) {
         match cause {
             StartCause::ResumeTimeReached { .. } => {
-                self.workspace.update();
+                let Some((id, window)) = self.window_table.iter().next() else {
+                    return;
+                };
+
+                self.workspace
+                    .update(*id, window.inner_size().width, window.inner_size().height);
                 if self.workspace.is_empty() {
                     event_loop.exit();
+                } else {
+                    for window in self.window_table.values() {
+                        window.request_redraw();
+                    }
                 }
             }
             StartCause::WaitCancelled { .. } => {}
@@ -187,6 +210,10 @@ impl<'a> ApplicationHandler for App<'a> {
             },
             WindowEvent::Resized(size) => {
                 self.workspace.resize(window_id, size.width, size.height);
+
+                if let Some(window) = self.window_table.get(&window_id) {
+                    window.request_redraw();
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.workspace.render(window_id);

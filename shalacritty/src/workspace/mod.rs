@@ -6,15 +6,16 @@ use std::{collections::HashSet, sync::Arc};
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
-use winit::{event_loop::ActiveEventLoop, keyboard::ModifiersState, window::WindowId};
+use wgpu::SurfaceTarget;
+use winit::{keyboard::ModifiersState, window::WindowId};
 
 use crate::{
     gfx::{
         ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
     },
     multiplexers::{TileId, TileManager},
-    window::WindowManager,
     ConfigService,
 };
 
@@ -31,7 +32,6 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     #[allow(dead_code)]
     config_service: Arc<ConfigService>,
     glyph_manager: GlyphManager,
-    window_manager: WindowManager,
     content_plotter: ContentPlotter,
 
     renderer: Renderer<'a, BackgroundRenderer<BackgroundRendererContext>>,
@@ -65,7 +65,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let instance = wgpu::Instance::default();
         let config_service = ConfigService::new();
         let glyph_manager = GlyphManager::new(config_service.read().unwrap().font_size);
-        let window_manager = WindowManager::new();
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
@@ -92,7 +91,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             instance,
             config_service: config_service.clone(),
             glyph_manager,
-            window_manager,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
             tile_id_set: HashSet::from([tile_id]),
@@ -116,21 +114,24 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         }
     }
 
-    pub async fn spawn_window(&mut self, event_loop: &ActiveEventLoop) {
-        let id = self.window_manager.create_window(event_loop).await;
-        let window = self.window_manager.try_get_window(id).unwrap();
-        let window_size = window.inner_size();
-
+    pub async fn assign_window<'w, TWindow>(
+        &mut self,
+        id: winit::window::WindowId,
+        window: TWindow,
+        width: u32,
+        height: u32,
+    ) where
+        TWindow: HasWindowHandle + HasDisplayHandle,
+    {
         // 初期サイズ反映
-        self.resize(id, window_size.width, window_size.height);
+        self.resize(id, width, height);
 
         // 載せ替え予定
         self.renderer.register(id, &self.instance, window).await;
-        self.renderer
-            .resize(id, window_size.width, window_size.height);
+        self.renderer.resize(id, width, height);
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
         self.callback
             .begin(std::time::SystemTime::now(), "config_diff");
@@ -154,79 +155,69 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             self.glyph_manager.set_font_size(font_size);
         }
 
-        for window_id in self.window_manager.ids() {
-            // 最描画要求
-            let Some(window) = self.window_manager.try_get_window(*window_id) else {
+        // 強制更新のフラグが立ってたらダーティーフラグは見ない
+        if self.is_force_dirty {
+            self.is_force_dirty = false;
+        } else {
+            let Some(is_tty_dirty) = self.tile_manager.consume_dirty() else {
                 return;
             };
 
-            // 強制更新のフラグが立ってたらダーティーフラグは見ない
-            if self.is_force_dirty {
-                self.is_force_dirty = false;
-            } else {
-                let Some(is_tty_dirty) = self.tile_manager.consume_dirty() else {
-                    continue;
-                };
-
-                // 差分がなかったらなにもしない
-                if !is_tty_dirty && !is_config_dirty {
-                    continue;
-                }
+            // 差分がなかったらなにもしない
+            if !is_tty_dirty && !is_config_dirty {
+                return;
             }
-
-            self.callback.begin(
-                std::time::SystemTime::now(),
-                "TileManager::enumerate_content()",
-            );
-            let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
-            self.callback.end(
-                std::time::SystemTime::now(),
-                "TileManager::enumerate_content()",
-            );
-
-            // グリフの抽出
-            let glyph_texture_patches: Vec<GlyphTexturePatch> = self
-                .glyph_manager
-                .extract_range(
-                    contents
-                        .iter()
-                        .map(|c| c.code())
-                        .collect::<Vec<char>>()
-                        .into_iter(),
-                )
-                .collect();
-
-            let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
-
-            self.callback.begin(
-                std::time::SystemTime::now(),
-                "ContentPlotter::calculate_diff()",
-            );
-            let diff = self.content_plotter.calculate_diff(
-                contents.into_iter(),
-                &Point {
-                    column: Column::from(cursor_x as usize),
-                    line: Line::from(cursor_y as usize),
-                },
-                &self.glyph_manager,
-                (window.inner_size().width, window.inner_size().height),
-            );
-            self.callback.end(
-                std::time::SystemTime::now(),
-                "ContentPlotter::calculate_diff()",
-            );
-
-            let update_params =
-                RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
-                    .with_diff(diff)
-                    .with_glyph_texture_patches(glyph_texture_patches)
-                    .with_background_color(background)
-                    .with_image_path(image_path.clone());
-            self.renderer
-                .update_with_user_data(*window_id, &update_params);
-
-            window.request_redraw();
         }
+
+        self.callback.begin(
+            std::time::SystemTime::now(),
+            "TileManager::enumerate_content()",
+        );
+        let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
+        self.callback.end(
+            std::time::SystemTime::now(),
+            "TileManager::enumerate_content()",
+        );
+
+        // グリフの抽出
+        let glyph_texture_patches: Vec<GlyphTexturePatch> = self
+            .glyph_manager
+            .extract_range(
+                contents
+                    .iter()
+                    .map(|c| c.code())
+                    .collect::<Vec<char>>()
+                    .into_iter(),
+            )
+            .collect();
+
+        let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
+
+        self.callback.begin(
+            std::time::SystemTime::now(),
+            "ContentPlotter::calculate_diff()",
+        );
+        let diff = self.content_plotter.calculate_diff(
+            contents.into_iter(),
+            &Point {
+                column: Column::from(cursor_x as usize),
+                line: Line::from(cursor_y as usize),
+            },
+            &self.glyph_manager,
+            (width, height),
+        );
+        self.callback.end(
+            std::time::SystemTime::now(),
+            "ContentPlotter::calculate_diff()",
+        );
+
+        let update_params =
+            RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
+                .with_diff(diff)
+                .with_glyph_texture_patches(glyph_texture_patches)
+                .with_background_color(background)
+                .with_image_path(image_path.clone());
+        self.renderer.update_with_user_data(id, &update_params);
     }
 
     pub fn render(&mut self, id: WindowId) {
@@ -240,12 +231,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.tile_manager.resize(width, height);
 
         self.renderer.resize(id, width, height);
-
-        // 最描画要求
-        let Some(window) = self.window_manager.try_get_window(id) else {
-            return;
-        };
-        window.request_redraw();
     }
 
     pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
@@ -265,14 +250,14 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 self.tile_id_set.insert(new_id);
                 self.is_force_dirty = true;
 
-                for id in self.window_manager.ids() {
-                    let Some(window) = self.window_manager.try_get_window(*id) else {
-                        continue;
-                    };
+                // for id in self.window_manager.ids() {
+                //     let Some(window) = self.window_manager.try_get_window(*id) else {
+                //         continue;
+                //     };
 
-                    self.tile_manager
-                        .resize(window.inner_size().width, window.inner_size().height);
-                }
+                //     self.tile_manager
+                //         .resize(window.inner_size().width, window.inner_size().height);
+                // }
             }
             Action::NewTab => {
                 self.is_force_dirty = true;
@@ -288,12 +273,12 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 // タブが切り替わったタイミングで切り替え先の tty にリサイズをかける
                 // ウィンドウのリサイズタイミングで全ての tty をリサイズしてもいいかも
                 // MEMO:  ウィンドウはひとつを仮定
-                if let Some(window_id) = self.window_manager.ids().first() {
-                    if let Some(window) = self.window_manager.try_get_window(*window_id) {
-                        self.tile_manager
-                            .resize(window.inner_size().width, window.inner_size().height);
-                    }
-                }
+                // if let Some(window_id) = self.window_manager.ids().first() {
+                //     if let Some(window) = self.window_manager.try_get_window(*window_id) {
+                //         self.tile_manager
+                //             .resize(window.inner_size().width, window.inner_size().height);
+                //     }
+                // }
 
                 // 背景画像の切り替え
                 let id = self.image_ids.get(index as usize);

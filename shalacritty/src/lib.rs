@@ -4,7 +4,6 @@ mod gfx;
 mod multiplexers;
 mod tty;
 mod util;
-mod window;
 mod workspace;
 
 pub use app::App;
