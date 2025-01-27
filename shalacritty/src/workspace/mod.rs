@@ -41,6 +41,9 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 
     tile_manager: TileManager<MultiplexersAdapter>,
 
+    // シェル管理
+    multiplexer: asura::Multiplexer,
+
     // 設定の差分
     config_diff: ConfigDiff,
 
@@ -94,6 +97,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
+            multiplexer: asura::Multiplexer::new(),
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
             background_renderer_context: BackgroundRendererContext {
