@@ -13,4 +13,4 @@ tokio.workspace = true
 serde.workspace = true
 
 [build-dependencies]
-tonic-build = { version = "*", features = ["prost"] }
+tonic-build = { version = "0.12.3", features = ["prost"] }

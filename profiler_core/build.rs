@@ -16,6 +16,6 @@ fn main() {
             "profile_core.ProfileListResponse",
             "#[derive(serde::Deserialize, serde::Serialize)]",
         )
-        .compile(&["proto/profile.proto"], &Vec::<std::path::PathBuf>::new())
+        .compile_protos(&["proto/profile.proto"], &Vec::<std::path::PathBuf>::new())
         .unwrap();
 }
