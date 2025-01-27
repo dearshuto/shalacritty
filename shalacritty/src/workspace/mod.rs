@@ -8,7 +8,6 @@ use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
-use wgpu::SurfaceTarget;
 use winit::{keyboard::ModifiersState, window::WindowId};
 
 use crate::{

@@ -5,6 +5,7 @@ use std::{
 };
 
 use profiler_core::IServerBackend;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::{sync::oneshot, task::JoinHandle};
 use winit::{
     application::ApplicationHandler,
@@ -16,17 +17,24 @@ use winit::{
 
 use crate::workspace::{IWorkspaceCallback, Workspace};
 
-pub struct App<'a> {
+pub struct App<'a, TBackend>
+where
+    TBackend: term_gfx::IBackend,
+{
     runtime: Arc<tokio::runtime::Runtime>,
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
     workspace: Workspace<'a, ServerBackend>,
+    renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_server_task: JoinHandle<()>,
     profiler_kill_sender: oneshot::Sender<()>,
 }
 
-impl<'a> App<'a> {
-    pub fn new(is_profile_server_enabled: bool) -> Self {
+impl<'a, TBackend> App<'a, TBackend>
+where
+    TBackend: term_gfx::IBackend,
+{
+    pub fn new(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) -> Self {
         let runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
 
         let server_backend = ServerBackend::new();
@@ -45,16 +53,17 @@ impl<'a> App<'a> {
             runtime,
             window_table: HashMap::default(),
             workspace,
+            renderer,
             modifiers_state: ModifiersState::default(),
             profiler_server_task,
             profiler_kill_sender: tx,
         }
     }
 
-    pub fn run(is_profile_server_enabled: bool) {
+    pub fn run(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
         let event_loop = EventLoop::builder().build().unwrap();
 
-        let mut app = Self::new(is_profile_server_enabled);
+        let mut app = Self::new(renderer, is_profile_server_enabled);
         event_loop.run_app(&mut app).unwrap();
 
         if is_profile_server_enabled {
@@ -145,7 +154,10 @@ impl IWorkspaceCallback for ServerBackend {
     }
 }
 
-impl<'a> ApplicationHandler for App<'a> {
+impl<'a, TBackend> ApplicationHandler for App<'a, TBackend>
+where
+    TBackend: term_gfx::IBackend,
+{
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // ひとつだけウィンドウを起動しておく
         let window_attributes = winit::window::WindowAttributes::default()
@@ -162,6 +174,12 @@ impl<'a> ApplicationHandler for App<'a> {
                 .assign_window(id, &window, width, height)
                 .await;
         });
+
+        let window_handle = window.window_handle().unwrap();
+        let display_handle = window.display_handle().unwrap();
+        self.renderer
+            .register_surface(window_handle, display_handle)
+            .unwrap();
         self.window_table.insert(id, window);
 
         let timer_length = Duration::from_millis(10);
@@ -216,6 +234,9 @@ impl<'a> ApplicationHandler for App<'a> {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // 将来的にこっちに乗り換える
+                // self.renderer.render();
+
                 self.workspace.render(window_id);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
