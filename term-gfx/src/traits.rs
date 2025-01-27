@@ -20,6 +20,7 @@ pub trait IBackend {
     type PipelineId: Hash + Eq + Copy + Clone;
     type DescriptorSetId: Hash + Eq + Copy + Clone;
     type BufferId: Hash + Eq + Copy + Clone;
+    type ImageId: Hash + Eq + Copy + Clone;
     type MapHandle: IMapHandle;
 
     fn new() -> Self;
@@ -54,6 +55,12 @@ pub trait IBackend {
             Self::BufferId,
         >,
     );
+
+    fn allocate_image(
+        &mut self,
+        id: Self::RenderTargetId,
+        params: &AllocateImageParams,
+    ) -> Result<Self::ImageId, ()>;
 
     fn allocate_buffer(
         &mut self,
@@ -115,6 +122,12 @@ pub trait IShaderCodeProvider {
     fn get_character_vertex_shader_binary(&self) -> &[u32];
 
     fn get_character_fragment_shader_binary(&self) -> &[u32];
+}
+
+#[derive(Debug)]
+pub struct AllocateImageParams {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug)]

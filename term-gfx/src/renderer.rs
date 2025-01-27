@@ -6,8 +6,8 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 use crate::{
     backends::BackendVk,
     traits::{
-        BufferUsage, IMapHandle, IShaderCodeProvider, RenderParams, UpdateBufferInfo,
-        UpdateDescriptorsParams,
+        AllocateImageParams, BufferUsage, IMapHandle, IShaderCodeProvider, RenderParams,
+        UpdateBufferInfo, UpdateDescriptorsParams,
     },
     IBackend,
 };
@@ -94,6 +94,14 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             self.backend
                 .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, 64);
         }
+
+        let _glyph_image_id = self.backend.allocate_image(
+            target_id,
+            &AllocateImageParams {
+                width: 640,
+                height: 480,
+            },
+        );
 
         // 文字ごとの情報
         let character_ssbo = self
