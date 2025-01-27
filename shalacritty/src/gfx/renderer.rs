@@ -136,7 +136,7 @@ where
         }
     }
 
-    pub async fn register<TWindow>(
+    pub async fn register<'w, TWindow>(
         &mut self,
         id: WindowId,
         instance: &wgpu::Instance,
