@@ -6,8 +6,8 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 use crate::{
     backends::BackendVk,
     traits::{
-        AllocateImageParams, BufferUsage, IMapHandle, IShaderCodeProvider, RenderParams,
-        UpdateBufferInfo, UpdateDescriptorsParams,
+        AllocateImageParams, BufferImageCopyParams, BufferUsage, IMapHandle, IShaderCodeProvider,
+        RenderParams, UpdateBufferInfo, UpdateDescriptorsParams,
     },
     IBackend,
 };
@@ -29,6 +29,10 @@ struct Instance<TBackend: IBackend> {
     descriptor_set_id: Option<TBackend::DescriptorSetId>,
     vertex_buffer_id: TBackend::BufferId,
     index_buffer_id: TBackend::BufferId,
+
+    // 背景描画
+    copy_source_buffer_id: TBackend::BufferId,
+    background_image_id: TBackend::ImageId,
 }
 
 pub struct Renderer<TBackend: IBackend> {
@@ -65,6 +69,11 @@ impl<TBackend: IBackend> Renderer<TBackend> {
 
         let shader_code_provider = ShaderCodeProvider::new();
 
+        let copy_source_buffer_id = self
+            .backend
+            .allocate_buffer(target_id, 64, BufferUsage::CopySource)
+            .unwrap();
+
         let pipeline_id = self
             .backend
             .create_pipeline(target_id, shader_code_provider)
@@ -95,13 +104,16 @@ impl<TBackend: IBackend> Renderer<TBackend> {
                 .flush_buffer(target_id, index_buffer_id, 0 /*offset*/, 64);
         }
 
-        let _glyph_image_id = self.backend.allocate_image(
-            target_id,
-            &AllocateImageParams {
-                width: 640,
-                height: 480,
-            },
-        );
+        let glyph_image_id = self
+            .backend
+            .allocate_image(
+                target_id,
+                &AllocateImageParams {
+                    width: 640,
+                    height: 480,
+                },
+            )
+            .unwrap();
 
         // 文字ごとの情報
         let character_ssbo = self
@@ -168,6 +180,8 @@ impl<TBackend: IBackend> Renderer<TBackend> {
                 descriptor_set_id: Some(descriptor_set_id),
                 vertex_buffer_id,
                 index_buffer_id,
+                copy_source_buffer_id,
+                background_image_id: glyph_image_id,
             },
         );
 
@@ -200,6 +214,7 @@ impl<TBackend: IBackend> Renderer<TBackend> {
             index_buffer_id: instance.index_buffer_id,
             index_count: 6,
             instance_count: 4,
+            buffer_image_copy_params: None,
         };
         self.backend.render(render_params);
 

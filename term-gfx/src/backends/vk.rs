@@ -1088,6 +1088,7 @@ impl IBackend for BackendVk {
             Self::PipelineId,
             Self::DescriptorSetId,
             Self::BufferId,
+            Self::ImageId,
         >,
     ) {
         let target_id = render_params.render_target_id;
@@ -1182,6 +1183,45 @@ impl IBackend for BackendVk {
         let command_buffer_begin_info = ash::vk::CommandBufferBeginInfo::default()
             .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info) }.unwrap();
+
+        // 画像データのコピー
+        if let Some(params) = render_params.buffer_image_copy_params {
+            if let Some(buffer) = buffer_table.get(&params.buffer_id) {
+                if let Some(image_table) = self.image_table.get(&render_params.render_target_id) {
+                    if let Some(image) = image_table.get(&params.image_id) {
+                        unsafe {
+                            device.cmd_copy_buffer_to_image(
+                                command_buffer,
+                                *buffer,
+                                *image,
+                                ash::vk::ImageLayout::UNDEFINED,
+                                &[ash::vk::BufferImageCopy::default()
+                                    .buffer_offset(params.buffer_offset as u64)
+                                    .buffer_row_length(params.buffer_row_length as u32)
+                                    .buffer_image_height(params.buffer_image_height as u32)
+                                    .image_subresource(
+                                        ash::vk::ImageSubresourceLayers::default()
+                                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                                            .mip_level(0)
+                                            .base_array_layer(0)
+                                            .layer_count(1),
+                                    )
+                                    .image_offset(
+                                        ash::vk::Offset3D::default()
+                                            .x(params.image_offset.0 as i32)
+                                            .y(params.image_offset.1 as i32),
+                                    )
+                                    .image_extent(
+                                        ash::vk::Extent3D::default()
+                                            .width(params.image_size.0 as u32)
+                                            .height(params.image_size.1 as u32),
+                                    )],
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         // レンダーパス
         let clear_values = [vk::ClearValue {
