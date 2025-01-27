@@ -1,14 +1,14 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
-    detail::{TeletypeHandle, TeletypeManager},
+    detail::{TeletypeId, TeletypeManager},
     shell_id::ShellId,
     ShellEvent,
 };
 
 pub struct Multiplexer {
     teletype_manager: TeletypeManager,
-    table: HashMap<ShellId, TeletypeHandle>,
+    table: HashMap<ShellId, TeletypeId>,
 }
 
 impl Multiplexer {
@@ -34,22 +34,22 @@ impl Multiplexer {
     }
 
     pub fn resize(&mut self, id: ShellId, width: u32, height: u32) {
-        let Some(handle) = self.table.get(&id) else {
+        let Some(id) = self.table.get(&id) else {
             return;
         };
 
-        self.teletype_manager.resize(handle.id(), width, height);
+        self.teletype_manager.resize(*id, width, height);
     }
 
     // TODO: 暫定実装。将来的に API の設計は変える。
     // TODO: 表示要素をどのように外部と連携させるか設計を考える
     pub fn enumerate_content(&self, id: ShellId) -> Result<String, ()> {
-        let Some(handle) = self.table.get(&id) else {
+        let Some(id) = self.table.get(&id) else {
             return Err(());
         };
 
         let mut buffer = String::new();
-        self.teletype_manager.get_content(handle.id(), |x| {
+        self.teletype_manager.get_content(*id, |x| {
             let mut y = 0;
             for i in x.display_iter {
                 // 行が変わったら改行コードを挿入
@@ -73,19 +73,10 @@ impl Multiplexer {
     }
 
     pub fn input(&mut self, id: ShellId, input: &[u8]) {
-        let Some(handle) = self.table.get(&id) else {
+        let Some(id) = self.table.get(&id) else {
             return;
         };
 
-        let mut bytes = Vec::with_capacity(input.len() + 1);
-        bytes.extend_from_slice(input);
-        if input.is_empty() {
-            bytes.push(b'\x1b');
-        }
-
-        handle.send(alacritty_terminal::event_loop::Msg::Input(Cow::Owned(
-            bytes,
-        )));
-        self.teletype_manager.update();
+        self.teletype_manager.send_input(*id, input);
     }
 }

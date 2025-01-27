@@ -18,36 +18,11 @@ pub struct TeletypeId {
     internal: u64,
 }
 
-pub struct TeletypeHandle {
-    id: TeletypeId,
-    dirty_flag: Arc<Mutex<bool>>,
-    event_loop_sender: EventLoopSender,
-}
-
-impl TeletypeHandle {
-    pub fn id(&self) -> TeletypeId {
-        self.id
-    }
-
-    pub fn consume_dirty(&mut self) -> Option<bool> {
-        let Ok(mut value) = self.dirty_flag.lock() else {
-            return None;
-        };
-        let is_dirty = *value;
-        *value = false;
-
-        Some(is_dirty)
-    }
-
-    pub fn send(&self, message: Msg) {
-        self.event_loop_sender.send(message).unwrap();
-    }
-}
-
 pub struct TeletypeManager {
     terminal_table: HashMap<TeletypeId, Arc<FairMutex<Term<EventProxy>>>>,
     io_handle_table: HashMap<TeletypeId, JoinHandle<(EventLoop<Pty, EventProxy>, State)>>,
     ptr_write_table: Arc<Mutex<HashMap<TeletypeId, Vec<u8>>>>,
+    event_loop_sender_table: HashMap<TeletypeId, EventLoopSender>,
     current_id: u64,
 }
 
@@ -57,6 +32,7 @@ impl TeletypeManager {
             terminal_table: Default::default(),
             io_handle_table: HashMap::default(),
             ptr_write_table: Arc::new(Mutex::new(HashMap::default())),
+            event_loop_sender_table: HashMap::default(),
             current_id: 0,
         }
     }
@@ -76,11 +52,11 @@ impl TeletypeManager {
         }
     }
 
-    pub fn create_teletype(&mut self) -> TeletypeHandle {
+    pub fn create_teletype(&mut self) -> TeletypeId {
         self.create_teletype_with_size(SizeInfo::new())
     }
 
-    pub fn create_teletype_with_size<TDimension>(&mut self, size: TDimension) -> TeletypeHandle
+    pub fn create_teletype_with_size<TDimension>(&mut self, size: TDimension) -> TeletypeId
     where
         TDimension: Dimensions,
     {
@@ -123,17 +99,14 @@ impl TeletypeManager {
         .unwrap();
         // コマンドを送信するにはこれを返り値として渡す
         let channel = event_loop.channel();
+        self.event_loop_sender_table.insert(id, channel);
 
         // 起動
         let io_thread = event_loop.spawn();
         self.io_handle_table.insert(id, io_thread);
         self.terminal_table.insert(id, terminal);
 
-        TeletypeHandle {
-            id,
-            dirty_flag,
-            event_loop_sender: channel,
-        }
+        id
     }
 
     pub fn consume_ptr_write(&self) -> Vec<Vec<u8>> {
@@ -144,7 +117,14 @@ impl TeletypeManager {
     }
 
     pub fn send_input(&mut self, id: TeletypeId, input: &[u8]) {
-        // TODO
+        let Some(sender) = self.event_loop_sender_table.get(&id) else {
+            return;
+        };
+
+        // TODO: エラーハンドリング
+        sender
+            .send(Msg::Input(std::borrow::Cow::Owned(input.to_vec())))
+            .unwrap();
     }
 
     // シェルが勝手に閉じた場合に対応するためにこの関数を参照した方がよい
