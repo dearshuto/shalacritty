@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use wgpu::SurfaceTarget;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::WindowId;
 
 use super::{
@@ -142,9 +142,15 @@ where
         instance: &wgpu::Instance,
         window: TWindow,
     ) where
-        TWindow: Into<SurfaceTarget<'a>>,
+        TWindow: HasWindowHandle + HasDisplayHandle,
     {
-        let surface = instance.create_surface(window).unwrap();
+        let surface = unsafe {
+            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: window.display_handle().unwrap().as_raw(),
+                raw_window_handle: window.window_handle().unwrap().as_raw(),
+            })
+        }
+        .unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
