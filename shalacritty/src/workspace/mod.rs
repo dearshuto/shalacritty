@@ -15,7 +15,7 @@ use crate::{
         ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
     },
     multiplexers::{TileId, TileManager},
-    ConfigService,
+    Config, ConfigService,
 };
 
 use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
@@ -29,7 +29,7 @@ pub trait IWorkspaceCallback {
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     #[allow(dead_code)]
-    config_service: Arc<ConfigService>,
+    config_service: ConfigService,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
 
@@ -55,6 +55,8 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     clipboard_context: ClipboardContext,
 
     callback: TCallback,
+
+    config_changed_receiver: std::sync::mpsc::Receiver<Config>,
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
@@ -84,11 +86,12 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         if let Some(id) = image_ids.first() {
             image_cache.operate_image_and_wait(*id, |_| {});
         }
+        let receiver = config_service.listen();
 
-        let config_service = Arc::new(config_service);
+        let image_alpha = config_service.read().unwrap().image_alpha;
         Self {
             instance,
-            config_service: config_service.clone(),
+            config_service,
             glyph_manager,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
@@ -103,13 +106,14 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 } else {
                     Some(image_ids[0])
                 },
-                config_service,
+                image_alpha,
                 image_cache: Arc::new(image_cache),
                 window_size: (640, 480),
             },
             image_ids,
             clipboard_context,
             callback,
+            config_changed_receiver: receiver,
         }
     }
 
@@ -145,7 +149,12 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.callback
             .end(std::time::SystemTime::now(), "TileManager::update()");
 
-        let is_config_dirty = self.config_diff.is_dirty();
+        let mut is_config_dirty = self.config_diff.is_dirty();
+        if let Ok(config) = self.config_changed_receiver.try_recv() {
+            self.background_renderer_context.image_alpha = config.image_alpha;
+            is_config_dirty = true;
+        }
+
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
 
@@ -294,6 +303,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.tile_manager.is_empty()
     }
 
+    #[allow(dead_code)]
+    pub fn listen_config_changed(&mut self) -> std::sync::mpsc::Receiver<Config> {
+        self.config_service.listen()
+    }
+
     fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
         if modifier_state.contains(ModifiersState::CONTROL)
             && modifier_state.contains(ModifiersState::ALT)
@@ -352,7 +366,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 struct BackgroundRendererContext {
     active_id: Option<ImageId>,
 
-    config_service: Arc<ConfigService>,
+    image_alpha: f32,
 
     image_cache: Arc<ImageCache>,
 
@@ -366,7 +380,7 @@ impl IBackgroundRendererContext for BackgroundRendererContext {
     }
 
     fn active_image_alpha(&self) -> f32 {
-        self.config_service.read().unwrap().image_alpha
+        self.image_alpha
     }
 
     fn image_cache(&self) -> &ImageCache {
