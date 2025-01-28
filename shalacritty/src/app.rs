@@ -175,11 +175,15 @@ where
                 .await;
         });
 
-        let window_handle = window.window_handle().unwrap();
-        let display_handle = window.display_handle().unwrap();
-        self.renderer
-            .register_surface(window_handle, display_handle)
-            .unwrap();
+        // ひとつのウィンドウハンドルにはひとつの swapchain しか作成できないのでいったん無効化
+        if false {
+            let window_handle = window.window_handle().unwrap();
+            let display_handle = window.display_handle().unwrap();
+            self.renderer
+                .register_surface(window_handle, display_handle)
+                .unwrap();
+        }
+
         self.window_table.insert(id, window);
 
         let timer_length = Duration::from_millis(10);
