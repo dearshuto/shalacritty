@@ -62,7 +62,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
-        let config_service = ConfigService::new();
+        let mut config_service = ConfigService::new(Arc::clone(&runtime));
         let glyph_manager = GlyphManager::new(config_service.read().unwrap().font_size);
         let content_plotter = ContentPlotter::new();
 
