@@ -35,7 +35,12 @@ where
     TBackend: term_gfx::IBackend,
 {
     pub fn new(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) -> Self {
-        let runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_time()
+                .build()
+                .unwrap(),
+        );
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();

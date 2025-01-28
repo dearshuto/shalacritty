@@ -2,7 +2,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, LockResult, Mutex, MutexGuard},
+    sync::{Arc, LockResult, Mutex, MutexGuard, RwLock},
 };
 
 use notify::Watcher;
@@ -54,10 +54,19 @@ pub struct ConfigService {
     #[allow(dead_code)]
     path: Arc<PathBuf>,
     config: Arc<Mutex<Config>>,
+
+    // 設定の更新を通知する sender たち
+    senders: Arc<RwLock<Vec<std::sync::mpsc::Sender<Config>>>>,
+
+    // 設定更新通知のタスクを終了するシグナルを通知する sender
+    config_watcher_close_signal_sender: std::sync::mpsc::Sender<()>,
+
+    // 設定更新を通知するタスク
+    config_notify_task_handle: tokio::task::JoinHandle<()>,
 }
 
 impl ConfigService {
-    pub fn new() -> Self {
+    pub fn new(runtime: Arc<tokio::runtime::Runtime>) -> Self {
         // コンフィグ置き場。なければ作る。
         let mut config_path = create_config_directory();
         let config = if config_path.exists() {
@@ -68,9 +77,11 @@ impl ConfigService {
             Config::default()
         };
 
+        let (sender, receiver) = std::sync::mpsc::channel();
         let config = Arc::new(Mutex::new(config));
         let mut watcher = notify::RecommendedWatcher::new(
             EventHandler {
+                sender,
                 config: config.clone(),
             },
             notify::Config::default(),
@@ -80,26 +91,62 @@ impl ConfigService {
             .watch(&config_path, notify::RecursiveMode::Recursive)
             .unwrap();
 
+        //
+        let (config_watcher_close_signal_sender, config_watcher_close_signal_receiver) =
+            std::sync::mpsc::channel();
+        let senders = Arc::new(RwLock::new(
+            Vec::<std::sync::mpsc::Sender<Config>>::default(),
+        ));
+        let local = Arc::clone(&senders);
+        let config_notify_task_handle = runtime.spawn(async move {
+            while let Err(_) = config_watcher_close_signal_receiver.try_recv() {
+                let Ok(config) = receiver.try_recv() else {
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    continue;
+                };
+
+                let senders = local.read().unwrap();
+
+                for sender in senders.iter() {
+                    sender.send(config.clone()).unwrap();
+                }
+            }
+        });
+
         Self {
             watcher: Arc::new(watcher),
             path: Arc::new(config_path),
             config,
+            senders,
+            config_watcher_close_signal_sender,
+            config_notify_task_handle,
         }
     }
 
     pub fn read(&self) -> LockResult<MutexGuard<Config>> {
         self.config.lock()
     }
-}
 
-impl Default for ConfigService {
-    fn default() -> Self {
-        Self::new()
+    pub fn listen(&mut self) -> std::sync::mpsc::Receiver<Config> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        let mut senders = self.senders.write().unwrap();
+        senders.push(sender);
+
+        receiver
     }
 }
 
 impl Drop for ConfigService {
     fn drop(&mut self) {
+        // 設定ファイルの通知タスクを止める要求を出す
+        self.config_watcher_close_signal_sender.send(()).unwrap();
+
+        // タスクが完了するまで待つ
+        while !self.config_notify_task_handle.is_finished() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
         // 解放した方がキレイだけどしなくてもよさそう
         // self.watcher.unwatch(&self.path).unwrap();
     }
@@ -107,6 +154,7 @@ impl Drop for ConfigService {
 
 struct EventHandler {
     config: Arc<Mutex<Config>>,
+    sender: std::sync::mpsc::Sender<Config>,
 }
 
 impl notify::EventHandler for EventHandler {
@@ -127,6 +175,7 @@ impl notify::EventHandler for EventHandler {
                 for path in &e.paths {
                     println!("{:?}: {:?}", e.kind, path);
                     let _file = std::fs::File::open(path).unwrap();
+                    self.sender.send(Config::default()).unwrap();
                 }
             }
             notify::EventKind::Modify(kind) => {
@@ -136,7 +185,9 @@ impl notify::EventHandler for EventHandler {
 
                 // 定義ファイルが更新されたので読み込む
                 for path in &e.paths {
-                    *self.config.lock().unwrap() = load_config(path);
+                    let config = load_config(path);
+                    *self.config.lock().unwrap() = config.clone();
+                    self.sender.send(config).unwrap();
                 }
             }
             // notify::EventKind::Remove(_) => todo!(),
