@@ -1,4 +1,6 @@
-use nalgebra::{Matrix3, Matrix3x4, Vector2};
+use nalgebra::{Matrix3, Vector2};
+
+use crate::IContent;
 
 pub trait IBuffer<T> {
     fn write(&mut self, index: usize, data: &T);
@@ -8,26 +10,6 @@ pub trait IConverter {
     type Data;
 
     fn convert(&self, data: &CharacterData) -> Self::Data;
-}
-
-pub trait IContent {
-    type TColor;
-    type TPosition;
-
-    fn code(&self) -> char;
-
-    fn color_fg(&self) -> Self::TColor;
-
-    fn width(&self) -> u32;
-
-    fn height(&self) -> u32;
-
-    fn bottom(&self) -> i32;
-
-    fn left(&self) -> i32;
-
-    // 横書きを想定
-    fn advance(&self) -> f32;
 }
 
 pub struct CharacterData {

@@ -14,6 +14,26 @@ pub enum DescriptorType {
     StorageBuffer,
 }
 
+pub trait IContent {
+    type TColor;
+    type TPosition;
+
+    fn code(&self) -> char;
+
+    fn color_fg(&self) -> Self::TColor;
+
+    fn width(&self) -> u32;
+
+    fn height(&self) -> u32;
+
+    fn bottom(&self) -> i32;
+
+    fn left(&self) -> i32;
+
+    // 横書きを想定
+    fn advance(&self) -> f32;
+}
+
 pub trait IBackend {
     type RenderTargetId: Hash + Eq + Copy + Clone;
     type SemaphoreId: Hash + Eq + Copy + Clone;
