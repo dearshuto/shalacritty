@@ -5,6 +5,7 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 
 use crate::{
     backends::BackendVk,
+    detail::{self, ContentPlotter, IBuffer, IContent, IConverter},
     traits::{
         AllocateImageParams, BufferImageCopyParams, BufferUsage, IMapHandle, IShaderCodeProvider,
         RenderParams, UpdateBufferInfo, UpdateDescriptorsParams,
@@ -39,6 +40,10 @@ pub struct Renderer<TBackend: IBackend> {
     backend: TBackend,
 
     instance_table: HashMap<TBackend::RenderTargetId, Instance<TBackend>>,
+
+    converter: CharacterDataConverter,
+
+    content_plotter: ContentPlotter,
 }
 
 impl Renderer<BackendVk> {
@@ -54,7 +59,16 @@ impl<TBackend: IBackend> Renderer<TBackend> {
         Self {
             backend,
             instance_table: HashMap::default(),
+            converter: CharacterDataConverter {},
+            content_plotter: ContentPlotter::new(),
         }
+    }
+
+    pub fn push(&mut self, str: &str) {
+        let mut buffer = Buffer {};
+        let items = Items {};
+        let converter = CharacterDataConverter {};
+        self.content_plotter.plot(&mut buffer, items, &converter);
     }
 
     pub fn register_surface(
@@ -286,5 +300,88 @@ impl IShaderCodeProvider for ShaderCodeProvider {
 
     fn get_character_fragment_shader_binary(&self) -> &[u32] {
         &self.character_fragment_shader_binary
+    }
+}
+
+struct Buffer {}
+
+impl IBuffer<CharacterData> for Buffer {
+    fn write(&mut self, index: usize, data: &CharacterData) {
+        todo!()
+    }
+}
+
+struct CharacterDataConverter;
+
+impl IConverter for CharacterDataConverter {
+    type Data = CharacterData;
+
+    fn convert(&self, data: &detail::CharacterData) -> Self::Data {
+        let transform0 = [
+            data.transform.m11,
+            data.transform.m12,
+            data.transform.m13,
+            0.0,
+        ];
+
+        let transform1 = [
+            data.transform.m21,
+            data.transform.m22,
+            data.transform.m23,
+            0.0,
+        ];
+
+        // TODO
+        Self::Data {
+            transform0,
+            transform1,
+            fore_ground_color: [1.0; 4],
+            uv_bl: [0.0, 0.0],
+            uv_tr: [1.0, 1.0],
+        }
+    }
+}
+
+struct Content;
+impl IContent for Content {
+    type TColor = [f32; 3];
+
+    type TPosition = [f32; 3];
+
+    fn code(&self) -> char {
+        'a'
+    }
+
+    fn color_fg(&self) -> Self::TColor {
+        [1.0; 3]
+    }
+
+    fn width(&self) -> u32 {
+        10
+    }
+
+    fn height(&self) -> u32 {
+        20
+    }
+
+    fn bottom(&self) -> i32 {
+        0
+    }
+
+    fn left(&self) -> i32 {
+        0
+    }
+
+    fn advance(&self) -> f32 {
+        10.0
+    }
+}
+
+struct Items;
+impl Iterator for Items {
+    type Item = Content;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        None
     }
 }
