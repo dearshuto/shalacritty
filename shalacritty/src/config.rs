@@ -36,7 +36,7 @@ pub struct Background {
 }
 
 fn default_font_size() -> f32 {
-    24.0
+    32.0
 }
 
 fn default_image_alpha() -> f32 {
