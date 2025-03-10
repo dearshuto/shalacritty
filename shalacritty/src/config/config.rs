@@ -6,7 +6,7 @@ use std::{
 use notify::Watcher;
 use serde::{Deserialize, Serialize};
 
-use super::event_handler::EventHandler;
+use super::detail::EventHandlerAdapter;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -79,9 +79,11 @@ impl ConfigService {
 
         let (sender, receiver) = std::sync::mpsc::channel();
         let config = Arc::new(Mutex::new(config));
-        let mut watcher =
-            notify::RecommendedWatcher::new(EventHandler::new(sender), notify::Config::default())
-                .unwrap();
+        let mut watcher = notify::RecommendedWatcher::new(
+            EventHandlerAdapter::new(sender),
+            notify::Config::default(),
+        )
+        .unwrap();
         watcher
             .watch(&config_path, notify::RecursiveMode::Recursive)
             .unwrap();
