@@ -9,7 +9,7 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    pub fn new<TPath>(config_dir: TPath, sender: std::sync::mpsc::Sender<Config>) -> Self
+    pub fn new<TPath>(config_dir: TPath) -> (Self, tokio::sync::watch::Receiver<Config>)
     where
         TPath: AsRef<Path>,
     {
@@ -20,6 +20,10 @@ impl EventHandler {
             config_path
         };
 
+        // ロードしたコンフィグを初期値としてチャンネルを作成
+        let config = crate::config::util::load_config(&config_path);
+        let (sender, receiver) = tokio::sync::watch::channel(config);
+
         // config.toml の監視を開始
         let adapter = EventHandlerAdapter::new(sender);
         let mut watcher =
@@ -28,9 +32,12 @@ impl EventHandler {
             .watch(&config_path.as_ref(), notify::RecursiveMode::Recursive)
             .unwrap();
 
-        Self {
-            watcher: Box::new(watcher),
-        }
+        (
+            Self {
+                watcher: Box::new(watcher),
+            },
+            receiver,
+        )
     }
 }
 
@@ -42,11 +49,11 @@ impl Drop for EventHandler {
 
 // 本来は private でよいが、後方互換のために後悔している
 pub struct EventHandlerAdapter {
-    sender: std::sync::mpsc::Sender<Config>,
+    sender: tokio::sync::watch::Sender<Config>,
 }
 
 impl EventHandlerAdapter {
-    pub fn new(sender: std::sync::mpsc::Sender<Config>) -> Self {
+    pub fn new(sender: tokio::sync::watch::Sender<Config>) -> Self {
         Self { sender }
     }
 }
