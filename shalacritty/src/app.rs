@@ -352,14 +352,6 @@ where
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-                // サーバーば起動していたら終了要求を出す
-                // if is_profile_server_enabled {
-                //     tx.send(()).unwrap();
-                // }
-
-                // runtime.block_on(async {
-                //     profiler_server_task.await.unwrap();
-                // });
             }
             _ => {}
         }
