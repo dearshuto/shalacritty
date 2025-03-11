@@ -7,6 +7,7 @@ use std::{
 use profiler_core::IServerBackend;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::{sync::oneshot, task::JoinHandle};
+
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, StartCause, WindowEvent},
@@ -15,19 +16,27 @@ use winit::{
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-use crate::workspace::{IWorkspaceCallback, Workspace};
+use crate::{
+    config::ConfigServiceEx,
+    workspace::{IWorkspaceCallback, Workspace},
+};
 
 pub struct App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
-    runtime: Arc<tokio::runtime::Runtime>,
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
     workspace: Workspace<'a, ServerBackend>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_server_task: JoinHandle<()>,
     profiler_kill_sender: oneshot::Sender<()>,
+    // 将来的にこちらに載せ替え予定
+    #[allow(dead_code)]
+    config_service_ex: ConfigServiceEx,
+    _receiver: tokio::sync::mpsc::Receiver<crate::Config>,
+
+    runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl<'a, TBackend> App<'a, TBackend>
@@ -54,6 +63,10 @@ where
 
         let workspace = Workspace::new_with_callback(runtime.clone(), server_backend);
 
+        // 設定ファイルサービス
+        let mut config_service_ex = ConfigServiceEx::new(runtime.clone());
+        let receiver = runtime.block_on(async { config_service_ex.listen().await });
+
         Self {
             runtime,
             window_table: HashMap::default(),
@@ -62,6 +75,8 @@ where
             modifiers_state: ModifiersState::default(),
             profiler_server_task,
             profiler_kill_sender: tx,
+            config_service_ex,
+            _receiver: receiver,
         }
     }
 

@@ -1,16 +1,57 @@
-use super::Config;
+use std::path::Path;
+
+use notify::Watcher;
+
+use crate::{config::util, Config};
 
 pub struct EventHandler {
-    sender: std::sync::mpsc::Sender<Config>,
+    watcher: Box<dyn notify::Watcher>,
 }
 
 impl EventHandler {
+    pub fn new<TPath>(config_dir: TPath, sender: std::sync::mpsc::Sender<Config>) -> Self
+    where
+        TPath: AsRef<Path>,
+    {
+        // コンフィグファイルのパス
+        let config_path = {
+            let mut config_path = config_dir.as_ref().to_path_buf();
+            config_path.push("config.toml");
+            config_path
+        };
+
+        // config.toml の監視を開始
+        let adapter = EventHandlerAdapter::new(sender);
+        let mut watcher =
+            notify::RecommendedWatcher::new(adapter, notify::Config::default()).unwrap();
+        watcher
+            .watch(&config_path.as_ref(), notify::RecursiveMode::Recursive)
+            .unwrap();
+
+        Self {
+            watcher: Box::new(watcher),
+        }
+    }
+}
+
+impl Drop for EventHandler {
+    fn drop(&mut self) {
+        println!("Drop!!!");
+    }
+}
+
+// 本来は private でよいが、後方互換のために後悔している
+pub struct EventHandlerAdapter {
+    sender: std::sync::mpsc::Sender<Config>,
+}
+
+impl EventHandlerAdapter {
     pub fn new(sender: std::sync::mpsc::Sender<Config>) -> Self {
         Self { sender }
     }
 }
 
-impl notify::EventHandler for EventHandler {
+impl notify::EventHandler for EventHandlerAdapter {
     fn handle_event(&mut self, event: notify::Result<notify::Event>) {
         let Ok(e) = event else {
             return;
@@ -26,7 +67,6 @@ impl notify::EventHandler for EventHandler {
 
                 // 定義ファイルが作成されたので読み込む
                 for path in &e.paths {
-                    println!("{:?}: {:?}", e.kind, path);
                     let _file = std::fs::File::open(path).unwrap();
                     self.sender.send(Config::default()).unwrap();
                 }
@@ -36,9 +76,11 @@ impl notify::EventHandler for EventHandler {
                     return;
                 };
 
+                println!("adfs");
+
                 // 定義ファイルが更新されたので読み込む
                 for path in &e.paths {
-                    let config = super::util::load_config(path);
+                    let config = util::load_config(path);
                     self.sender.send(config).unwrap();
                 }
             }
