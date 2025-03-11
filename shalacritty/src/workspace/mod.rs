@@ -15,7 +15,7 @@ use crate::{
         ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
     },
     multiplexers::{TileId, TileManager},
-    ConfigService,
+    Config,
 };
 
 use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
@@ -28,8 +28,7 @@ pub trait IWorkspaceCallback {
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
-    #[allow(dead_code)]
-    config_service: ConfigService,
+    config_receiver: tokio::sync::watch::Receiver<Config>,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
 
@@ -55,19 +54,21 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
-    pub fn new_with_callback(runtime: Arc<Runtime>, callback: TCallback) -> Self {
+    pub fn new_with_callback(
+        runtime: Arc<Runtime>,
+        config_receiver: tokio::sync::watch::Receiver<Config>,
+        callback: TCallback,
+    ) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
-        let config_service = ConfigService::new();
-        let current_config = config_service.read();
-        let glyph_manager = GlyphManager::new(current_config.font_size);
+        let glyph_manager = GlyphManager::new(config_receiver.borrow().font_size);
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
         let mut image_cache = ImageCache::new(runtime);
         let mut image_ids = Vec::default();
-        for path in &current_config.background.path {
+        for path in &config_receiver.borrow().background.path {
             // 監視開始
             let Some(id) = image_cache.register(path) else {
                 continue;
@@ -81,10 +82,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             image_cache.operate_image_and_wait(*id, |_| {});
         }
 
-        let image_alpha = current_config.image_alpha;
+        let image_alpha = { config_receiver.borrow().image_alpha };
         Self {
             instance,
-            config_service,
+            config_receiver,
             glyph_manager,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
@@ -127,7 +128,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
     pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
-        let current_config = self.config_service.read();
+        let current_config = self.config_receiver.borrow();
         self.callback
             .begin(std::time::SystemTime::now(), "config_diff");
         self.config_diff.update(&current_config);
