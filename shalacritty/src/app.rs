@@ -16,7 +16,10 @@ use winit::{
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-use crate::workspace::{IWorkspaceCallback, Workspace};
+use crate::{
+    workspace::{IWorkspaceCallback, Workspace},
+    ConfigService,
+};
 
 pub struct App<'a, TBackend>
 where
@@ -28,6 +31,8 @@ where
     modifiers_state: ModifiersState,
     profiler_server_task: JoinHandle<()>,
     profiler_kill_sender: oneshot::Sender<()>,
+
+    config_service: ConfigService,
 
     // シェル管理（載せ替え予定）
     multiplexer: asura::Multiplexer,
@@ -57,7 +62,9 @@ where
             }
         });
 
-        let workspace = Workspace::new_with_callback(runtime.clone(), server_backend);
+        let mut config_service = ConfigService::new();
+        let workspace =
+            Workspace::new_with_callback(runtime.clone(), config_service.listen(), server_backend);
 
         Self {
             runtime,
@@ -67,6 +74,7 @@ where
             modifiers_state: ModifiersState::default(),
             profiler_server_task,
             profiler_kill_sender: tx,
+            config_service,
             multiplexer: asura::Multiplexer::new(),
         }
     }
