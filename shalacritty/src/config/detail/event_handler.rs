@@ -5,6 +5,8 @@ use notify::Watcher;
 use crate::{config::util, Config};
 
 pub struct EventHandler {
+    // 初期化以降もインスタンスとしては保持しておきたいので警告を抑制
+    #[allow(unused)]
     watcher: Box<dyn notify::Watcher>,
 }
 
@@ -38,12 +40,6 @@ impl EventHandler {
             },
             receiver,
         )
-    }
-}
-
-impl Drop for EventHandler {
-    fn drop(&mut self) {
-        println!("Drop!!!");
     }
 }
 
