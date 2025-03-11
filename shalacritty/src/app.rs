@@ -6,6 +6,7 @@ use std::{
 
 use profiler_core::IServerBackend;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use term_gfx::IBackend;
 use tokio::{sync::oneshot, task::JoinHandle};
 
 use winit::{
@@ -17,6 +18,7 @@ use winit::{
 };
 
 use crate::{
+    multiplexers::ShellService,
     workspace::{IWorkspaceCallback, Workspace},
     ConfigService,
 };
@@ -26,16 +28,21 @@ where
     TBackend: term_gfx::IBackend,
 {
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
+    window_size_sender: tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>,
+
     workspace: Workspace<'a, ServerBackend>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
-    profiler_server_task: JoinHandle<()>,
-    profiler_kill_sender: oneshot::Sender<()>,
+    profiler_kill_sender: Option<oneshot::Sender<()>>,
 
     config_service: ConfigService,
 
     // シェル管理（載せ替え予定）
     multiplexer: asura::Multiplexer,
+
+    exit_sender: tokio::sync::watch::Sender<bool>,
+
+    service_tasks: Vec<JoinHandle<()>>,
 
     runtime: Arc<tokio::runtime::Runtime>,
 }
@@ -52,6 +59,16 @@ where
                 .unwrap(),
         );
 
+        let (exit_sender, exit_receiver) = tokio::sync::watch::channel(true);
+        let (window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
+
+        let shell_service_task = runtime.spawn(async {
+            let mut shell_service = ShellService::new(window_size_receiver, exit_receiver);
+            while let Ok(()) = shell_service.update_async().await {
+                // なにか処理
+            }
+        });
+
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
 
@@ -62,6 +79,8 @@ where
             }
         });
 
+        let service_tasks = vec![shell_service_task, profiler_server_task];
+
         let mut config_service = ConfigService::new();
         let workspace =
             Workspace::new_with_callback(runtime.clone(), config_service.listen(), server_backend);
@@ -69,12 +88,14 @@ where
         Self {
             runtime,
             window_table: HashMap::default(),
+            window_size_sender,
             workspace,
             renderer,
             modifiers_state: ModifiersState::default(),
-            profiler_server_task,
-            profiler_kill_sender: tx,
+            profiler_kill_sender: Some(tx),
             config_service,
+            service_tasks,
+            exit_sender,
             multiplexer: asura::Multiplexer::new(),
         }
     }
@@ -84,13 +105,31 @@ where
 
         let mut app = Self::new(renderer, is_profile_server_enabled);
         event_loop.run_app(&mut app).unwrap();
+    }
+}
 
-        if is_profile_server_enabled {
-            app.profiler_kill_sender.send(()).unwrap();
-            app.runtime.block_on(async {
-                app.profiler_server_task.await.unwrap();
-            });
+impl<'a, TBackend> Drop for App<'a, TBackend>
+where
+    TBackend: IBackend,
+{
+    fn drop(&mut self) {
+        // 各種サービスに終了処理を通知する
+        self.exit_sender.send(true).unwrap();
+
+        // プロファイルサーバーが起動していたら終了する
+        // MEMO: サービスの終了処理と統一したい
+        let mut kill_server_sender = None;
+        std::mem::swap(&mut kill_server_sender, &mut self.profiler_kill_sender);
+        if let Some(sender) = kill_server_sender {
+            sender.send(()).unwrap_or_default();
         }
+
+        // サービスの終了待ち
+        let mut service_tasks = Vec::default();
+        std::mem::swap(&mut self.service_tasks, &mut service_tasks);
+        self.runtime.block_on(async move {
+            futures::future::join_all(service_tasks.into_iter()).await;
+        });
     }
 }
 
@@ -250,6 +289,18 @@ where
                 winit::event::Ime::Disabled => {}
             },
             WindowEvent::Resized(size) => {
+                // 通知
+                self.runtime.block_on(async {
+                    self.window_size_sender
+                        .send(WindowSizeChangedEventArgs {
+                            id: window_id,
+                            width: size.width,
+                            height: size.height,
+                        })
+                        .await
+                        .unwrap();
+                });
+
                 self.workspace.resize(window_id, size.width, size.height);
 
                 if let Some(window) = self.window_table.get(&window_id) {
@@ -313,4 +364,10 @@ where
             _ => {}
         }
     }
+}
+
+pub struct WindowSizeChangedEventArgs {
+    pub id: winit::window::WindowId,
+    pub width: u32,
+    pub height: u32,
 }
