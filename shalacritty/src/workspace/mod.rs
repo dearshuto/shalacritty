@@ -15,7 +15,7 @@ use crate::{
         ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
     },
     multiplexers::{TileId, TileManager},
-    Config, ConfigService,
+    ConfigService,
 };
 
 use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
@@ -40,9 +40,6 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 
     tile_manager: TileManager<MultiplexersAdapter>,
 
-    // シェル管理
-    multiplexer: asura::Multiplexer,
-
     // 設定の差分
     config_diff: ConfigDiff,
 
@@ -55,8 +52,6 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     clipboard_context: ClipboardContext,
 
     callback: TCallback,
-
-    config_changed_receiver: std::sync::mpsc::Receiver<Config>,
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
@@ -64,31 +59,29 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let clipboard_context = ClipboardContext::new().unwrap();
 
         let instance = wgpu::Instance::default();
-        let mut config_service = ConfigService::new(Arc::clone(&runtime));
-        let glyph_manager = GlyphManager::new(config_service.read().unwrap().font_size);
+        let config_service = ConfigService::new();
+        let current_config = config_service.read();
+        let glyph_manager = GlyphManager::new(current_config.font_size);
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
         let mut image_cache = ImageCache::new(runtime);
         let mut image_ids = Vec::default();
-        if let Ok(config_service) = config_service.read() {
-            for path in &config_service.background.path {
-                // 監視開始
-                let Some(id) = image_cache.register(path) else {
-                    continue;
-                };
+        for path in &current_config.background.path {
+            // 監視開始
+            let Some(id) = image_cache.register(path) else {
+                continue;
+            };
 
-                image_ids.push(id);
-            }
+            image_ids.push(id);
         }
 
         // 最初に表示する画像はロード完了を待つ
         if let Some(id) = image_ids.first() {
             image_cache.operate_image_and_wait(*id, |_| {});
         }
-        let receiver = config_service.listen();
 
-        let image_alpha = config_service.read().unwrap().image_alpha;
+        let image_alpha = current_config.image_alpha;
         Self {
             instance,
             config_service,
@@ -97,7 +90,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
-            multiplexer: asura::Multiplexer::new(),
             config_diff: ConfigDiff::new(),
             is_force_dirty: false,
             background_renderer_context: BackgroundRendererContext {
@@ -113,7 +105,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             image_ids,
             clipboard_context,
             callback,
-            config_changed_receiver: receiver,
         }
     }
 
@@ -136,10 +127,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
     pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
+        let current_config = self.config_service.read();
         self.callback
             .begin(std::time::SystemTime::now(), "config_diff");
-        self.config_diff
-            .update(&self.config_service.read().unwrap());
+        self.config_diff.update(&current_config);
         self.callback
             .end(std::time::SystemTime::now(), "config_diff");
 
@@ -149,11 +140,8 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.callback
             .end(std::time::SystemTime::now(), "TileManager::update()");
 
-        let mut is_config_dirty = self.config_diff.is_dirty();
-        if let Ok(config) = self.config_changed_receiver.try_recv() {
-            self.background_renderer_context.image_alpha = config.image_alpha;
-            is_config_dirty = true;
-        }
+        let is_config_dirty = self.config_diff.is_dirty();
+        self.background_renderer_context.image_alpha = current_config.image_alpha;
 
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
@@ -304,9 +292,9 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     #[allow(dead_code)]
-    pub fn listen_config_changed(&mut self) -> std::sync::mpsc::Receiver<Config> {
-        self.config_service.listen()
-    }
+    // pub fn listen_config_changed(&mut self) -> std::sync::mpsc::Receiver<Config> {
+    //     self.config_service.listen()
+    // }
 
     fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
         if modifier_state.contains(ModifiersState::CONTROL)

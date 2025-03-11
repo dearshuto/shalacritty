@@ -16,10 +16,7 @@ use winit::{
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-use crate::{
-    config::ConfigServiceEx,
-    workspace::{IWorkspaceCallback, Workspace},
-};
+use crate::workspace::{IWorkspaceCallback, Workspace};
 
 pub struct App<'a, TBackend>
 where
@@ -31,10 +28,9 @@ where
     modifiers_state: ModifiersState,
     profiler_server_task: JoinHandle<()>,
     profiler_kill_sender: oneshot::Sender<()>,
-    // 将来的にこちらに載せ替え予定
-    #[allow(dead_code)]
-    config_service_ex: ConfigServiceEx,
-    _receiver: tokio::sync::mpsc::Receiver<crate::Config>,
+
+    // シェル管理（載せ替え予定）
+    multiplexer: asura::Multiplexer,
 
     runtime: Arc<tokio::runtime::Runtime>,
 }
@@ -63,10 +59,6 @@ where
 
         let workspace = Workspace::new_with_callback(runtime.clone(), server_backend);
 
-        // 設定ファイルサービス
-        let mut config_service_ex = ConfigServiceEx::new(runtime.clone());
-        let receiver = runtime.block_on(async { config_service_ex.listen().await });
-
         Self {
             runtime,
             window_table: HashMap::default(),
@@ -75,8 +67,7 @@ where
             modifiers_state: ModifiersState::default(),
             profiler_server_task,
             profiler_kill_sender: tx,
-            config_service_ex,
-            _receiver: receiver,
+            multiplexer: asura::Multiplexer::new(),
         }
     }
 
