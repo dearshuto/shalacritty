@@ -1,5 +1,6 @@
 mod app;
 mod config;
+pub mod detail;
 mod gfx;
 mod multiplexers;
 mod tty;

@@ -18,9 +18,10 @@ use winit::{
 };
 
 use crate::{
+    detail::ImageCacheEx,
     multiplexers::ShellService,
     workspace::{IWorkspaceCallback, Workspace},
-    ConfigService,
+    Config, ConfigService,
 };
 
 pub struct App<'a, TBackend>
@@ -28,19 +29,16 @@ where
     TBackend: term_gfx::IBackend,
 {
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
-    window_size_sender: tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>,
+    config_service: Option<ConfigService>,
+    window_size_sender: Option<tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
 
     workspace: Workspace<'a, ServerBackend>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
 
-    config_service: ConfigService,
-
     // シェル管理（載せ替え予定）
     multiplexer: asura::Multiplexer,
-
-    exit_sender: tokio::sync::watch::Sender<bool>,
 
     service_tasks: Vec<JoinHandle<()>>,
 
@@ -59,14 +57,33 @@ where
                 .unwrap(),
         );
 
-        let (exit_sender, exit_receiver) = tokio::sync::watch::channel(true);
+        // 設定ファイル監視サービス
+        let mut config_service = ConfigService::new();
+
+        // watch を mpsc に変換
+        // MEMO: そもそも ConfigService が mpsc にした方が良い？
+        let mut config_listener = config_service.listen();
+        let (config_sender, config_receiver) = tokio::sync::mpsc::channel::<Config>(1);
+        let config_pipe_task = runtime.spawn(async move {
+            while let Ok(_) = config_listener.changed().await {
+                let config = config_listener.borrow().clone();
+                config_sender.send(config).await.unwrap();
+            }
+        });
+
         let (window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
 
         let shell_service_task = runtime.spawn(async {
-            let mut shell_service = ShellService::new(window_size_receiver, exit_receiver);
+            let mut shell_service = ShellService::new(window_size_receiver);
             while let Ok(()) = shell_service.update_async().await {
                 // なにか処理
             }
+        });
+
+        // 画像キャッシュサービス
+        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_receiver);
+        let image_cache_service_task = runtime.spawn(async move {
+            image_cache_service.serve().await;
         });
 
         let server_backend = ServerBackend::new();
@@ -79,23 +96,26 @@ where
             }
         });
 
-        let service_tasks = vec![shell_service_task, profiler_server_task];
+        let service_tasks = vec![
+            config_pipe_task,
+            shell_service_task,
+            image_cache_service_task,
+            profiler_server_task,
+        ];
 
-        let mut config_service = ConfigService::new();
         let workspace =
             Workspace::new_with_callback(runtime.clone(), config_service.listen(), server_backend);
 
         Self {
             runtime,
             window_table: HashMap::default(),
-            window_size_sender,
+            window_size_sender: Some(window_size_sender),
             workspace,
             renderer,
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
-            config_service,
+            config_service: Some(config_service),
             service_tasks,
-            exit_sender,
             multiplexer: asura::Multiplexer::new(),
         }
     }
@@ -113,8 +133,12 @@ where
     TBackend: IBackend,
 {
     fn drop(&mut self) {
-        // 各種サービスに終了処理を通知する
-        self.exit_sender.send(true).unwrap();
+        // 設定ファイルの監視を破棄して、
+        // 設定ファイルを監視しているサービスに終了通知を送る
+        self.config_service = None;
+
+        // sender を破棄して receiver に処理の終了を通知する
+        self.window_size_sender = None;
 
         // プロファイルサーバーが起動していたら終了する
         // MEMO: サービスの終了処理と統一したい
@@ -292,6 +316,8 @@ where
                 // 通知
                 self.runtime.block_on(async {
                     self.window_size_sender
+                        .as_ref()
+                        .unwrap()
                         .send(WindowSizeChangedEventArgs {
                             id: window_id,
                             width: size.width,
