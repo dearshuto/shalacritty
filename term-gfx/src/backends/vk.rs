@@ -84,7 +84,7 @@ pub struct BackendVk {
     render_pass_table: HashMap<RenderTargetId, ash::vk::RenderPass>,
 
     // 描画パイプライン
-    pipeline_table: HashMap<RenderTargetId, HashMap<PipelineId, ash::vk::Pipeline>>,
+    pipeline_table: HashMap<RenderTargetId, HashMap<PipelineId, Vec<ash::vk::Pipeline>>>,
 
     // デスクリプタープール
     descriptor_pool_table: HashMap<RenderTargetId, ash::vk::DescriptorPool>,
@@ -691,10 +691,25 @@ impl IBackend for BackendVk {
             .input_assembly_state(&input_assembly_state)
             .layout(pipeline_layout);
 
+        let background_pipeline_create_info = ash::vk::GraphicsPipelineCreateInfo::default()
+            .stages()
+            .vertex_input_state()
+            .layout()
+            .dynamic_state(&dynamic_state)
+            .multisample_state(&multisample_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .color_blend_state(&color_blend_state)
+            .render_pass(render_pass)
+            .input_assembly_state(&input_assembly_state);
+
         let pipeline = unsafe {
             device.create_graphics_pipelines(
                 vk::PipelineCache::null(),
-                &[graphics_pipeline_create_info],
+                &[
+                    background_pipeline_create_info,
+                    graphics_pipeline_create_info,
+                ],
                 None,
             )
         }
@@ -706,9 +721,9 @@ impl IBackend for BackendVk {
         self.pipeline_table
             .entry(id)
             .and_modify(|id| {
-                id.insert(pipeline_id, pipeline[0]);
+                id.insert(pipeline_id, pipeline.clone());
             })
-            .or_insert(HashMap::from([(pipeline_id, pipeline[0])]));
+            .or_insert(HashMap::from([(pipeline_id, pipeline)]));
         self.pipeline_layout_table
             .entry(id)
             .and_modify(|vec| vec.push(pipeline_layout))
@@ -1248,12 +1263,35 @@ impl IBackend for BackendVk {
             )
         };
 
+        // 背景描画のパスを開始
         // パイプライン
         unsafe {
             device.cmd_bind_pipeline(
                 command_buffer,
                 ash::vk::PipelineBindPoint::GRAPHICS,
-                *pipeline,
+                pipeline[0],
+            );
+        }
+
+        unsafe {
+            device.cmd_draw(
+                command_buffer,
+                6, /*vertex_count*/
+                1, /*instance_count*/
+                0, /*first_vertex*/
+                0, /*first_instance*/
+            );
+        }
+
+        // 文字描画のパスを開始
+        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
+
+        // パイプライン
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                ash::vk::PipelineBindPoint::GRAPHICS,
+                pipeline[1],
             )
         }
 
@@ -1333,8 +1371,9 @@ impl IBackend for BackendVk {
         }
 
         // 未実装のサブパス分は未使用のまま見送る
+        // カーソル
         unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
-        unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
+        // 矩形
         unsafe { device.cmd_next_subpass(command_buffer, ash::vk::SubpassContents::INLINE) }
 
         // レンダーパス終わり
