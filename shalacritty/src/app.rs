@@ -18,7 +18,7 @@ use winit::{
 };
 
 use crate::{
-    detail::ImageCacheEx,
+    detail::{ContentPlotService, ImageCacheEx, RenderingService},
     multiplexers::ShellService,
     workspace::{IWorkspaceCallback, Workspace},
     Config, ConfigService,
@@ -30,6 +30,10 @@ where
 {
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
     config_service: Option<ConfigService>,
+
+    #[allow(unused)]
+    rendering_service: RenderingService<'a>,
+
     window_size_sender: Option<tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
 
     workspace: Workspace<'a, ServerBackend>,
@@ -63,28 +67,51 @@ where
         // watch を mpsc に変換
         // MEMO: そもそも ConfigService が mpsc にした方が良い？
         let mut config_listener = config_service.listen();
-        let (config_sender, config_receiver) = tokio::sync::mpsc::channel::<Config>(1);
+        let (config_sender0, config_receiver0) = tokio::sync::mpsc::channel::<Config>(1);
+        let (config_sender1, config_receiver1) = tokio::sync::mpsc::channel::<Config>(1);
+        let (config_sender2, config_receiver2) = tokio::sync::mpsc::channel::<Config>(1);
+        let (config_sender3, config_receiver3) = tokio::sync::mpsc::channel::<Config>(1);
         let config_pipe_task = runtime.spawn(async move {
             while let Ok(_) = config_listener.changed().await {
                 let config = config_listener.borrow().clone();
-                config_sender.send(config).await.unwrap();
+                config_sender0.send(config.clone()).await.unwrap();
+                config_sender1.send(config.clone()).await.unwrap();
+                config_sender2.send(config.clone()).await.unwrap();
+                config_sender3.send(config).await.unwrap();
             }
         });
 
-        let (window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
+        let (_window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
 
-        let shell_service_task = runtime.spawn(async {
-            let mut shell_service = ShellService::new(window_size_receiver);
-            while let Ok(()) = shell_service.update_async().await {
-                // なにか処理
-            }
+        // シェル管理サービス
+        let shell_service = ShellService::new(config_receiver0, window_size_receiver);
+        let shell_service_task = runtime.spawn(async move {
+            shell_service.serve().await;
+        });
+
+        // 表示コンテンツの座標を計算するサービス
+        let content_plot_service = ContentPlotService::new(config_receiver1);
+        let content_plot_service_task = runtime.spawn(async move {
+            content_plot_service.serve().await;
         });
 
         // 画像キャッシュサービス
-        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_receiver);
+        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_receiver2);
         let image_cache_service_task = runtime.spawn(async move {
             image_cache_service.serve().await;
         });
+
+        // 描画サービス
+        let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
+        let (window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
+        let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
+
+        let rendering_service = RenderingService::new(
+            config_receiver3,
+            window_created_receiver,
+            window_size_receiver,
+            redraw_requested_receiver,
+        );
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
@@ -99,6 +126,7 @@ where
         let service_tasks = vec![
             config_pipe_task,
             shell_service_task,
+            content_plot_service_task,
             image_cache_service_task,
             profiler_server_task,
         ];
@@ -115,6 +143,7 @@ where
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
             config_service: Some(config_service),
+            rendering_service,
             service_tasks,
             multiplexer: asura::Multiplexer::new(),
         }
@@ -382,6 +411,12 @@ where
             _ => {}
         }
     }
+}
+
+pub struct WindowCreatedEventArgs<'a> {
+    pub id: winit::window::WindowId,
+    pub raw_window_handle: winit::raw_window_handle::WindowHandle<'a>,
+    pub raw_display_handle: winit::raw_window_handle::DisplayHandle<'a>,
 }
 
 pub struct WindowSizeChangedEventArgs {
