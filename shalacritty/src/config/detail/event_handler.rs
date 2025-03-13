@@ -7,7 +7,7 @@ use crate::{config::util, Config};
 pub struct EventHandler {
     // 初期化以降もインスタンスとしては保持しておきたいので警告を抑制
     #[allow(unused)]
-    watcher: Box<dyn notify::Watcher>,
+    watcher: notify::RecommendedWatcher,
 }
 
 impl EventHandler {
@@ -34,12 +34,7 @@ impl EventHandler {
             .watch(&config_path.as_ref(), notify::RecursiveMode::Recursive)
             .unwrap();
 
-        (
-            Self {
-                watcher: Box::new(watcher),
-            },
-            receiver,
-        )
+        (Self { watcher }, receiver)
     }
 }
 

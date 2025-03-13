@@ -72,3 +72,58 @@ impl ConfigService {
         self.event_handler_receiver.clone()
     }
 }
+
+pub fn watch() -> (Instance, tokio::sync::watch::Receiver<Config>) {
+    // コンフィグ置き場。なければ作る。
+    let config_path = super::util::create_config_directory();
+
+    let (event_handler, event_receiver) = EventHandler::new(config_path);
+    (
+        Instance {
+            handler: event_handler,
+        },
+        event_receiver,
+    )
+}
+
+pub struct Instance {
+    #[allow(unused)]
+    handler: EventHandler,
+}
+
+pub struct ConfigServiceEx {
+    receiver: tokio::sync::watch::Receiver<Config>,
+    senders: Vec<tokio::sync::mpsc::Sender<Config>>,
+}
+
+impl ConfigServiceEx {
+    pub fn new(receiver: tokio::sync::watch::Receiver<Config>) -> Self {
+        Self {
+            receiver,
+            senders: Vec::default(),
+        }
+    }
+
+    pub async fn serve(mut self) {
+        // 初期値の通知
+        for sender in &self.senders {
+            let config = self.receiver.borrow().clone();
+            sender.send(config).await.unwrap();
+        }
+
+        // 以降は変更があったら通知
+        while let Ok(_) = self.receiver.changed().await {
+            for sender in &self.senders {
+                let config = self.receiver.borrow().clone();
+                sender.send(config).await.unwrap();
+            }
+        }
+    }
+
+    pub fn listen(&mut self) -> tokio::sync::mpsc::Receiver<Config> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        self.senders.push(sender);
+
+        receiver
+    }
+}

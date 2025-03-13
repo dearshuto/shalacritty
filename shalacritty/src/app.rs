@@ -18,33 +18,44 @@ use winit::{
 };
 
 use crate::{
-    detail::{ContentPlotService, ImageCacheEx, RenderingService},
-    multiplexers::ShellService,
+    config::ConfigServiceEx,
+    detail::{
+        ContentPlotService, ImageCacheEx, PollingEventService, RenderingService, ShellService,
+        WindowSizeSendService,
+    },
     workspace::{IWorkspaceCallback, Workspace},
-    Config, ConfigService,
 };
 
+/// WindowSizeChangeEvent ─┬─────────────────────────────────┐
+///                        │                                 │
+/// InputEvent ─────────┐  │                                 │
+///                     │  │                                 │
+///                     v  v                                 v
+/// ConfigService ───> ShellService ───> PlotService ───> RenderService
+///      |                                   ^               ^
+///      ├───────────> ImageCacheService ────┘               │
+///      └───────────────────────────────────────────────────┘
 pub struct App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
+    instance: Option<super::config::Instance>,
+
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
-    config_service: Option<ConfigService>,
 
     #[allow(unused)]
     rendering_service: RenderingService<'a>,
-
-    window_size_sender: Option<tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
+    window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
+    input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
 
     workspace: Workspace<'a, ServerBackend>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
 
-    // シェル管理（載せ替え予定）
-    multiplexer: asura::Multiplexer,
-
     service_tasks: Vec<JoinHandle<()>>,
+
+    polling_close_sender: Option<std::sync::mpsc::Sender<()>>,
 
     runtime: Arc<tokio::runtime::Runtime>,
 }
@@ -61,55 +72,52 @@ where
                 .unwrap(),
         );
 
+        // ポーリングサービス
+        let (polling_close_sender, polling_close_receiver) = std::sync::mpsc::channel();
+        let mut polling_event_service = PollingEventService::new(polling_close_receiver);
+
         // 設定ファイル監視サービス
-        let mut config_service = ConfigService::new();
+        let (config_watch_instance, config_receiver) = super::config::watch();
+        let mut config_service = ConfigServiceEx::new(config_receiver.clone());
 
-        // watch を mpsc に変換
-        // MEMO: そもそも ConfigService が mpsc にした方が良い？
-        let mut config_listener = config_service.listen();
-        let (config_sender0, config_receiver0) = tokio::sync::mpsc::channel::<Config>(1);
-        let (config_sender1, config_receiver1) = tokio::sync::mpsc::channel::<Config>(1);
-        let (config_sender2, config_receiver2) = tokio::sync::mpsc::channel::<Config>(1);
-        let (config_sender3, config_receiver3) = tokio::sync::mpsc::channel::<Config>(1);
-        let config_pipe_task = runtime.spawn(async move {
-            while let Ok(_) = config_listener.changed().await {
-                let config = config_listener.borrow().clone();
-                config_sender0.send(config.clone()).await.unwrap();
-                config_sender1.send(config.clone()).await.unwrap();
-                config_sender2.send(config.clone()).await.unwrap();
-                config_sender3.send(config).await.unwrap();
-            }
-        });
+        let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
-        let (_window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
+        // ウィンドウサイズサービス
+        let mut window_size_send_service =
+            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
 
         // シェル管理サービス
-        let shell_service = ShellService::new(config_receiver0, window_size_receiver);
+        let (input_sender, input_receiver) = std::sync::mpsc::channel();
+        let shell_service = ShellService::new(
+            config_service.listen(),
+            window_size_send_service.listen(),
+            input_receiver,
+            polling_event_service.listen(),
+        );
         let shell_service_task = runtime.spawn(async move {
             shell_service.serve().await;
         });
 
         // 表示コンテンツの座標を計算するサービス
-        let content_plot_service = ContentPlotService::new(config_receiver1);
+        let content_plot_service = ContentPlotService::new(config_service.listen());
         let content_plot_service_task = runtime.spawn(async move {
             content_plot_service.serve().await;
         });
 
         // 画像キャッシュサービス
-        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_receiver2);
+        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_service.listen());
         let image_cache_service_task = runtime.spawn(async move {
             image_cache_service.serve().await;
         });
 
         // 描画サービス
         let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
-        let (window_size_sender, window_size_receiver) = tokio::sync::mpsc::channel(1);
         let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
 
         let rendering_service = RenderingService::new(
-            config_receiver3,
+            config_service.listen(),
             window_created_receiver,
-            window_size_receiver,
+            window_size_send_service.listen(),
             redraw_requested_receiver,
         );
 
@@ -123,29 +131,46 @@ where
             }
         });
 
+        let workspace =
+            Workspace::new_with_callback(runtime.clone(), config_receiver, server_backend);
+
+        let window_size_send_service = runtime.spawn(async move {
+            window_size_send_service.serve().await;
+        });
+
+        // 設定ファイルサービスタスク
+        // タスク化と同時にムーブするので他のサービスたちが購読を開始してから記述している
+        let config_service_task = runtime.spawn(async move {
+            config_service.serve().await;
+        });
+
+        let polling_event_service_task = runtime.spawn(async move {
+            polling_event_service.serve().await;
+        });
+
         let service_tasks = vec![
-            config_pipe_task,
+            polling_event_service_task,
+            config_service_task,
+            window_size_send_service,
             shell_service_task,
             content_plot_service_task,
             image_cache_service_task,
             profiler_server_task,
         ];
 
-        let workspace =
-            Workspace::new_with_callback(runtime.clone(), config_service.listen(), server_backend);
-
         Self {
+            instance: Some(config_watch_instance),
             runtime,
             window_table: HashMap::default(),
+            input_sender: Some(input_sender),
             window_size_sender: Some(window_size_sender),
             workspace,
             renderer,
+            polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
-            config_service: Some(config_service),
             rendering_service,
             service_tasks,
-            multiplexer: asura::Multiplexer::new(),
         }
     }
 
@@ -162,12 +187,12 @@ where
     TBackend: IBackend,
 {
     fn drop(&mut self) {
-        // 設定ファイルの監視を破棄して、
-        // 設定ファイルを監視しているサービスに終了通知を送る
-        self.config_service = None;
-
-        // sender を破棄して receiver に処理の終了を通知する
+        // 終了を通知して起動したサービスを終了させる
+        // channel に紐づいたサービスはインスタンスを破棄することで止める
         self.window_size_sender = None;
+        self.instance = None;
+        self.polling_close_sender = None;
+        self.input_sender = None;
 
         // プロファイルサーバーが起動していたら終了する
         // MEMO: サービスの終了処理と統一したい
@@ -181,7 +206,7 @@ where
         let mut service_tasks = Vec::default();
         std::mem::swap(&mut self.service_tasks, &mut service_tasks);
         self.runtime.block_on(async move {
-            futures::future::join_all(service_tasks.into_iter()).await;
+            futures::future::join_all(service_tasks).await;
         });
     }
 }
@@ -343,18 +368,15 @@ where
             },
             WindowEvent::Resized(size) => {
                 // 通知
-                self.runtime.block_on(async {
-                    self.window_size_sender
-                        .as_ref()
-                        .unwrap()
-                        .send(WindowSizeChangedEventArgs {
-                            id: window_id,
-                            width: size.width,
-                            height: size.height,
-                        })
-                        .await
-                        .unwrap();
-                });
+                self.window_size_sender
+                    .as_ref()
+                    .unwrap()
+                    .send(WindowSizeChangedEventArgs {
+                        id: window_id,
+                        width: size.width,
+                        height: size.height,
+                    })
+                    .unwrap_or_default();
 
                 self.workspace.resize(window_id, size.width, size.height);
 
@@ -374,6 +396,15 @@ where
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
+                }
+
+                // 通知
+                if let Some(sender) = &self.input_sender {
+                    let args = KeyboadInputEventArgs {
+                        id: window_id,
+                        event: event.clone(),
+                    };
+                    sender.send(args).unwrap();
                 }
 
                 if let Some(text) = event.text_with_all_modifiers() {
@@ -413,12 +444,18 @@ where
     }
 }
 
+pub struct KeyboadInputEventArgs {
+    pub id: winit::window::WindowId,
+    pub event: winit::event::KeyEvent,
+}
+
 pub struct WindowCreatedEventArgs<'a> {
     pub id: winit::window::WindowId,
     pub raw_window_handle: winit::raw_window_handle::WindowHandle<'a>,
     pub raw_display_handle: winit::raw_window_handle::DisplayHandle<'a>,
 }
 
+#[derive(Clone)]
 pub struct WindowSizeChangedEventArgs {
     pub id: winit::window::WindowId,
     pub width: u32,
