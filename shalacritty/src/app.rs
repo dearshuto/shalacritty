@@ -45,6 +45,7 @@ where
 
     #[allow(unused)]
     rendering_service: RenderingService<'a>,
+    window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
 
@@ -80,11 +81,15 @@ where
         let (config_watch_instance, config_receiver) = super::config::watch();
         let mut config_service = ConfigServiceEx::new(config_receiver.clone());
 
+        let (window_created_sender, window_created_receiver) = std::sync::mpsc::channel();
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
         // ウィンドウサイズサービス
-        let mut window_size_send_service =
-            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
+        let mut window_size_send_service = WindowSizeSendService::new(
+            window_created_receiver,
+            window_size_receiver,
+            polling_event_service.listen(),
+        );
 
         // シェル管理サービス
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
@@ -163,6 +168,7 @@ where
             runtime,
             window_table: HashMap::default(),
             input_sender: Some(input_sender),
+            window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
             workspace,
             renderer,
@@ -189,6 +195,7 @@ where
     fn drop(&mut self) {
         // 終了を通知して起動したサービスを終了させる
         // channel に紐づいたサービスはインスタンスを破棄することで止める
+        self.window_created_sender = None;
         self.window_size_sender = None;
         self.instance = None;
         self.polling_close_sender = None;
@@ -320,6 +327,14 @@ where
                 .unwrap();
         }
 
+        // TODO: イベント駆動方式に載せ替える
+        // let args = WindowCreatedEventArgs { id, window };
+        // self.window_created_sender
+        //     .as_ref()
+        //     .unwrap()
+        //     .send(args)
+        //     .unwrap();
+
         self.window_table.insert(id, window);
 
         let timer_length = Duration::from_millis(10);
@@ -449,10 +464,9 @@ pub struct KeyboadInputEventArgs {
     pub event: winit::event::KeyEvent,
 }
 
-pub struct WindowCreatedEventArgs<'a> {
+pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
-    pub raw_window_handle: winit::raw_window_handle::WindowHandle<'a>,
-    pub raw_display_handle: winit::raw_window_handle::DisplayHandle<'a>,
+    pub window: winit::window::Window,
 }
 
 #[derive(Clone)]

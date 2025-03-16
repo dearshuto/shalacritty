@@ -1,22 +1,33 @@
-use crate::app::WindowSizeChangedEventArgs;
+use std::collections::HashMap;
+
+use winit::window::{Window, WindowId};
+
+use crate::app::{WindowCreatedEventArgs, WindowSizeChangedEventArgs};
 
 pub struct WindowSizeSendService {
+    window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
+
     window_size_receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
 
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     window_size_sender: Vec<tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
+
+    window_table: HashMap<WindowId, Window>,
 }
 
 impl WindowSizeSendService {
     pub fn new(
+        window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> Self {
         Self {
+            window_created_receiver,
             window_size_receiver: receiver,
             polling_event_receiver,
             window_size_sender: Vec::default(),
+            window_table: HashMap::default(),
         }
     }
 
@@ -24,6 +35,10 @@ impl WindowSizeSendService {
         // TODO: デッドロックする
         // ウィンドウサイズの変更をポーリングで監視
         while let Some(_) = self.polling_event_receiver.recv().await {
+            if let Ok(args) = self.window_created_receiver.try_recv() {
+                self.window_table.insert(args.id, args.window);
+            }
+
             match self.window_size_receiver.try_recv() {
                 Ok(args) => {
                     // 変更通知が来ていたので再通知
