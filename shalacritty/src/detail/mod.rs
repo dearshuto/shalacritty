@@ -1,7 +1,13 @@
 mod content_plot_service;
 mod image_cache_ex;
+mod polling_event_service;
 mod rendering_service;
+mod shell_service;
+mod window_size_send_service;
 
 pub use content_plot_service::ContentPlotService;
 pub use image_cache_ex::ImageCacheEx;
+pub use polling_event_service::PollingEventService;
 pub use rendering_service::RenderingService;
+pub use shell_service::ShellService;
+pub use window_size_send_service::WindowSizeSendService;

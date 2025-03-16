@@ -13,10 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TeletypeId {
-    internal: u64,
-}
+use super::TeletypeId;
 
 pub struct TeletypeManager {
     terminal_table: HashMap<TeletypeId, Arc<FairMutex<Term<EventProxy>>>>,

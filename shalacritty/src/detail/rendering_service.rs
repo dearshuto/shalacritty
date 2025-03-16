@@ -35,12 +35,12 @@ impl<'a> RenderingService<'a> {
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
-                    Some(_config) = self.config_receiver.recv() => {},
+            Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_created_receiver.recv() => self.crated(args).await,
-                    Some(args) = self.window_size_receiver.recv() => self.resize(args),
-                    Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id),
-                                            else => break,
-                                        );
+            Some(args) = self.window_size_receiver.recv() => self.try_resize(args),
+            Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id),
+                                                else => break,
+                                            );
         }
     }
 
@@ -57,7 +57,7 @@ impl<'a> RenderingService<'a> {
             .await;
     }
 
-    fn resize(&mut self, args: WindowSizeChangedEventArgs) {
+    fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
         self.renderer.resize(args.id, args.width, args.height);
     }
 
