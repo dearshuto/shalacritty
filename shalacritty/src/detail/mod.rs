@@ -3,6 +3,7 @@ mod image_cache_ex;
 mod polling_event_service;
 mod rendering_service;
 mod shell_service;
+mod shell_util;
 mod window_size_send_service;
 
 pub use content_plot_service::ContentPlotService;
