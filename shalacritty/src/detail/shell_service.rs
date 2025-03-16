@@ -9,6 +9,8 @@ use crate::{
     Config,
 };
 
+use super::shell_util::TerminalParams;
+
 pub struct ShellService {
     // シェル管理（載せ替え予定）
     #[allow(unused)]
@@ -26,6 +28,10 @@ pub struct ShellService {
         HashMap<TeletypeId, std::sync::mpsc::Receiver<alacritty_terminal::event::Event>>,
 
     active_shell_id: Option<asura::ShellId>,
+
+    font_size: Option<f32>,
+    window_width: Option<u32>,
+    window_height: Option<u32>,
 }
 
 impl ShellService {
@@ -45,6 +51,9 @@ impl ShellService {
             event_loop_sender_table: HashMap::default(),
             event_receiver_table: HashMap::default(),
             active_shell_id: None,
+            font_size: None,
+            window_width: None,
+            window_height: None,
         }
     }
 
@@ -59,22 +68,55 @@ impl ShellService {
         }
     }
 
-    fn apply_config(&mut self, _config: Config) {
-        // 設定ファイルの内容を反映して適宜イベントを飛ばす
+    fn apply_config(&mut self, config: Config) {
+        // フォントサイズに変更がない場合は何もしない
+        if let Some(font_size) = self.font_size {
+            if font_size == config.font_size {
+                return;
+            }
+        }
+
+        self.font_size = Some(config.font_size);
+
+        let Some(window_width) = self.window_width else {
+            return;
+        };
+
+        let Some(window_height) = self.window_height else {
+            return;
+        };
+
+        let window_size = super::shell_util::calculate_terminal_window_size(&TerminalParams {
+            font_size: config.font_size,
+            line_spacing: 1.0, // TODO
+            window_width,
+            window_height,
+        });
+
+        for sender in self.event_loop_sender_table.values() {
+            let msg = alacritty_terminal::event_loop::Msg::Resize(window_size);
+            sender.send(msg).unwrap();
+        }
     }
 
-    fn apply_window_size(&mut self, _args: WindowSizeChangedEventArgs) {
-        // TODO: ここでウィンドウサイズとフォントサイズから各種パラメーターを決定する
+    fn apply_window_size(&mut self, args: WindowSizeChangedEventArgs) {
+        let Some(font_size) = self.font_size else {
+            return;
+        };
+
+        self.window_width = Some(args.width);
+        self.window_height = Some(args.height);
+
+        let window_size = super::shell_util::calculate_terminal_window_size(&TerminalParams {
+            font_size,
+            line_spacing: 1.0, // TODO
+            window_width: args.width,
+            window_height: args.height,
+        });
+
         for sender in self.event_loop_sender_table.values() {
-            let window_size = WindowSize {
-                num_lines: 64,
-                num_cols: 64,
-                cell_width: 8,
-                cell_height: 8,
-            };
-            sender
-                .send(alacritty_terminal::event_loop::Msg::Resize(window_size))
-                .unwrap();
+            let msg = alacritty_terminal::event_loop::Msg::Resize(window_size);
+            sender.send(msg).unwrap();
         }
     }
 
