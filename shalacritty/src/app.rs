@@ -20,8 +20,7 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        ContentPlotService, ImageCacheEx, PollingEventService, RenderingService, ShellService,
-        WindowSizeSendService,
+        ContentPlotService, ImageCacheEx, PollingEventService, ShellService, WindowSizeSendService,
     },
     workspace::{IWorkspaceCallback, Workspace},
 };
@@ -44,7 +43,7 @@ where
     window_table: HashMap<winit::window::WindowId, winit::window::Window>,
 
     #[allow(unused)]
-    rendering_service: RenderingService<'a>,
+    // rendering_service: RenderingService<'a>,
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
@@ -59,6 +58,8 @@ where
     polling_close_sender: Option<std::sync::mpsc::Sender<()>>,
 
     runtime: Arc<tokio::runtime::Runtime>,
+
+    _marker: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a, TBackend> App<'a, TBackend>
@@ -116,15 +117,16 @@ where
         });
 
         // 描画サービス
-        let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
-        let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
+        // TODO: デッドロックが起きるのでコメントアウト
+        // let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
+        // let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
 
-        let rendering_service = RenderingService::new(
-            config_service.listen(),
-            window_created_receiver,
-            window_size_send_service.listen(),
-            redraw_requested_receiver,
-        );
+        // let rendering_service = RenderingService::new(
+        //     config_service.listen(),
+        //     window_created_receiver,
+        //     window_size_send_service.listen(),
+        //     redraw_requested_receiver,
+        // );
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
@@ -192,8 +194,9 @@ where
             polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
-            rendering_service,
+            // rendering_service,
             service_tasks,
+            _marker: std::marker::PhantomData,
         }
     }
 
