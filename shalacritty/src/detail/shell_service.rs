@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
 use alacritty_terminal::{event::WindowSize, event_loop::EventLoopSender};
 use asura::TeletypeId;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
     app::{KeyboadInputEventArgs, WindowSizeChangedEventArgs},
@@ -23,6 +24,8 @@ pub struct ShellService {
 
     event_receiver_table:
         HashMap<TeletypeId, std::sync::mpsc::Receiver<alacritty_terminal::event::Event>>,
+
+    active_shell_id: Option<asura::ShellId>,
 }
 
 impl ShellService {
@@ -41,6 +44,7 @@ impl ShellService {
             polling_event_receiver,
             event_loop_sender_table: HashMap::default(),
             event_receiver_table: HashMap::default(),
+            active_shell_id: None,
         }
     }
 
@@ -103,7 +107,14 @@ impl ShellService {
         }
     }
 
-    fn apply_input(&mut self, _args: KeyboadInputEventArgs) {
-        // TODO: 入力を適切なイベント形式へとさばく
+    fn apply_input(&mut self, args: KeyboadInputEventArgs) {
+        let Some(active_shell_id) = self.active_shell_id else {
+            return;
+        };
+
+        if let Some(text) = args.event.text_with_all_modifiers() {
+            self.multiplexer.input(active_shell_id, text.as_bytes());
+            return;
+        }
     }
 }
