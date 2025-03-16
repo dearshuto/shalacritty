@@ -438,6 +438,7 @@ where
                     let args = KeyboadInputEventArgs {
                         id: window_id,
                         event: event.clone(),
+                        state: self.modifiers_state,
                     };
                     sender.send(args).unwrap();
                 }
@@ -491,6 +492,7 @@ where
 pub struct KeyboadInputEventArgs {
     pub id: winit::window::WindowId,
     pub event: winit::event::KeyEvent,
+    pub state: ModifiersState,
 }
 
 pub struct WindowCreatedEventArgs {
