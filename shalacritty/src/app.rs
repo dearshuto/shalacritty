@@ -21,6 +21,7 @@ use crate::{
     config::ConfigServiceEx,
     detail::{
         ContentPlotService, ImageCacheEx, PollingEventService, ShellService, WindowSizeSendService,
+        WorkspaceUpdateServiceTentative,
     },
     workspace::{IWorkspaceCallback, Workspace},
 };
@@ -157,6 +158,16 @@ where
             }
         });
 
+        // Workspace の更新処理を非同期に実行するサービス
+        let workspace_update_service = WorkspaceUpdateServiceTentative::new(
+            workspace.clone(),
+            polling_event_service.listen(),
+            window_size_send_service.listen(),
+        );
+        let workspace_update_task = runtime.spawn(async move {
+            workspace_update_service.serve().await;
+        });
+
         let window_size_send_service = runtime.spawn(async move {
             window_size_send_service.serve().await;
         });
@@ -180,6 +191,7 @@ where
             image_cache_service_task,
             profiler_server_task,
             workspace_resize_task,
+            workspace_update_task,
         ];
 
         Self {
@@ -201,6 +213,7 @@ where
     }
 
     pub fn run(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
+        // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
         let event_loop = EventLoop::builder().build().unwrap();
 
         let mut app = Self::new(renderer, is_profile_server_enabled);
@@ -367,12 +380,7 @@ where
     fn new_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, cause: StartCause) {
         match cause {
             StartCause::ResumeTimeReached { .. } => {
-                let Some((id, window)) = self.window_table.iter().next() else {
-                    return;
-                };
-
-                if let Ok(mut workspace) = self.workspace.lock() {
-                    workspace.update(*id, window.inner_size().width, window.inner_size().height);
+                if let Ok(workspace) = self.workspace.lock() {
                     if workspace.is_empty() {
                         event_loop.exit();
                     } else {
@@ -417,10 +425,6 @@ where
                         height: size.height,
                     })
                     .unwrap_or_default();
-
-                if let Some(window) = self.window_table.get(&window_id) {
-                    window.request_redraw();
-                }
             }
             WindowEvent::RedrawRequested => {
                 // 将来的にこっちに乗り換える
