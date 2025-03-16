@@ -59,7 +59,7 @@ impl WindowSizeSendService {
 
     pub fn listen(&mut self) -> tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs> {
         // 特に根拠はないが同期待ちでブロッキングしないようにある程度のバッファリングを確保
-        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        let (sender, receiver) = tokio::sync::mpsc::channel(3);
         self.window_size_sender.push(sender);
 
         receiver

@@ -49,7 +49,7 @@ where
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
 
-    workspace: Workspace<'a, ServerBackend>,
+    workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
@@ -136,8 +136,24 @@ where
             }
         });
 
-        let workspace =
-            Workspace::new_with_callback(runtime.clone(), config_receiver, server_backend);
+        let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
+            runtime.clone(),
+            config_receiver,
+            server_backend,
+        )));
+
+        // ウィンドウサイズの変更を非同期に Workspace に反映するタスク
+        // 互換用の実装で、将来的に Workspace は解体予定
+        let mut window_size_receiver = window_size_send_service.listen();
+        let workspace_local = workspace.clone();
+        let workspace_resize_task = runtime.spawn(async move {
+            while let Some(args) = window_size_receiver.recv().await {
+                workspace_local
+                    .lock()
+                    .unwrap()
+                    .resize(args.id, args.width, args.height);
+            }
+        });
 
         let window_size_send_service = runtime.spawn(async move {
             window_size_send_service.serve().await;
@@ -161,6 +177,7 @@ where
             content_plot_service_task,
             image_cache_service_task,
             profiler_server_task,
+            workspace_resize_task,
         ];
 
         Self {
@@ -314,6 +331,8 @@ where
 
         self.runtime.block_on(async {
             self.workspace
+                .lock()
+                .unwrap()
                 .assign_window(id, &window, width, height)
                 .await;
         });
@@ -349,13 +368,14 @@ where
                     return;
                 };
 
-                self.workspace
-                    .update(*id, window.inner_size().width, window.inner_size().height);
-                if self.workspace.is_empty() {
-                    event_loop.exit();
-                } else {
-                    for window in self.window_table.values() {
-                        window.request_redraw();
+                if let Ok(mut workspace) = self.workspace.lock() {
+                    workspace.update(*id, window.inner_size().width, window.inner_size().height);
+                    if workspace.is_empty() {
+                        event_loop.exit();
+                    } else {
+                        for window in self.window_table.values() {
+                            window.request_redraw();
+                        }
                     }
                 }
             }
@@ -377,6 +397,8 @@ where
                 winit::event::Ime::Preedit(_, _) => {}
                 winit::event::Ime::Commit(str) => {
                     self.workspace
+                        .lock()
+                        .unwrap()
                         .send_input(window_id, &str, self.modifiers_state)
                 }
                 winit::event::Ime::Disabled => {}
@@ -393,8 +415,6 @@ where
                     })
                     .unwrap_or_default();
 
-                self.workspace.resize(window_id, size.width, size.height);
-
                 if let Some(window) = self.window_table.get(&window_id) {
                     window.request_redraw();
                 }
@@ -403,7 +423,7 @@ where
                 // 将来的にこっちに乗り換える
                 // self.renderer.render();
 
-                self.workspace.render(window_id);
+                self.workspace.lock().unwrap().render(window_id);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers_state = modifiers.state();
@@ -423,8 +443,11 @@ where
                 }
 
                 if let Some(text) = event.text_with_all_modifiers() {
-                    self.workspace
-                        .send_input(window_id, text, self.modifiers_state);
+                    self.workspace.lock().unwrap().send_input(
+                        window_id,
+                        text,
+                        self.modifiers_state,
+                    );
                     return;
                 };
 
@@ -441,14 +464,20 @@ where
                     // winit::keyboard::Key::Dead(_) => {}
                     _ => None,
                 } {
-                    self.workspace
-                        .send_input(window_id, name_key, self.modifiers_state);
+                    self.workspace.lock().unwrap().send_input(
+                        window_id,
+                        name_key,
+                        self.modifiers_state,
+                    );
                 }
 
                 // 装飾キーが押されてると text_with_all_modifiers() が取得できないときがあるのでその救済措置
                 if let Some(text) = event.key_without_modifiers().to_text() {
-                    self.workspace
-                        .send_input(window_id, text, self.modifiers_state);
+                    self.workspace.lock().unwrap().send_input(
+                        window_id,
+                        text,
+                        self.modifiers_state,
+                    );
                 }
             }
             WindowEvent::CloseRequested => {
