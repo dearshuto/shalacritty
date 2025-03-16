@@ -46,12 +46,6 @@ impl ShellService {
 
     pub async fn serve(mut self) {
         loop {
-            let a = self.event_loop_sender_table.clone();
-            let poll = futures::future::poll_fn(move |cx: &mut std::task::Context| {
-                let _ = a.len();
-                std::task::Poll::Ready(())
-            });
-
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.receiver.recv() => self.apply_window_size(args),
