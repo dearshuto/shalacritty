@@ -25,12 +25,10 @@ impl WindowService {
 
     pub async fn serve(mut self) {
         while let Some(_) = self.polling_event_receiver.recv().await {
-            println!("POLLING");
             match self.window_receiver.try_recv() {
                 Ok(args) => self.window_table.insert(args.id, args.window),
                 Err(error) => match error {
                     std::sync::mpsc::TryRecvError::Empty => {
-                        println!("redraw");
                         for window in self.window_table.values_mut() {
                             window.request_redraw();
                         }
@@ -40,6 +38,5 @@ impl WindowService {
                 },
             };
         }
-        println!("END");
     }
 }
