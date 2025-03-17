@@ -6,6 +6,7 @@ use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
     app::{KeyboadInputEventArgs, WindowSizeChangedEventArgs},
+    workspace::Action,
     Config,
 };
 
@@ -148,9 +149,16 @@ impl ShellService {
             return;
         };
 
-        if let Some(text) = args.event.text_with_all_modifiers() {
-            self.multiplexer.input(active_shell_id, text.as_bytes());
-            return;
+        let text_with_all_modifiers = args.event.text_with_all_modifiers().unwrap_or_default();
+        let action = crate::app::detect_action(text_with_all_modifiers, args.state);
+        match action {
+            Action::Input(text) => self.multiplexer.input(active_shell_id, text.as_bytes()),
+            Action::Paste => todo!(),
+            Action::SplitHorizontal => todo!(),
+            Action::NewTab => todo!(),
+            Action::ActivateTab(_) => todo!(),
+            Action::ActivateNextTile => todo!(),
+            Action::DumpDebugInfo => todo!(),
         }
     }
 }

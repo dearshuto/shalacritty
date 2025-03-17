@@ -13,7 +13,7 @@ use winit::{
     application::ApplicationHandler,
     event::{ElementState, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{ModifiersState, NamedKey},
+    keyboard::ModifiersState,
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
@@ -23,7 +23,7 @@ use crate::{
         ContentPlotService, ImageCacheEx, PollingEventService, ShellService, WindowSizeSendService,
         WorkspaceUpdateServiceTentative,
     },
-    workspace::{IWorkspaceCallback, Workspace},
+    workspace::{Action, IWorkspaceCallback, Workspace},
 };
 
 /// WindowSizeChangeEvent ─┬─────────────────────────────────┐
@@ -450,43 +450,11 @@ where
                     sender.send(args).unwrap();
                 }
 
-                if let Some(text) = event.text_with_all_modifiers() {
-                    self.workspace.lock().unwrap().send_input(
-                        window_id,
-                        text,
-                        self.modifiers_state,
-                    );
-                    return;
-                };
-
-                if let Some(name_key) = match event.logical_key {
-                    winit::keyboard::Key::Named(key) => match key {
-                        NamedKey::ArrowUp => Some("ArrowUp"),
-                        NamedKey::ArrowDown => Some("ArrowDown"),
-                        NamedKey::ArrowRight => Some("ArrowRight"),
-                        NamedKey::ArrowLeft => Some("ArrowLeft"),
-                        _ => None,
-                    },
-                    // winit::keyboard::Key::Character(_) => {}
-                    // winit::keyboard::Key::Unidentified(_) => {}
-                    // winit::keyboard::Key::Dead(_) => {}
-                    _ => None,
-                } {
-                    self.workspace.lock().unwrap().send_input(
-                        window_id,
-                        name_key,
-                        self.modifiers_state,
-                    );
-                }
-
-                // 装飾キーが押されてると text_with_all_modifiers() が取得できないときがあるのでその救済措置
-                if let Some(text) = event.key_without_modifiers().to_text() {
-                    self.workspace.lock().unwrap().send_input(
-                        window_id,
-                        text,
-                        self.modifiers_state,
-                    );
-                }
+                let text = event.text_with_all_modifiers().unwrap_or_default();
+                self.workspace
+                    .lock()
+                    .unwrap()
+                    .send_input(window_id, text, self.modifiers_state);
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -512,4 +480,58 @@ pub struct WindowSizeChangedEventArgs {
     pub id: winit::window::WindowId,
     pub width: u32,
     pub height: u32,
+}
+
+pub fn detect_action(text_with_all_modifiers: &str, modifier_state: ModifiersState) -> Action {
+    if modifier_state.contains(ModifiersState::CONTROL)
+        && modifier_state.contains(ModifiersState::ALT)
+    {
+        return Action::DumpDebugInfo;
+    }
+
+    // ペースト
+    if (modifier_state.contains(ModifiersState::CONTROL)
+        || modifier_state.contains(ModifiersState::SUPER))
+        && modifier_state.contains(ModifiersState::SHIFT)
+        && text_with_all_modifiers == "v"
+    {
+        return Action::Paste;
+    }
+
+    // Ctrl+<1~4>
+    for tab_number in 1..=4 {
+        if modifier_state.contains(ModifiersState::CONTROL)
+            && text_with_all_modifiers == tab_number.to_string()
+        {
+            // インデックスとしては 0 始まりなので -1 しておく
+            return Action::ActivateTab(tab_number - 1);
+        }
+    }
+
+    //===============================================================
+    // バイト表現では制御文字と区別できない入力は装飾キーの存在をチェックする
+
+    // Ctrl+n で操作対象のシェルを変更
+    if modifier_state.contains(ModifiersState::CONTROL)
+        && text_with_all_modifiers == String::from_utf8(vec![14]).unwrap()
+    {
+        return Action::ActivateNextTile;
+    }
+
+    // Ctrl+h で画面分割
+    // バイト表現では Backspace の制御文字と区別できないので装飾キーの存在をチェックする
+    if modifier_state.contains(ModifiersState::CONTROL)
+        && text_with_all_modifiers == String::from_utf8(vec![8]).unwrap()
+    {
+        return Action::SplitHorizontal;
+    }
+
+    // Ctrl+h で画面分割
+    // TODO: これも装飾文字の存在をチェックした方がよい
+    if text_with_all_modifiers == String::from_utf8(vec![20]).unwrap() {
+        return Action::NewTab;
+    }
+    //===============================================================
+
+    Action::Input(text_with_all_modifiers)
 }
