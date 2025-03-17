@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 use tracing::instrument;
 
+=======
+>>>>>>> 53cb794 ([WIP] Window のインスタンス管理をサービス化)
 use crate::app::WindowSizeChangedEventArgs;
 
 pub struct WindowSizeSendService {

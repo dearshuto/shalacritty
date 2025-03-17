@@ -22,7 +22,7 @@ use crate::{
     config::ConfigServiceEx,
     detail::{
         ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService, ShellService,
-        WindowSizeSendService, WorkspaceUpdateServiceTentative,
+        WindowService, WindowSizeSendService, WorkspaceUpdateServiceTentative,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -41,8 +41,6 @@ where
     TBackend: term_gfx::IBackend,
 {
     instance: Option<super::config::Instance>,
-
-    window_table: HashMap<winit::window::WindowId, winit::window::Window>,
 
     #[allow(unused)]
     // rendering_service: RenderingService<'a>,
@@ -86,6 +84,14 @@ where
 
         let (window_created_sender, window_created_receiver) = std::sync::mpsc::channel();
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
+
+        // ウィンドウ管理サービス
+
+        let window_service =
+            WindowService::new(window_created_receiver, polling_event_service.listen());
+        let window_manage_task = runtime.spawn(async move {
+            window_service.serve().await;
+        });
 
         // ウィンドウサイズサービス
         let mut window_size_send_service =
@@ -208,7 +214,11 @@ where
             task,
             polling_event_service_task,
             config_service_task,
+<<<<<<< HEAD
             glyph_extract_service,
+=======
+            window_manage_task,
+>>>>>>> 53cb794 ([WIP] Window のインスタンス管理をサービス化)
             window_size_send_service,
             shell_service_task,
             content_plot_service_task,
@@ -221,7 +231,6 @@ where
         Self {
             instance: Some(config_watch_instance),
             runtime,
-            window_table: HashMap::default(),
             input_sender: Some(input_sender),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
@@ -400,14 +409,12 @@ where
 
         // 通知
         // MEMO: Window インスタンスの管理もサービス化した方が良い？
-        let args = WindowCreatedEventArgs { id };
+        let args = WindowCreatedEventArgs { id, window };
         self.window_created_sender
             .as_ref()
             .unwrap()
             .send(args)
             .unwrap();
-
-        self.window_table.insert(id, window);
 
         let timer_length = Duration::from_millis(10);
         let control_flow = ControlFlow::WaitUntil(Instant::now() + timer_length);
@@ -421,10 +428,6 @@ where
                 if let Ok(workspace) = self.workspace.lock() {
                     if workspace.is_empty() {
                         event_loop.exit();
-                    } else {
-                        for window in self.window_table.values() {
-                            window.request_redraw();
-                        }
                     }
                 }
             }
@@ -511,6 +514,7 @@ pub struct KeyboadInputEventArgs {
 
 pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
+    pub window: winit::window::Window,
 }
 
 #[derive(Debug, Clone)]
