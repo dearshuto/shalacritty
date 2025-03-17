@@ -18,7 +18,8 @@ use crate::{
     Config,
 };
 
-use self::detail::{Action, ConfigDiff, ContentAdapter, MultiplexersAdapter};
+use self::detail::{ConfigDiff, ContentAdapter, MultiplexersAdapter};
+pub use detail::Action;
 
 pub trait IWorkspaceCallback {
     fn begin(&mut self, time: std::time::SystemTime, id: &str);
@@ -231,7 +232,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
-        let action = Self::detect_action(text, modifier_state);
+        let action = crate::app::detect_action(text, modifier_state);
         match action {
             Action::Input(str) => self.tile_manager.send_input(str),
             Action::Paste => {
@@ -292,62 +293,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.tile_manager.is_empty()
     }
 
-    #[allow(dead_code)]
+    // #[allow(dead_code)]
     // pub fn listen_config_changed(&mut self) -> std::sync::mpsc::Receiver<Config> {
     //     self.config_service.listen()
     // }
-
-    fn detect_action(input: &str, modifier_state: ModifiersState) -> Action {
-        if modifier_state.contains(ModifiersState::CONTROL)
-            && modifier_state.contains(ModifiersState::ALT)
-        {
-            return Action::DumpDebugInfo;
-        }
-
-        // ペースト
-        if (modifier_state.contains(ModifiersState::CONTROL)
-            || modifier_state.contains(ModifiersState::SUPER))
-            && modifier_state.contains(ModifiersState::SHIFT)
-            && input == "v"
-        {
-            return Action::Paste;
-        }
-
-        // Ctrl+<1~4>
-        for tab_number in 1..=4 {
-            if modifier_state.contains(ModifiersState::CONTROL) && input == tab_number.to_string() {
-                // インデックスとしては 0 始まりなので -1 しておく
-                return Action::ActivateTab(tab_number - 1);
-            }
-        }
-
-        //===============================================================
-        // バイト表現では制御文字と区別できない入力は装飾キーの存在をチェックする
-
-        // Ctrl+n で操作対象のシェルを変更
-        if modifier_state.contains(ModifiersState::CONTROL)
-            && input == String::from_utf8(vec![14]).unwrap()
-        {
-            return Action::ActivateNextTile;
-        }
-
-        // Ctrl+h で画面分割
-        // バイト表現では Backspace の制御文字と区別できないので装飾キーの存在をチェックする
-        if modifier_state.contains(ModifiersState::CONTROL)
-            && input == String::from_utf8(vec![8]).unwrap()
-        {
-            return Action::SplitHorizontal;
-        }
-
-        // Ctrl+h で画面分割
-        // TODO: これも装飾文字の存在をチェックした方がよい
-        if input == String::from_utf8(vec![20]).unwrap() {
-            return Action::NewTab;
-        }
-        //===============================================================
-
-        return Action::Input(input);
-    }
 }
 
 /// 背景描画のアダプターとしての実装
