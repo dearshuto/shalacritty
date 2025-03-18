@@ -5,7 +5,7 @@ use asura::TeletypeId;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
-    app::{KeyboadInputEventArgs, WindowSizeChangedEventArgs},
+    app::{KeyboadInputEventArgs, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
     workspace::Action,
     Config,
 };
@@ -20,6 +20,7 @@ pub struct ShellService {
     teletype_manager: asura::TeletypeManagerEx,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
+    window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
     receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
@@ -40,12 +41,14 @@ pub struct ShellService {
 impl ShellService {
     pub fn new(
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
+        window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> Self {
         Self {
             multiplexer: asura::Multiplexer::new(),
+            window_created_receiver,
             teletype_manager: asura::TeletypeManagerEx::new(),
             config_receiver,
             receiver,
@@ -131,6 +134,13 @@ impl ShellService {
     }
 
     async fn try_estimate_teletype_events(&mut self) {
+        // ウィンドウが作成されたらそこにシェルを割り当てる
+        // とりあえずウィンドウは単一であることを仮定する
+        if let Ok(_args) = self.window_created_receiver.try_recv() {
+            let shell_id = self.multiplexer.spawn(80, 64);
+            self.active_shell_id = Some(shell_id);
+        }
+
         self.event_receiver_table
             .retain(|_id, receiver| match receiver.try_recv() {
                 Ok(_event) => {

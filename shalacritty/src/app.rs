@@ -87,16 +87,14 @@ where
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
         // ウィンドウサイズサービス
-        let mut window_size_send_service = WindowSizeSendService::new(
-            window_created_receiver,
-            window_size_receiver,
-            polling_event_service.listen(),
-        );
+        let mut window_size_send_service =
+            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
 
         // シェル管理サービス
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
         let mut shell_service = ShellService::new(
             config_service.listen(),
+            window_created_receiver,
             window_size_send_service.listen(),
             input_receiver,
             polling_event_service.listen(),
@@ -373,13 +371,14 @@ where
                 .unwrap();
         }
 
-        // TODO: イベント駆動方式に載せ替える
-        // let args = WindowCreatedEventArgs { id, window };
-        // self.window_created_sender
-        //     .as_ref()
-        //     .unwrap()
-        //     .send(args)
-        //     .unwrap();
+        // 通知
+        // MEMO: Window インスタンスの管理もサービス化した方が良い？
+        let args = WindowCreatedEventArgs { id };
+        self.window_created_sender
+            .as_ref()
+            .unwrap()
+            .send(args)
+            .unwrap();
 
         self.window_table.insert(id, window);
 
@@ -483,7 +482,6 @@ pub struct KeyboadInputEventArgs {
 
 pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
-    pub window: winit::window::Window,
 }
 
 #[derive(Clone)]
