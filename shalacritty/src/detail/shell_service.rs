@@ -28,6 +28,8 @@ pub struct ShellService {
     event_receiver_table:
         HashMap<TeletypeId, std::sync::mpsc::Receiver<alacritty_terminal::event::Event>>,
 
+    string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
+
     active_shell_id: Option<asura::ShellId>,
 
     font_size: Option<f32>,
@@ -51,6 +53,7 @@ impl ShellService {
             polling_event_receiver,
             event_loop_sender_table: HashMap::default(),
             event_receiver_table: HashMap::default(),
+            string_senders: Vec::default(),
             active_shell_id: None,
             font_size: None,
             window_width: None,
@@ -63,10 +66,16 @@ impl ShellService {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.receiver.recv() => self.apply_window_size(args),
-            Some(_) = self.polling_event_receiver.recv() => self.try_estimate_teletype_events(),
+            Some(_) = self.polling_event_receiver.recv() => self.try_estimate_teletype_events().await,
             else => break,
             );
         }
+    }
+
+    pub fn listen_string(&mut self) -> tokio::sync::mpsc::Receiver<String> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        self.string_senders.push(sender);
+        receiver
     }
 
     fn apply_config(&mut self, config: Config) {
@@ -121,7 +130,7 @@ impl ShellService {
         }
     }
 
-    fn try_estimate_teletype_events(&mut self) {
+    async fn try_estimate_teletype_events(&mut self) {
         self.event_receiver_table
             .retain(|_id, receiver| match receiver.try_recv() {
                 Ok(_event) => {
@@ -140,11 +149,11 @@ impl ShellService {
             });
 
         if let Ok(args) = self.input_receiver.try_recv() {
-            self.apply_input(args);
+            self.apply_input(args).await;
         }
     }
 
-    fn apply_input(&mut self, args: KeyboadInputEventArgs) {
+    async fn apply_input(&mut self, args: KeyboadInputEventArgs) {
         let Some(active_shell_id) = self.active_shell_id else {
             return;
         };
@@ -159,6 +168,11 @@ impl ShellService {
             Action::ActivateTab(_) => todo!(),
             Action::ActivateNextTile => todo!(),
             Action::DumpDebugInfo => todo!(),
+        }
+
+        let contents = self.multiplexer.enumerate_content(active_shell_id).unwrap();
+        for sender in &self.string_senders {
+            sender.send(contents.clone()).await.unwrap();
         }
     }
 }
