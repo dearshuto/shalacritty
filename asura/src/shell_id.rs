@@ -1,12 +1,12 @@
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+use crate::TeletypeId;
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ShellId {
-    internal: uuid::Uuid,
+    ttyi_id: TeletypeId,
 }
 
 impl ShellId {
-    pub fn new() -> Self {
-        Self {
-            internal: uuid::Uuid::now_v7(),
-        }
+    pub(crate) fn new(internal: TeletypeId) -> Self {
+        Self { ttyi_id: internal }
     }
 }

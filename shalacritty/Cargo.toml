@@ -10,7 +10,6 @@ rust-version = "1.73"
 asura = { path = "../asura" }
 profiler_core = { path = "../profiler_core" }
 term-gfx = { path = "../term-gfx" }
-vw = { path = "../vw" }
 
 # 2025 年 1 月 15 日のリビジョン
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5e78d20" }

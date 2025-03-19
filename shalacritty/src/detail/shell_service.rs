@@ -16,8 +16,6 @@ pub struct ShellService {
     // シェル管理（載せ替え予定）
     #[allow(unused)]
     multiplexer: asura::Multiplexer,
-    #[allow(unused)]
-    teletype_manager: asura::TeletypeManagerEx,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
@@ -32,6 +30,7 @@ pub struct ShellService {
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
 
     active_shell_id: Option<asura::ShellId>,
+    shell_controller_table: HashMap<asura::ShellId, asura::ShellController>,
 
     font_size: Option<f32>,
     window_width: Option<u32>,
@@ -49,7 +48,6 @@ impl ShellService {
         Self {
             multiplexer: asura::Multiplexer::new(),
             window_created_receiver,
-            teletype_manager: asura::TeletypeManagerEx::new(),
             config_receiver,
             receiver,
             input_receiver,
@@ -58,6 +56,7 @@ impl ShellService {
             event_receiver_table: HashMap::default(),
             string_senders: Vec::default(),
             active_shell_id: None,
+            shell_controller_table: HashMap::default(),
             font_size: None,
             window_width: None,
             window_height: None,
@@ -137,8 +136,9 @@ impl ShellService {
         // ウィンドウが作成されたらそこにシェルを割り当てる
         // とりあえずウィンドウは単一であることを仮定する
         if let Ok(_args) = self.window_created_receiver.try_recv() {
-            let shell_id = self.multiplexer.spawn(80, 64);
+            let (shell_id, controller) = self.multiplexer.spawn(&asura::Config::default());
             self.active_shell_id = Some(shell_id);
+            self.shell_controller_table.insert(shell_id, controller);
         }
 
         self.event_receiver_table
@@ -168,10 +168,14 @@ impl ShellService {
             return;
         };
 
+        let Some(controller) = self.shell_controller_table.get_mut(&active_shell_id) else {
+            return;
+        };
+
         let text_with_all_modifiers = args.event.text_with_all_modifiers().unwrap_or_default();
         let action = crate::app::detect_action(text_with_all_modifiers, args.state);
         match action {
-            Action::Input(text) => self.multiplexer.input(active_shell_id, text.as_bytes()),
+            Action::Input(text) => controller.send_input(text),
             Action::Paste => todo!(),
             Action::SplitHorizontal => todo!(),
             Action::NewTab => todo!(),
@@ -180,7 +184,12 @@ impl ShellService {
             Action::DumpDebugInfo => todo!(),
         }
 
-        let contents = self.multiplexer.enumerate_content(active_shell_id).unwrap();
+        let contents: String = controller
+            .read_contents()
+            .acquire_contents()
+            .into_iter()
+            .map(|x| x.code)
+            .collect();
         for sender in &self.string_senders {
             sender.send(contents.clone()).await.unwrap();
         }

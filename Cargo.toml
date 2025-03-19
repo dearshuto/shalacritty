@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["asura", "profiler", "profiler_core", "shalacritty", "term-gfx", "vw", "zazen"]
+members = ["asura", "profiler", "profiler_core", "shalacritty", "term-gfx", "zazen"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
