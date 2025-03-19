@@ -5,15 +5,67 @@ use alacritty_terminal::{
     event_loop::{EventLoop, State},
     grid::Dimensions,
     sync::FairMutex,
+    term::color::Colors,
     tty::{Options, Pty, Shell},
+    vte::ansi::Color,
 };
 
+use parking_lot::MutexGuard;
+
 use super::TeletypeId;
+
+pub struct Content {
+    pub code: char,
+    pub x: usize,
+    pub y: i32,
+    pub fg: [f32; 3],
+}
+
+pub struct TerminalAccessor<'a> {
+    internal: MutexGuard<'a, alacritty_terminal::Term<EventProxy>>,
+}
+
+impl<'a> TerminalAccessor<'a> {
+    pub fn get_cursor_point(&self) -> (usize, i32) {
+        let point = self.internal.renderable_content().cursor.point;
+        (point.column.0, point.line.0)
+    }
+
+    pub fn acquire_contents(&self) -> Vec<Content> {
+        self.internal
+            .renderable_content()
+            .display_iter
+            .map(|content| {
+                let fg = convert_color(&content.fg, self.internal.colors());
+
+                Content {
+                    code: content.c,
+                    x: content.point.column.0,
+                    y: content.point.line.0,
+                    fg,
+                }
+            })
+            .collect()
+    }
+}
+
+pub struct TerminalProxy {
+    internal: Arc<FairMutex<alacritty_terminal::Term<EventProxy>>>,
+}
+
+impl TerminalProxy {
+    pub fn read_lock(&mut self) -> TerminalAccessor {
+        TerminalAccessor {
+            internal: self.internal.lock(),
+        }
+    }
+}
 
 pub struct TeletypeData {
     pub id: TeletypeId,
     pub event_receiver: std::sync::mpsc::Receiver<alacritty_terminal::event::Event>,
     pub input_sender: alacritty_terminal::event_loop::EventLoopSender,
+    pub proxy: TerminalProxy,
 }
 
 pub struct TeletypeManagerEx {
@@ -59,7 +111,7 @@ impl TeletypeManagerEx {
         let terminal = Arc::new(FairMutex::new(terminal));
 
         let event_loop = EventLoop::new(
-            terminal,
+            terminal.clone(),
             event_proxy,
             pty,
             true, /*hold*/
@@ -77,6 +129,7 @@ impl TeletypeManagerEx {
             id,
             event_receiver: receiver,
             input_sender,
+            proxy: TerminalProxy { internal: terminal },
         }
     }
 
@@ -107,4 +160,18 @@ impl EventListener for EventProxy {
     fn send_event(&self, event: alacritty_terminal::event::Event) {
         self.sender.send(event).unwrap();
     }
+}
+
+fn convert_color(color: &Color, colors: &Colors) -> [f32; 3] {
+    let rgb = match color {
+        &alacritty_terminal::vte::ansi::Color::Named(named_color) => colors[named_color],
+        &alacritty_terminal::vte::ansi::Color::Spec(rgb) => Some(rgb),
+        &alacritty_terminal::vte::ansi::Color::Indexed(index) => colors[index as usize],
+    }
+    .unwrap_or_default();
+
+    let r = rgb.r as f32 / u8::MAX as f32;
+    let g = rgb.g as f32 / u8::MAX as f32;
+    let b = rgb.b as f32 / u8::MAX as f32;
+    [r, g, b]
 }
