@@ -1,7 +1,5 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
-use alacritty_terminal::event_loop::EventLoopSender;
-use asura::TeletypeId;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
@@ -10,11 +8,7 @@ use crate::{
     Config,
 };
 
-use super::shell_util::TerminalParams;
-
 pub struct ShellService {
-    // シェル管理（載せ替え予定）
-    #[allow(unused)]
     multiplexer: asura::Multiplexer,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
@@ -22,10 +16,6 @@ pub struct ShellService {
     receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
-    event_loop_sender_table: HashMap<TeletypeId, EventLoopSender>,
-
-    event_receiver_table:
-        HashMap<TeletypeId, std::sync::mpsc::Receiver<alacritty_terminal::event::Event>>,
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
 
@@ -52,8 +42,6 @@ impl ShellService {
             receiver,
             input_receiver,
             polling_event_receiver,
-            event_loop_sender_table: HashMap::default(),
-            event_receiver_table: HashMap::default(),
             string_senders: Vec::default(),
             active_shell_id: None,
             shell_controller_table: HashMap::default(),
@@ -98,38 +86,14 @@ impl ShellService {
             return;
         };
 
-        let window_size = super::shell_util::calculate_terminal_window_size(&TerminalParams {
-            font_size: config.font_size,
-            line_spacing: 1.0, // TODO
-            window_width,
-            window_height,
-        });
-
-        for sender in self.event_loop_sender_table.values() {
-            let msg = alacritty_terminal::event_loop::Msg::Resize(window_size);
-            sender.send(msg).unwrap();
-        }
+        self.multiplexer.resize_window(window_width, window_height);
     }
 
     fn apply_window_size(&mut self, args: WindowSizeChangedEventArgs) {
-        let Some(font_size) = self.font_size else {
-            return;
-        };
-
         self.window_width = Some(args.width);
         self.window_height = Some(args.height);
 
-        let window_size = super::shell_util::calculate_terminal_window_size(&TerminalParams {
-            font_size,
-            line_spacing: 1.0, // TODO
-            window_width: args.width,
-            window_height: args.height,
-        });
-
-        for sender in self.event_loop_sender_table.values() {
-            let msg = alacritty_terminal::event_loop::Msg::Resize(window_size);
-            sender.send(msg).unwrap();
-        }
+        self.multiplexer.resize_window(args.width, args.height);
     }
 
     async fn try_estimate_teletype_events(&mut self) {
@@ -141,22 +105,46 @@ impl ShellService {
             self.shell_controller_table.insert(shell_id, controller);
         }
 
-        self.event_receiver_table
-            .retain(|_id, receiver| match receiver.try_recv() {
-                Ok(_event) => {
-                    // シェルの内容に変更があった
-                    // TODO: ここでイベントを通知する
-                    return true;
+        // 終了していたシェルを辞書から除外する
+        let mut dirty_shell_ids = Vec::new();
+        self.shell_controller_table.retain(|key, controller| {
+            match controller.try_recv_event() {
+                Ok(_) => {
+                    // なにか起きたシェルに再描画
+                    dirty_shell_ids.push(*key);
+                    true
                 }
-                Err(error) => {
-                    match error {
-                        // シェルの内容に変更はなかったのでなにもしない
-                        TryRecvError::Empty => return true,
-                        // 変更元が破棄されていたらもう購読する意味がないので receiver を破棄
-                        TryRecvError::Disconnected => return false,
-                    };
+                Err(error) => match error {
+                    TryRecvError::Empty => true,
+                    TryRecvError::Disconnected => false,
+                },
+            }
+        });
+
+        // 暫定実装
+        // 再描画処理
+        let tasks: Vec<_> = dirty_shell_ids
+            .into_iter()
+            .filter_map(|id| {
+                let controller = self.shell_controller_table.get(&id)?;
+
+                let contents: String = controller
+                    .read_contents()
+                    .acquire_contents()
+                    .into_iter()
+                    .map(|x| x.code)
+                    .collect();
+
+                let mut task = Vec::default();
+                for sender in &self.string_senders {
+                    let handle = sender.send(contents.clone());
+                    task.push(handle);
                 }
-            });
+                Some(task)
+            })
+            .flatten()
+            .collect();
+        futures::future::join_all(tasks).await;
 
         if let Ok(args) = self.input_receiver.try_recv() {
             self.apply_input(args).await;
@@ -182,16 +170,6 @@ impl ShellService {
             Action::ActivateTab(_) => todo!(),
             Action::ActivateNextTile => todo!(),
             Action::DumpDebugInfo => todo!(),
-        }
-
-        let contents: String = controller
-            .read_contents()
-            .acquire_contents()
-            .into_iter()
-            .map(|x| x.code)
-            .collect();
-        for sender in &self.string_senders {
-            sender.send(contents.clone()).await.unwrap();
         }
     }
 }
