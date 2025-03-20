@@ -130,7 +130,7 @@ impl Widget for &App {
                 },
             )
             .into_iter()
-            .map(|(key, value)| ListItem::new(value));
+            .map(|(_key, value)| ListItem::new(value));
 
         List::new(messages)
             .block(
