@@ -1,8 +1,8 @@
 mod teletype_manager_ex;
 mod vw;
 
-pub use teletype_manager_ex::{TeletypeData, TeletypeManagerEx, TerminalAccessor, TerminalProxy};
-pub use vw::{VirtualWindow, VirtualWindowId, VirtualWindowManager};
+pub use teletype_manager_ex::{TeletypeManagerEx, TerminalAccessor, TerminalProxy};
+pub use vw::{VirtualWindowId, VirtualWindowManager};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TeletypeId {

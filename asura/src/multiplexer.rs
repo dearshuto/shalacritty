@@ -11,7 +11,9 @@ use alacritty_terminal::{
 };
 
 use crate::{
-    detail::{TeletypeManagerEx, TerminalAccessor, TerminalProxy, VirtualWindowManager},
+    detail::{
+        TeletypeManagerEx, TerminalAccessor, TerminalProxy, VirtualWindowId, VirtualWindowManager,
+    },
     shell_id::ShellId,
 };
 
@@ -64,6 +66,9 @@ pub struct Multiplexer {
     sender_table: HashMap<ShellId, EventLoopSender>,
     virtual_window_manager: VirtualWindowManager,
     teletype_manager_ex: TeletypeManagerEx,
+    virtual_window_table: HashMap<ShellId, VirtualWindowId>,
+
+    window_size: (u32, u32),
 }
 
 impl Multiplexer {
@@ -72,6 +77,8 @@ impl Multiplexer {
             virtual_window_manager: VirtualWindowManager::new(),
             teletype_manager_ex: TeletypeManagerEx::new(),
             sender_table: HashMap::default(),
+            virtual_window_table: HashMap::default(),
+            window_size: (640, 480),
         }
     }
 
@@ -88,12 +95,7 @@ impl Multiplexer {
             screen_lines: config.screen_lines,
             columns: config.columns,
         };
-        let windows_size = WindowSize {
-            num_lines: 10,
-            num_cols: 80,
-            cell_width: 8,
-            cell_height: 8,
-        };
+        let windows_size = Self::into_window_size(self.window_size.0, self.window_size.1, 8.0);
         let teletype_data = self
             .teletype_manager_ex
             .create_teletype_with_size(dimension, windows_size);
@@ -102,6 +104,7 @@ impl Multiplexer {
 
         let sender = teletype_data.input_sender.clone();
         self.sender_table.insert(id, sender);
+        self.virtual_window_table.insert(id, *root_vw);
 
         (
             id,
@@ -120,18 +123,33 @@ impl Multiplexer {
 
     /// シェルを表示する領域を更新します
     pub fn resize_shell(&mut self, id: ShellId, width: u32, height: u32) {
+        let Some(vw_id) = self.virtual_window_table.get(&id) else {
+            return;
+        };
+
         let Some(sender) = self.sender_table.get(&id) else {
             return;
         };
 
-        sender
-            .send(Msg::Resize(WindowSize {
-                num_lines: 64,
-                num_cols: 80,
-                cell_width: 8,
-                cell_height: 8,
-            }))
-            .unwrap_or_default();
+        self.virtual_window_manager.resize(*vw_id, width, height);
+
+        let Some(vw) = self.virtual_window_manager.try_get_virtual_window(*vw_id) else {
+            return;
+        };
+
+        let window_size = Self::into_window_size(vw.width(), vw.height(), 8.0);
+        sender.send(Msg::Resize(window_size)).unwrap_or_default();
+    }
+
+    fn into_window_size(width: u32, height: u32, font_size: f32) -> WindowSize {
+        let num_lines = (height / (font_size as u32)) as u16;
+        let num_cols = (width / (font_size as u32)) as u16;
+        WindowSize {
+            num_lines,
+            num_cols,
+            cell_width: 8,
+            cell_height: 8,
+        }
     }
 }
 
