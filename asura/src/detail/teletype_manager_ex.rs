@@ -49,12 +49,13 @@ impl<'a> TerminalAccessor<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct TerminalProxy {
     internal: Arc<FairMutex<alacritty_terminal::Term<EventProxy>>>,
 }
 
 impl TerminalProxy {
-    pub fn read_lock(&mut self) -> TerminalAccessor {
+    pub fn read_lock(&self) -> TerminalAccessor {
         TerminalAccessor {
             internal: self.internal.lock(),
         }

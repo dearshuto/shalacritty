@@ -1,82 +1,210 @@
-use std::collections::HashMap;
-
-use crate::{
-    detail::{TeletypeId, TeletypeManager},
-    shell_id::ShellId,
-    ShellEvent,
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::mpsc::{RecvError, TryRecvError},
 };
 
+use alacritty_terminal::{
+    event::WindowSize,
+    event_loop::{EventLoopSender, Msg},
+    grid::Dimensions,
+};
+
+use crate::{
+    detail::{TeletypeManagerEx, TerminalAccessor, TerminalProxy, VirtualWindowManager},
+    shell_id::ShellId,
+};
+
+pub struct ShellController {
+    // ターミナルの更新イベントの receiver
+    // alacritty_terminal モジュールが asura 経由で外部ににじみ出ないように隠蔽している
+    event_receiver: std::sync::mpsc::Receiver<alacritty_terminal::event::Event>,
+
+    // ターミナルに処理を送る sender
+    // セッターの役割
+    //
+    // sender を外部に公開はしないで、メソッドで必要な機能のみにアクセスできるようにする
+    // 特に隠蔽したいのはリサイズの処理
+    // multiplexer 実装で各シェルの表示領域を更新するタイミングを内部で管理するために隠蔽が必須
+    input_sender: alacritty_terminal::event_loop::EventLoopSender,
+
+    // ターミナルの情報にアクセスするためのインスタンス
+    // ゲッターの役割
+    proxy: TerminalProxy,
+}
+
+impl ShellController {
+    pub fn recv_event(&self) -> Result<(), RecvError> {
+        match self.event_receiver.recv() {
+            Ok(_event) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn try_recv_event(&self) -> Result<(), TryRecvError> {
+        match self.event_receiver.try_recv() {
+            Ok(_) => return Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn read_contents(&self) -> TerminalAccessor {
+        self.proxy.read_lock()
+    }
+
+    pub fn send_input(&mut self, str: &str) {
+        let bytes: Vec<_> = str.bytes().collect();
+        self.input_sender
+            .send(Msg::Input(Cow::Owned(bytes)))
+            .unwrap_or_default();
+    }
+}
+
 pub struct Multiplexer {
-    teletype_manager: TeletypeManager,
-    table: HashMap<ShellId, TeletypeId>,
+    sender_table: HashMap<ShellId, EventLoopSender>,
+    virtual_window_manager: VirtualWindowManager,
+    teletype_manager_ex: TeletypeManagerEx,
 }
 
 impl Multiplexer {
     pub fn new() -> Self {
         Self {
-            teletype_manager: TeletypeManager::new(),
-            table: HashMap::default(),
+            virtual_window_manager: VirtualWindowManager::new(),
+            teletype_manager_ex: TeletypeManagerEx::new(),
+            sender_table: HashMap::default(),
         }
     }
 
-    pub fn spawn(&mut self, _width: u32, _height: u32) -> ShellId {
-        let handle = self.teletype_manager.create_teletype();
-        let shell_id = ShellId::new();
+    pub fn spawn(&mut self, config: &Config) -> (ShellId, ShellController) {
+        // TODO: 表示領域を算出する
+        let root_vw = self.virtual_window_manager.ids().first().unwrap();
+        let _root_vw = self
+            .virtual_window_manager
+            .try_get_virtual_window(*root_vw)
+            .unwrap();
 
-        self.table.insert(shell_id, handle);
+        let dimension = Dimension {
+            total_lines: config.total_lines,
+            screen_lines: config.screen_lines,
+            columns: config.columns,
+        };
+        let windows_size = WindowSize {
+            num_lines: 10,
+            num_cols: 80,
+            cell_width: 8,
+            cell_height: 8,
+        };
+        let teletype_data = self
+            .teletype_manager_ex
+            .create_teletype_with_size(dimension, windows_size);
 
-        shell_id
+        let id = ShellId::new(teletype_data.id);
+
+        let sender = teletype_data.input_sender.clone();
+        self.sender_table.insert(id, sender);
+
+        (
+            id,
+            ShellController {
+                event_receiver: teletype_data.event_receiver,
+                input_sender: teletype_data.input_sender,
+                proxy: teletype_data.proxy,
+            },
+        )
     }
 
-    pub fn subscribe_shell_event(&mut self, id: ShellId) -> ShellEvent {
-        // TODO
-        ShellEvent {}
+    /// 表示可能な領域を更新します
+    pub fn resize_window(&mut self, width: u32, height: u32) {
+        self.virtual_window_manager.resize_root(width, height)
     }
 
-    pub fn resize(&mut self, id: ShellId, width: u32, height: u32) {
-        let Some(id) = self.table.get(&id) else {
+    /// シェルを表示する領域を更新します
+    pub fn resize_shell(&mut self, id: ShellId, width: u32, height: u32) {
+        let Some(sender) = self.sender_table.get(&id) else {
             return;
         };
 
-        self.teletype_manager.resize(*id, width, height);
+        sender
+            .send(Msg::Resize(WindowSize {
+                num_lines: 64,
+                num_cols: 80,
+                cell_width: 8,
+                cell_height: 8,
+            }))
+            .unwrap_or_default();
     }
+}
 
-    // TODO: 暫定実装。将来的に API の設計は変える。
-    // TODO: 表示要素をどのように外部と連携させるか設計を考える
-    pub fn enumerate_content(&self, id: ShellId) -> Result<String, ()> {
-        let Some(id) = self.table.get(&id) else {
-            return Err(());
-        };
-
-        let mut buffer = String::new();
-        self.teletype_manager.get_content(*id, |x| {
-            let mut y = 0;
-            for i in x.display_iter {
-                // 行が変わったら改行コードを挿入
-                if y < i.point.line.0 {
-                    buffer.push('\n');
-                    y = i.point.line.0;
-                }
-                buffer.push(i.c);
-            }
-        });
-
-        // 末尾の空白を取り除く
-        while let Some(last) = buffer.chars().last() {
-            if last != ' ' {
-                break;
-            }
-            let _ = buffer.pop();
+impl Drop for Multiplexer {
+    fn drop(&mut self) {
+        // シェルの全破棄
+        for sender in self.sender_table.values_mut() {
+            sender.send(Msg::Shutdown).unwrap_or_default();
         }
+    }
+}
 
-        Ok(buffer)
+pub struct Config {
+    total_lines: usize,
+
+    screen_lines: usize,
+
+    columns: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            total_lines: 64,
+            screen_lines: 64,
+            columns: 80,
+        }
+    }
+}
+
+impl Config {
+    pub fn with_total_lines(mut self, total_line: usize) -> Self {
+        self.total_lines = total_line;
+        self
     }
 
-    pub fn input(&mut self, id: ShellId, input: &[u8]) {
-        let Some(id) = self.table.get(&id) else {
-            return;
-        };
+    pub fn with_screen_lines(mut self, screen_line: usize) -> Self {
+        self.screen_lines = screen_line;
+        self
+    }
 
-        self.teletype_manager.send_input(*id, input);
+    pub fn with_columns(mut self, columns: usize) -> Self {
+        self.columns = columns;
+        self
+    }
+}
+
+struct Dimension {
+    total_lines: usize,
+    screen_lines: usize,
+    columns: usize,
+}
+
+impl From<&Config> for Dimension {
+    fn from(value: &Config) -> Self {
+        Self {
+            total_lines: value.total_lines,
+            screen_lines: value.screen_lines,
+            columns: value.columns,
+        }
+    }
+}
+
+impl Dimensions for Dimension {
+    fn total_lines(&self) -> usize {
+        self.total_lines
+    }
+
+    fn screen_lines(&self) -> usize {
+        self.screen_lines
+    }
+
+    fn columns(&self) -> usize {
+        self.columns
     }
 }

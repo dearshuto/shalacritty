@@ -1,4 +1,7 @@
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Duration,
+};
 
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event, KeyEventKind};
@@ -17,12 +20,9 @@ fn main() -> Result<()> {
 
 struct App {
     #[allow(dead_code)]
-    virtual_window_manager: vw::VirtualWindowManager,
-
-    #[allow(dead_code)]
     multiplexer: asura::Multiplexer,
 
-    window_shell_table: HashMap<vw::VirtualWindowId, asura::ShellId>,
+    controller_table: HashMap<asura::ShellId, asura::ShellController>,
 }
 
 impl Drop for App {
@@ -31,20 +31,12 @@ impl Drop for App {
 
 impl App {
     pub fn new() -> Self {
-        let virtual_window_manager = vw::VirtualWindowManager::new();
-        let virtual_window_id = virtual_window_manager.ids()[0];
-
         let mut multiplexer = asura::Multiplexer::new();
-        let shell_id = multiplexer.spawn(640, 480);
-
-        let mut shell_event = multiplexer.subscribe_shell_event(shell_id);
-        multiplexer.input(shell_id, String::from_str("pwd\n").unwrap().as_bytes());
-        shell_event.wait_signaled();
+        let key_value = multiplexer.spawn(&asura::Config::default());
 
         Self {
-            virtual_window_manager,
             multiplexer,
-            window_shell_table: HashMap::from([(virtual_window_id, shell_id)]),
+            controller_table: HashMap::from([key_value]),
         }
     }
 
@@ -53,26 +45,7 @@ impl App {
         let duration = Duration::from_millis(16);
         loop {
             terminal.draw(|frame| {
-                // 描画領域を更新
-                self.virtual_window_manager
-                    .resize_root(frame.area().width as u32, frame.area().height as u32);
-
-                // 描画領域をシェルに反映
-                for (virtual_window_id, shell_id) in &self.window_shell_table {
-                    let Some(virtual_window) = self
-                        .virtual_window_manager
-                        .try_get_virtual_window(*virtual_window_id)
-                    else {
-                        continue;
-                    };
-
-                    self.multiplexer.resize(
-                        *shell_id,
-                        virtual_window.width(),
-                        virtual_window.height(),
-                    );
-                }
-
+                // TODO: 描画領域をシェルに反映する
                 frame.render_widget(&self, frame.area())
             })?;
             while event::poll(duration)? {
@@ -82,11 +55,17 @@ impl App {
 
                 match key.kind {
                     KeyEventKind::Press => {
-                        let id = self.window_shell_table.values().next().unwrap();
+                        let controller = self.controller_table.values_mut().next().unwrap();
                         let code = key.code;
-                        let bytes: Vec<u8> = match code {
-                            event::KeyCode::Backspace => asura::util::Unicode::backspace().to_vec(),
-                            event::KeyCode::Enter => asura::util::Unicode::enter().to_vec(),
+                        let str = match code {
+                            event::KeyCode::Backspace => Ok(String::from_utf8(
+                                asura::util::Unicode::backspace().to_vec(),
+                            )
+                            .unwrap()),
+                            event::KeyCode::Enter => {
+                                Ok(String::from_utf8(asura::util::Unicode::enter().to_vec())
+                                    .unwrap())
+                            }
                             // event::KeyCode::Left => todo!(),
                             // event::KeyCode::Right => todo!(),
                             // event::KeyCode::Up => todo!(),
@@ -100,7 +79,7 @@ impl App {
                             // event::KeyCode::Delete => todo!(),
                             // event::KeyCode::Insert => todo!(),
                             // event::KeyCode::F(_) => todo!(),
-                            event::KeyCode::Char(c) => c.to_string().as_bytes().to_vec(),
+                            event::KeyCode::Char(c) => Ok(c.to_string()),
                             // event::KeyCode::Null => todo!(),
                             event::KeyCode::Esc => return Ok(()),
                             // event::KeyCode::CapsLock => todo!(),
@@ -112,9 +91,10 @@ impl App {
                             // event::KeyCode::KeypadBegin => todo!(),
                             // event::KeyCode::Media(media_key_code) => todo!(),
                             // event::KeyCode::Modifier(modifier_key_code) => todo!(),
-                            _ => vec![],
+                            _ => Ok(String::new()),
                         };
-                        self.multiplexer.input(*id, &bytes);
+
+                        controller.send_input(&str.unwrap());
                     }
                     KeyEventKind::Repeat => todo!(),
                     KeyEventKind::Release => todo!(),
@@ -130,9 +110,27 @@ impl Widget for &App {
         Self: Sized,
     {
         // 表示要素を ratatui のオブジェクトに変換
-        let id = self.window_shell_table.values().next().unwrap();
-        let content = self.multiplexer.enumerate_content(*id).unwrap();
-        let messages = content.lines().map(|str| ListItem::new(str));
+
+        let controller: &asura::ShellController = self.controller_table.values().next().unwrap();
+        let terminal_accessor = controller.read_contents();
+
+        // Y 座標でグループ化
+        // 各グループを 1 行の表示単位として ListItem に変換していく
+        let messages = terminal_accessor
+            .acquire_contents()
+            .iter()
+            .fold(
+                BTreeMap::default(),
+                |mut tree: BTreeMap<i32, String>, value| {
+                    tree.entry(value.y)
+                        .or_insert_with(String::new)
+                        .push(value.code);
+
+                    tree
+                },
+            )
+            .into_iter()
+            .map(|(key, value)| ListItem::new(value));
 
         List::new(messages)
             .block(
