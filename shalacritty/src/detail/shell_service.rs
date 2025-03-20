@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
-use alacritty_terminal::{event::WindowSize, event_loop::EventLoopSender};
+use alacritty_terminal::event_loop::EventLoopSender;
 use asura::TeletypeId;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
