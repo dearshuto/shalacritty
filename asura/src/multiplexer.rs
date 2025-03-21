@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     sync::mpsc::{RecvError, TryRecvError},
+    time::Duration,
 };
 
 use alacritty_terminal::{
@@ -36,6 +37,17 @@ pub struct ShellController {
 }
 
 impl ShellController {
+    pub fn is_running(&self) -> bool {
+        let Err(error) = self.event_receiver.recv_timeout(Duration::from_nanos(1)) else {
+            return true;
+        };
+
+        match error {
+            std::sync::mpsc::RecvTimeoutError::Timeout => true,
+            std::sync::mpsc::RecvTimeoutError::Disconnected => false,
+        }
+    }
+
     pub fn recv_event(&self) -> Result<(), RecvError> {
         match self.event_receiver.recv() {
             Ok(_event) => Ok(()),
@@ -90,12 +102,13 @@ impl Multiplexer {
             .try_get_virtual_window(*root_vw)
             .unwrap();
 
+        let screen_lines = ((self.window_size.1 as f32 / 10.0) as usize).min(config.screen_lines);
         let dimension = Dimension {
             total_lines: config.total_lines,
-            screen_lines: config.screen_lines,
+            screen_lines,
             columns: config.columns,
         };
-        let windows_size = Self::into_window_size(self.window_size.0, self.window_size.1, 8.0);
+        let windows_size = Self::into_window_size(self.window_size.0, self.window_size.1, 10.0);
         let teletype_data = self
             .teletype_manager_ex
             .create_teletype_with_size(dimension, windows_size);
@@ -137,7 +150,7 @@ impl Multiplexer {
             return;
         };
 
-        let window_size = Self::into_window_size(vw.width(), vw.height(), 8.0);
+        let window_size = Self::into_window_size(vw.width(), vw.height(), 12.0);
         sender.send(Msg::Resize(window_size)).unwrap_or_default();
     }
 
