@@ -8,4 +8,4 @@ edition = "2021"
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5e78d20" }
 
 parking_lot = "*"
-uuid = { version = "*", features = ["v7"] }
+uuid = { version = "*", features = ["v4", "v7"] }
