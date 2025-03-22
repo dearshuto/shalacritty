@@ -131,7 +131,26 @@ impl Multiplexer {
 
     /// 表示可能な領域を更新します
     pub fn resize_window(&mut self, width: u32, height: u32) {
-        self.virtual_window_manager.resize_root(width, height)
+        self.virtual_window_manager.resize_root(width, height);
+
+        let Some((shell_id, virtual_window_id)) = self.virtual_window_table.iter().next() else {
+            return;
+        };
+
+        let Some(vw) = self
+            .virtual_window_manager
+            .try_get_virtual_window(*virtual_window_id)
+        else {
+            return;
+        };
+
+        let Some(sender) = self.sender_table.get(shell_id) else {
+            return;
+        };
+
+        //        let window_size = Self::into_window_size(vw.width(), vw.height(), 12.0);
+        let window_size = Self::into_window_size(width, height, 12.0);
+        sender.send(Msg::Resize(window_size)).unwrap_or_default();
     }
 
     /// シェルを表示する領域を更新します
