@@ -100,6 +100,15 @@ where
             polling_event_service.listen(),
         );
 
+        // Debug
+        let mut r = shell_service.listen_string();
+        let task = runtime.spawn(async move {
+            while let Some(str) = r.recv().await {
+                println!("==================");
+                println!("{}", str);
+            }
+        });
+
         // グリフ抽出サービス
         let glyph_extract_service =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
@@ -191,6 +200,7 @@ where
         });
 
         let service_tasks = vec![
+            task,
             polling_event_service_task,
             config_service_task,
             glyph_extract_service,
