@@ -8,7 +8,7 @@ pub struct VirtualWindowId {
 impl Default for VirtualWindowId {
     fn default() -> Self {
         Self {
-            internal: uuid::Uuid::new_v4(),
+            internal: uuid::Uuid::now_v7(),
         }
     }
 }

@@ -23,9 +23,10 @@ struct Tile {
     height: f32,
 }
 
-struct ActualSize {
-    width: u32,
-    height: u32,
+#[derive(Clone, Copy)]
+pub struct ActualSize {
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct VirtualWindow {
@@ -83,6 +84,14 @@ impl VirtualWindow {
         )
     }
 
+    pub fn get_actual_size(&self, id: TileId) -> Option<ActualSize> {
+        let Some(actual_size) = self.actual_size_table.get(&id) else {
+            return None;
+        };
+
+        Some(*actual_size)
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         // ルートに反映
         let root_id = self.root_id;
@@ -118,8 +127,11 @@ impl VirtualWindow {
             let _ = children.swap_remove(position);
             children.append(&mut new_children);
 
-            // ソートして終了
+            // ソートして...
             children.sort();
+
+            // 再計算
+            self.calculate_actual_size();
 
             return true;
         }
@@ -132,13 +144,74 @@ impl VirtualWindow {
         let mut ids = vec![self.root_id];
 
         while let Some(id) = ids.pop() {
-            let Some(actual_size) = self.actual_size_table.get(&id) else {
+            let actual_size = if let Some(t) = self.actual_size_table.get(&id) {
+                Some(*t)
+            } else {
+                None
+            };
+
+            let Some(actual_size) = actual_size else {
                 continue;
             };
 
-            let Some(children) = self.hierarchy_table.get(&id) else {
+            let Some(children) = self.hierarchy_table.get_mut(&id) else {
                 continue;
             };
+
+            let Some(orientation) = self.orientation_table.get(&id) else {
+                continue;
+            };
+
+            let len = children.len() as u32;
+            for child in children {
+                let size = self.actual_size_table.get_mut(child).unwrap();
+                match orientation {
+                    Orientation::Horizontal => {
+                        size.width = actual_size.width;
+                        size.height = actual_size.height / len as u32
+                    }
+                    Orientation::Vertical => {
+                        size.height = actual_size.height;
+                        size.width = actual_size.width / len as u32
+                    }
+                };
+
+                ids.push(*child);
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::VirtualWindow;
+
+    #[test]
+    fn new() {
+        let (id, vw) = VirtualWindow::new(640, 480);
+
+        let actual_size = vw.get_actual_size(id).unwrap();
+        assert_eq!(actual_size.width, 640);
+        assert_eq!(actual_size.height, 480);
+    }
+
+    #[test]
+    fn remove_last() {
+        let (id, mut vw) = VirtualWindow::new(640, 480);
+
+        // 最後の要素は消せない
+        assert!(!vw.remove(id));
+    }
+
+    #[test]
+    fn resize() {
+        let (id, mut vw) = VirtualWindow::new(640, 480);
+
+        vw.resize(1280, 960);
+
+        let actual_size = vw.get_actual_size(id).unwrap();
+        assert_eq!(actual_size.width, 1280);
+        assert_eq!(actual_size.height, 960);
     }
 }
