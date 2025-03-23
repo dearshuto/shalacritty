@@ -1,3 +1,4 @@
+mod virtual_window;
 mod virtual_window_manager;
 
-pub use virtual_window_manager::{VirtualWindow, VirtualWindowId, VirtualWindowManager};
+pub use virtual_window_manager::{VirtualWindowId, VirtualWindowManager};
