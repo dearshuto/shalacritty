@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
+use asura::TerminalEmulator;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
 
 pub struct ShellService {
     multiplexer: asura::Multiplexer,
+    terminal_emulator: asura::TerminalEmulator,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
@@ -35,8 +37,11 @@ impl ShellService {
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> Self {
+        let (_id, terminal_emulator) = TerminalEmulator::new();
+
         Self {
             multiplexer: asura::Multiplexer::new(),
+            terminal_emulator,
             window_created_receiver,
             config_receiver,
             receiver,
@@ -86,14 +91,14 @@ impl ShellService {
             return;
         };
 
-        self.multiplexer.resize_window(window_width, window_height);
+        self.terminal_emulator.resize(window_width, window_height);
     }
 
     fn apply_window_size(&mut self, args: WindowSizeChangedEventArgs) {
         self.window_width = Some(args.width);
         self.window_height = Some(args.height);
 
-        self.multiplexer.resize_window(args.width, args.height);
+        self.terminal_emulator.resize(args.width, args.height);
     }
 
     async fn try_estimate_teletype_events(&mut self) {
