@@ -18,11 +18,11 @@ pub struct TerminalEmulator {
 }
 
 impl TerminalEmulator {
-    pub fn new() -> (ShellId, Self) {
+    pub fn new() -> (TabId, ShellId, Self) {
         Self::new_with(640, 480)
     }
 
-    pub fn new_with(width: u32, height: u32) -> (ShellId, Self) {
+    pub fn new_with(width: u32, height: u32) -> (TabId, ShellId, Self) {
         let mut multiplexer = Multiplexer::new();
 
         let (shell_id, controller) = multiplexer.spawn(&Config::default());
@@ -36,6 +36,7 @@ impl TerminalEmulator {
         let shell_tile_table = HashMap::from([(shell_id, tile_id)]);
 
         (
+            tab_id,
             shell_id,
             Self {
                 multiplexer,
@@ -97,5 +98,13 @@ impl TerminalEmulator {
                 controller.resize(line_count, column_count, 8, 8);
             }
         }
+    }
+
+    pub fn send_input(&mut self, id: ShellId, input: &str) {
+        let Some(controller) = self.shell_controller_table.get_mut(&id) else {
+            return;
+        };
+
+        controller.send_input(input);
     }
 }

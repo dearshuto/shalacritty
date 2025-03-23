@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
-use asura::TerminalEmulator;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
@@ -10,7 +9,6 @@ use crate::{
 };
 
 pub struct ShellService {
-    multiplexer: asura::Multiplexer,
     terminal_emulator: asura::TerminalEmulator,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
@@ -21,7 +19,7 @@ pub struct ShellService {
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
 
-    active_shell_id: Option<asura::ShellId>,
+    active_shell_id: asura::ShellId,
     shell_controller_table: HashMap<asura::ShellId, asura::ShellController>,
 
     font_size: Option<f32>,
@@ -37,10 +35,9 @@ impl ShellService {
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> Self {
-        let (_id, terminal_emulator) = TerminalEmulator::new();
+        let (_tab_id, id, terminal_emulator) = asura::TerminalEmulator::new();
 
         Self {
-            multiplexer: asura::Multiplexer::new(),
             terminal_emulator,
             window_created_receiver,
             config_receiver,
@@ -48,7 +45,7 @@ impl ShellService {
             input_receiver,
             polling_event_receiver,
             string_senders: Vec::default(),
-            active_shell_id: None,
+            active_shell_id: id,
             shell_controller_table: HashMap::default(),
             font_size: None,
             window_width: None,
@@ -102,12 +99,9 @@ impl ShellService {
     }
 
     async fn try_estimate_teletype_events(&mut self) {
-        // ウィンドウが作成されたらそこにシェルを割り当てる
-        // とりあえずウィンドウは単一であることを仮定する
         if let Ok(_args) = self.window_created_receiver.try_recv() {
-            let (shell_id, controller) = self.multiplexer.spawn(&asura::Config::default());
-            self.active_shell_id = Some(shell_id);
-            self.shell_controller_table.insert(shell_id, controller);
+            // 初期化時にシェルをひとつ起動しているのでウィンドウ作成のタイミングでやることはとくにない
+            // 画面サイズを連動する処理が必要だが、それはサイズ変更通知が来たときに処理する
         }
 
         // 終了していたシェルを辞書から除外する
@@ -157,18 +151,12 @@ impl ShellService {
     }
 
     async fn apply_input(&mut self, args: KeyboadInputEventArgs) {
-        let Some(active_shell_id) = self.active_shell_id else {
-            return;
-        };
-
-        let Some(controller) = self.shell_controller_table.get_mut(&active_shell_id) else {
-            return;
-        };
-
         let text_with_all_modifiers = args.event.text_with_all_modifiers().unwrap_or_default();
         let action = crate::app::detect_action(text_with_all_modifiers, args.state);
         match action {
-            Action::Input(text) => controller.send_input(text),
+            Action::Input(text) => self
+                .terminal_emulator
+                .send_input(self.active_shell_id, text),
             Action::Paste => todo!(),
             Action::SplitHorizontal => todo!(),
             Action::NewTab => todo!(),
