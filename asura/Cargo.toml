@@ -9,3 +9,6 @@ alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev =
 
 parking_lot = "*"
 uuid = { version = "*", features = ["v4", "v7"] }
+
+[dev-dependencies]
+eframe = "0.31.1"
