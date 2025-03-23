@@ -5,13 +5,24 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::Config;
 
+pub struct CoordRange {
+    pub top_left: [f32; 2],
+    pub bottom_right: [f32; 2],
+}
+
 pub struct Container {
     table: Arc<RwLock<HashMap<char, crossfont::RasterizedGlyph>>>,
+
+    coord_table: Arc<RwLock<HashMap<char, CoordRange>>>,
 }
 
 impl Container {
     pub async fn read(&self) -> RwLockReadGuard<HashMap<char, crossfont::RasterizedGlyph>> {
         self.table.read().await
+    }
+
+    pub async fn read_coord_table(&self) -> RwLockReadGuard<HashMap<char, CoordRange>> {
+        self.coord_table.read().await
     }
 }
 
@@ -24,6 +35,8 @@ pub struct GlyphExtractService {
     current_font_size: Option<f32>,
 
     table: Arc<RwLock<HashMap<char, crossfont::RasterizedGlyph>>>,
+
+    coord_table: Arc<RwLock<HashMap<char, CoordRange>>>,
 }
 
 impl GlyphExtractService {
@@ -38,6 +51,7 @@ impl GlyphExtractService {
             font_key: None,
             current_font_size: None,
             table: Default::default(),
+            coord_table: Default::default(),
         }
     }
 
@@ -54,6 +68,7 @@ impl GlyphExtractService {
     pub fn share_glyph_container(&self) -> Container {
         Container {
             table: self.table.clone(),
+            coord_table: self.coord_table.clone(),
         }
     }
 
@@ -77,6 +92,18 @@ impl GlyphExtractService {
                 .filter(|character| !table.contains_key(&character))
                 .collect()
         };
+
+        // TODO: グリフを 2 次元上に並べる実装にもとづいて位置を決める
+        let mut table = self.coord_table.write().await;
+        for c in &chars {
+            table.insert(
+                *c,
+                CoordRange {
+                    top_left: [0.0, 0.0],
+                    bottom_right: [1.0, 1.0],
+                },
+            );
+        }
 
         // グリフを更新
         let mut table = self.table.write().await;
