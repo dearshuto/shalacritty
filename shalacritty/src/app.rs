@@ -56,7 +56,7 @@ where
 
     service_tasks: Vec<JoinHandle<()>>,
 
-    polling_close_sender: Option<std::sync::mpsc::Sender<()>>,
+    polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
 
     runtime: Arc<tokio::runtime::Runtime>,
 
@@ -76,7 +76,7 @@ where
         );
 
         // ポーリングサービス
-        let (polling_close_sender, polling_close_receiver) = std::sync::mpsc::channel();
+        let (polling_close_sender, polling_close_receiver) = tokio::sync::oneshot::channel();
         let mut polling_event_service = PollingEventService::new(polling_close_receiver);
 
         // 設定ファイル監視サービス
@@ -254,8 +254,12 @@ where
         self.window_created_sender = None;
         self.window_size_sender = None;
         self.instance = None;
-        self.polling_close_sender = None;
         self.input_sender = None;
+
+        // ポーリングの終了要求
+        let mut sender = None;
+        std::mem::swap(&mut sender, &mut self.polling_close_sender);
+        sender.unwrap().send(()).unwrap();
 
         // プロファイルサーバーが起動していたら終了する
         // MEMO: サービスの終了処理と統一したい
