@@ -5,14 +5,12 @@ use alacritty_terminal::{
     event_loop::{EventLoop, State},
     grid::Dimensions,
     sync::FairMutex,
-    term::color::Colors,
     tty::{Options, Pty, Shell},
-    vte::ansi::Color,
 };
 
 use parking_lot::MutexGuard;
 
-use super::TeletypeId;
+use super::{convert_color_snorm, TeletypeId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Content {
@@ -37,7 +35,7 @@ impl<'a> TerminalAccessor<'a> {
             .renderable_content()
             .display_iter
             .map(|content| {
-                let fg = convert_color(&content.fg, self.internal.colors());
+                let fg = convert_color_snorm(&content.fg, self.internal.colors());
 
                 Content {
                     code: content.c,
@@ -47,6 +45,13 @@ impl<'a> TerminalAccessor<'a> {
                 }
             })
             .collect()
+    }
+
+    pub(crate) fn access_rendarable_content(
+        &self,
+        func: impl FnOnce(alacritty_terminal::term::RenderableContent<'_>),
+    ) {
+        func(self.internal.renderable_content());
     }
 }
 
@@ -162,18 +167,4 @@ impl EventListener for EventProxy {
     fn send_event(&self, event: alacritty_terminal::event::Event) {
         self.sender.send(event).unwrap();
     }
-}
-
-fn convert_color(color: &Color, colors: &Colors) -> [f32; 3] {
-    let rgb = match color {
-        &alacritty_terminal::vte::ansi::Color::Named(named_color) => colors[named_color],
-        &alacritty_terminal::vte::ansi::Color::Spec(rgb) => Some(rgb),
-        &alacritty_terminal::vte::ansi::Color::Indexed(index) => colors[index as usize],
-    }
-    .unwrap_or_default();
-
-    let r = rgb.r as f32 / u8::MAX as f32;
-    let g = rgb.g as f32 / u8::MAX as f32;
-    let b = rgb.b as f32 / u8::MAX as f32;
-    [r, g, b]
 }
