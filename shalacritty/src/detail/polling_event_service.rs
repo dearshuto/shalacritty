@@ -1,15 +1,17 @@
 use std::time::Duration;
 
+use futures::FutureExt;
+
 pub struct PollingEventService {
-    receiver: std::sync::mpsc::Receiver<()>,
+    exit_receiver: tokio::sync::oneshot::Receiver<()>,
 
     senders: Vec<tokio::sync::mpsc::Sender<()>>,
 }
 
 impl PollingEventService {
-    pub fn new(receiver: std::sync::mpsc::Receiver<()>) -> Self {
+    pub fn new(exit_receiver: tokio::sync::oneshot::Receiver<()>) -> Self {
         Self {
-            receiver,
+            exit_receiver,
             senders: Vec::default(),
         }
     }
@@ -17,21 +19,14 @@ impl PollingEventService {
     pub async fn serve(&mut self) {
         loop {
             // 一定のタイミングでポーリング
-            tokio::time::sleep(Duration::from_millis(30)).await;
-
-            match self.receiver.try_recv() {
-                Ok(_) => break,
-                Err(error) => match error {
-                    std::sync::mpsc::TryRecvError::Empty => {
-                        // 続行なので通知
-                        let fugures = self.senders.iter().map(|sender| sender.send(()));
-                        futures::future::join_all(fugures).await;
-
-                        continue;
-                    }
-                    std::sync::mpsc::TryRecvError::Disconnected => break,
-                },
+            let f = futures::future::poll_fn(|c| self.exit_receiver.poll_unpin(c));
+            if let Ok(_) = tokio::time::timeout(Duration::from_millis(30), f).await {
+                // 終了要求がきたのでループを抜ける
+                break;
             }
+
+            let fugures = self.senders.iter().map(|sender| sender.send(()));
+            futures::future::join_all(fugures).await;
         }
     }
 
@@ -40,5 +35,30 @@ impl PollingEventService {
 
         self.senders.push(sender);
         receiver
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let mut service = PollingEventService::new(receiver);
+
+        let task = runtime.spawn(async move {
+            service.serve().await;
+        });
+
+        sender.send(()).unwrap();
+        runtime.block_on(async {
+            task.await.unwrap();
+        });
     }
 }
