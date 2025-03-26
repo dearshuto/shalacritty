@@ -5,24 +5,20 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::Config;
 
-pub struct CoordRange {
-    pub top_left: [f32; 2],
-    pub bottom_right: [f32; 2],
+use super::{CoordRange, GlyphWriterEx};
+
+pub struct Glyph {
+    pub coord_range: CoordRange,
+    pub bytes: Vec<u8>,
 }
 
 pub struct Container {
-    table: Arc<RwLock<HashMap<char, crossfont::RasterizedGlyph>>>,
-
-    coord_table: Arc<RwLock<HashMap<char, CoordRange>>>,
+    table: Arc<RwLock<HashMap<char, Glyph>>>,
 }
 
 impl Container {
-    pub async fn read(&self) -> RwLockReadGuard<HashMap<char, crossfont::RasterizedGlyph>> {
+    pub async fn read(&self) -> RwLockReadGuard<HashMap<char, Glyph>> {
         self.table.read().await
-    }
-
-    pub async fn read_coord_table(&self) -> RwLockReadGuard<HashMap<char, CoordRange>> {
-        self.coord_table.read().await
     }
 }
 
@@ -30,13 +26,12 @@ pub struct GlyphExtractService {
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     receiver: tokio::sync::mpsc::Receiver<String>,
     rasterizer: crossfont::Rasterizer,
+    glyph_writer: GlyphWriterEx,
 
     font_key: Option<crossfont::FontKey>,
     current_font_size: Option<f32>,
 
-    table: Arc<RwLock<HashMap<char, crossfont::RasterizedGlyph>>>,
-
-    coord_table: Arc<RwLock<HashMap<char, CoordRange>>>,
+    table: Arc<RwLock<HashMap<char, Glyph>>>,
 }
 
 impl GlyphExtractService {
@@ -48,10 +43,10 @@ impl GlyphExtractService {
             config_receiver,
             receiver: string_receiver,
             rasterizer: crossfont::Rasterizer::new().unwrap(),
+            glyph_writer: GlyphWriterEx::new(8, 8),
             font_key: None,
             current_font_size: None,
             table: Default::default(),
-            coord_table: Default::default(),
         }
     }
 
@@ -68,7 +63,6 @@ impl GlyphExtractService {
     pub fn share_glyph_container(&self) -> Container {
         Container {
             table: self.table.clone(),
-            coord_table: self.coord_table.clone(),
         }
     }
 
@@ -93,22 +87,11 @@ impl GlyphExtractService {
                 .collect()
         };
 
-        // TODO: グリフを 2 次元上に並べる実装にもとづいて位置を決める
-        let mut table = self.coord_table.write().await;
-        for c in &chars {
-            table.insert(
-                *c,
-                CoordRange {
-                    top_left: [0.0, 0.0],
-                    bottom_right: [1.0, 1.0],
-                },
-            );
-        }
-
         // グリフを更新
         let mut table = self.table.write().await;
         Self::update_glyph_table(
             &mut table,
+            &mut self.glyph_writer,
             &mut self.rasterizer,
             chars.into_iter(),
             font_size,
@@ -142,6 +125,7 @@ impl GlyphExtractService {
         let mut table = self.table.write().await;
         Self::update_glyph_table(
             &mut table,
+            &mut self.glyph_writer,
             &mut self.rasterizer,
             chars.into_iter(),
             config.font_size,
@@ -151,7 +135,8 @@ impl GlyphExtractService {
     }
 
     async fn update_glyph_table(
-        table: &mut HashMap<char, crossfont::RasterizedGlyph>,
+        table: &mut HashMap<char, Glyph>,
+        glyph_writer: &mut GlyphWriterEx,
         rasterizer: &mut crossfont::Rasterizer,
         chars: impl Iterator<Item = char>,
         font_size: f32,
@@ -169,7 +154,16 @@ impl GlyphExtractService {
         });
 
         for (key, value) in key_values {
-            table.insert(key, value);
+            let bytes = match value.buffer {
+                crossfont::BitmapBuffer::Rgb(items) => items,
+                crossfont::BitmapBuffer::Rgba(items) => items,
+            };
+
+            // 2 次元に配置
+            glyph_writer.allocate(key);
+            let coord_range = glyph_writer.get_coord_range(key).unwrap();
+
+            table.insert(key, Glyph { bytes, coord_range });
         }
     }
 

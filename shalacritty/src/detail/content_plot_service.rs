@@ -77,7 +77,7 @@ impl ContentPlotService {
         debug_assert_eq!(new_contents.len(), self.cache.len());
         let mut contents = Vec::default();
 
-        let coord_table = self.container.read_coord_table().await;
+        let coord_table = self.container.read().await;
 
         // 差分検出範囲
         for index in 0..new_contents.len() {
@@ -89,13 +89,13 @@ impl ContentPlotService {
                 continue;
             }
 
-            if let Some(uv) = coord_table.get(&new.code) {
+            if let Some(glyph) = coord_table.get(&new.code) {
                 contents.push(RendarableContent {
                     index,
                     transform: Default::default(),
                     fore_ground_color: Default::default(),
-                    uv0: nalgebra::Vector2::from(uv.top_left),
-                    uv1: nalgebra::Vector2::from(uv.bottom_right),
+                    uv0: nalgebra::Vector2::from(glyph.coord_range.top_left),
+                    uv1: nalgebra::Vector2::from(glyph.coord_range.bottom_right),
                 });
 
                 self.cache[index] = new.clone();
