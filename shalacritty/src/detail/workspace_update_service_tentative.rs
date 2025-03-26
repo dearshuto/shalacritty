@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tracing::instrument;
 use winit::window::WindowId;
 
 use crate::{
@@ -42,6 +43,7 @@ where
         }
     }
 
+    #[instrument]
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
@@ -52,6 +54,7 @@ where
         }
     }
 
+    #[instrument]
     fn update_workspace(&mut self) {
         let Ok(mut workspace) = self.workspace.lock() else {
             return;
@@ -62,8 +65,16 @@ where
         }
     }
 
+    #[instrument]
     fn store_window_size(&mut self, args: WindowSizeChangedEventArgs) {
         self.window_size_table
             .insert(args.id, (args.width, args.height));
+    }
+}
+
+impl<T: IWorkspaceCallback> std::fmt::Debug for WorkspaceUpdateServiceTentative<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkspaceUpdateServiceTentative")?;
+        std::fmt::Result::Ok(())
     }
 }

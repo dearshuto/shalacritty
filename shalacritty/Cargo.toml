@@ -32,8 +32,18 @@ winit = "0.30"
 
 wgpu = { version = "22.0.0", features = ["vulkan-portability"] }
 
+# デバッグ用に利用するクレート
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-chrome = "0.7.2"
+
 [build-dependencies]
 naga = { version = "0.20.0", features = ["glsl-in", "spv-out", "wgsl-out"] }
 
 [dev-dependencies]
 bmp = "*"
+
+[features]
+# トレーシングを有効にしたいときに指定します
+# 有効にすると、アプリの終了時にトレーシング結果を chrome://tracing で利用できる json ファイル形式で出力します
+tracing = []

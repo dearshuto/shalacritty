@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use futures::FutureExt;
+use tracing::instrument;
 
 pub struct PollingEventService {
     exit_receiver: tokio::sync::oneshot::Receiver<()>,
@@ -16,6 +17,7 @@ impl PollingEventService {
         }
     }
 
+    #[instrument]
     pub async fn serve(&mut self) {
         loop {
             // 一定のタイミングでポーリング
@@ -35,6 +37,13 @@ impl PollingEventService {
 
         self.senders.push(sender);
         receiver
+    }
+}
+
+impl std::fmt::Debug for PollingEventService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PollingEventService")?;
+        std::fmt::Result::Ok(())
     }
 }
 

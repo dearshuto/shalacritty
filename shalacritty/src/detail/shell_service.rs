@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
+use tracing::instrument;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::{
@@ -62,6 +63,7 @@ impl ShellService {
         )
     }
 
+    #[instrument]
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
@@ -100,6 +102,7 @@ impl ShellService {
         self.terminal_emulator.resize(window_width, window_height);
     }
 
+    #[instrument]
     fn apply_window_size(&mut self, args: WindowSizeChangedEventArgs) {
         self.window_width = Some(args.width);
         self.window_height = Some(args.height);
@@ -107,6 +110,7 @@ impl ShellService {
         self.terminal_emulator.resize(args.width, args.height);
     }
 
+    #[instrument]
     async fn try_estimate_teletype_events(&mut self) {
         if let Ok(_args) = self.window_created_receiver.try_recv() {
             // 初期化時にシェルをひとつ起動しているのでウィンドウ作成のタイミングでやることはとくにない
@@ -180,5 +184,12 @@ impl ShellService {
             Action::ActivateNextTile => todo!(),
             Action::DumpDebugInfo => todo!(),
         }
+    }
+}
+
+impl std::fmt::Debug for ShellService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ShellService")?;
+        std::fmt::Result::Ok(())
     }
 }

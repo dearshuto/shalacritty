@@ -1,3 +1,5 @@
+use tracing::instrument;
+
 pub struct Diff {
     pub contents: Vec<RendarableContent>,
 }
@@ -39,6 +41,7 @@ impl ContentPlotService {
         )
     }
 
+    #[instrument]
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
@@ -48,6 +51,7 @@ impl ContentPlotService {
         }
     }
 
+    #[instrument]
     async fn calculate_diff(&mut self, _id: asura::ShellId, new_contents: Vec<asura::Content>) {
         // インデックスで操作できるようにキャッシュサイズを調節する
         // この際に new_contents の方が大きければ確定で要素の追加なので newer_index を保持しておく
@@ -115,5 +119,12 @@ impl ContentPlotService {
 
         let diff = Diff { contents };
         self.diff_sender.send(diff).await.unwrap_or_default();
+    }
+}
+
+impl std::fmt::Debug for ContentPlotService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ContentPlotService")?;
+        std::fmt::Result::Ok(())
     }
 }

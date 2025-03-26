@@ -4,6 +4,7 @@ use std::{
 };
 
 use notify::{event::CreateKind, RecommendedWatcher, Watcher};
+use tracing::instrument;
 
 use crate::Config;
 
@@ -35,6 +36,7 @@ impl ImageCacheEx {
     }
 
     /// 画像キャッシュサービスを起動します
+    #[instrument]
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
@@ -67,6 +69,13 @@ impl ImageCacheEx {
         I: Iterator<Item = T>,
     {
         // TODO
+    }
+}
+
+impl std::fmt::Debug for ImageCacheEx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ImageCacheEx")?;
+        std::fmt::Result::Ok(())
     }
 }
 

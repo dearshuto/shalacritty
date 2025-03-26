@@ -8,6 +8,7 @@ use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
+use tracing::instrument;
 use winit::{keyboard::ModifiersState, window::WindowId};
 
 use crate::{
@@ -127,6 +128,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.renderer.resize(id, width, height);
     }
 
+    #[instrument]
     pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
         let current_config = self.config_receiver.borrow();
@@ -218,11 +220,13 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.renderer.update_with_user_data(id, &update_params);
     }
 
+    #[instrument]
     pub fn render(&mut self, id: WindowId) {
         // self.renderer.render(id);
         self.renderer.render(id);
     }
 
+    #[instrument]
     pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         self.background_renderer_context.window_size = (width, height);
 
@@ -231,6 +235,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.renderer.resize(id, width, height);
     }
 
+    #[instrument]
     pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
         let action = crate::app::detect_action(text, modifier_state);
         match action {
@@ -297,6 +302,13 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     // pub fn listen_config_changed(&mut self) -> std::sync::mpsc::Receiver<Config> {
     //     self.config_service.listen()
     // }
+}
+
+impl<'a, T: IWorkspaceCallback> std::fmt::Debug for Workspace<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Workspace")?;
+        std::fmt::Result::Ok(())
+    }
 }
 
 /// 背景描画のアダプターとしての実装
