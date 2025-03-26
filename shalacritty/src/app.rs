@@ -20,8 +20,8 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService, ShellService,
-        WindowSizeSendService, WorkspaceUpdateServiceTentative,
+        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
+        RenderingService, ShellService, WindowSizeSendService, WorkspaceUpdateServiceTentative,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -43,11 +43,10 @@ where
 
     window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
 
-    #[allow(unused)]
-    // rendering_service: RenderingService<'a>,
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
+    redraw_requested_sender: Option<tokio::sync::mpsc::Sender<RedrawRequestedEventArgs>>,
 
     workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
     renderer: term_gfx::Renderer<TBackend>,
@@ -145,15 +144,15 @@ where
 
         // 描画サービス
         // TODO: デッドロックが起きるのでコメントアウト
-        // let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
-        // let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
+        let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(5);
+        let (redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
 
-        // let rendering_service = RenderingService::new(
-        //     config_service.listen(),
-        //     window_created_receiver,
-        //     window_size_send_service.listen(),
-        //     redraw_requested_receiver,
-        // );
+        let rendering_service = RenderingService::new(
+            config_service.listen(),
+            window_created_receiver,
+            window_size_send_service.listen(),
+            redraw_requested_receiver,
+        );
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
@@ -279,6 +278,17 @@ where
             )
             .unwrap();
 
+        // 描画タスク
+        let rendering_service_task = tokio::task::Builder::new()
+            .name("RenderingService")
+            .spawn_on(
+                async move {
+                    rendering_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
+
         let service_tasks = vec![
             task,
             polling_event_service_task,
@@ -291,6 +301,7 @@ where
             profiler_server_task,
             workspace_resize_task,
             workspace_update_task,
+            rendering_service_task,
         ];
 
         Self {
@@ -300,12 +311,12 @@ where
             input_sender: Some(input_sender),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
+            redraw_requested_sender: Some(redraw_requested_sender),
             workspace,
             renderer,
             polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
-            // rendering_service,
             service_tasks,
             _marker: std::marker::PhantomData,
         }
@@ -332,6 +343,7 @@ where
         self.window_size_sender = None;
         self.instance = None;
         self.input_sender = None;
+        self.redraw_requested_sender = None;
 
         // ポーリングの終了要求
         let mut sender = None;
@@ -523,8 +535,12 @@ where
                     .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
-                // 将来的にこっちに乗り換える
-                // self.renderer.render();
+                // 通知
+                self.redraw_requested_sender
+                    .as_ref()
+                    .unwrap()
+                    .blocking_send(RedrawRequestedEventArgs { id: window_id })
+                    .unwrap();
 
                 self.workspace.lock().unwrap().render(window_id);
             }
@@ -593,6 +609,10 @@ pub struct WindowSizeChangedEventArgs {
     pub id: winit::window::WindowId,
     pub width: u32,
     pub height: u32,
+}
+
+pub struct RedrawRequestedEventArgs {
+    pub id: winit::window::WindowId,
 }
 
 pub fn detect_action(text_with_all_modifiers: &str, modifier_state: ModifiersState) -> Action {

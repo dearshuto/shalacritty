@@ -1,7 +1,5 @@
-use winit::window::WindowId;
-
 use crate::{
-    app::{WindowCreatedEventArgs, WindowSizeChangedEventArgs},
+    app::{RedrawRequestedEventArgs, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
     Config,
 };
 
@@ -10,7 +8,7 @@ pub struct RenderingService<'a> {
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-    redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+    redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<RedrawRequestedEventArgs>,
 }
 
 impl<'a> RenderingService<'a> {
@@ -18,7 +16,7 @@ impl<'a> RenderingService<'a> {
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-        redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+        redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<RedrawRequestedEventArgs>,
     ) -> Self {
         Self {
             renderer: crate::gfx::Renderer::new_with_plugin(()),
@@ -35,7 +33,7 @@ impl<'a> RenderingService<'a> {
             Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_created_receiver.recv() => self.crated(args).await,
             Some(args) = self.window_size_receiver.recv() => self.try_resize(args),
-            Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id),
+            Some(args) = self.redraw_requested_window_id_receiver.recv() => self.redraw(args),
                                                 else => break,
                                             );
         }
@@ -49,7 +47,8 @@ impl<'a> RenderingService<'a> {
         self.renderer.resize(args.id, args.width, args.height);
     }
 
-    fn redraw(&mut self, id: WindowId) {
-        self.renderer.render(id);
+    fn redraw(&mut self, _args: RedrawRequestedEventArgs) {
+        // TODO* 描画処理をこちらに載せ替える
+        // self.renderer.render(args.id);
     }
 }
