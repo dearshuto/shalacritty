@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use tracing::instrument;
 use winit::window::WindowId;
 
 use super::{
@@ -338,6 +339,7 @@ where
         self.render_plugin.resize(width, height);
     }
 
+    #[instrument]
     pub fn render(&self, id: WindowId) {
         let device = self.device_table.get(&id).unwrap();
         let queue = self.queue_table.get(&id).unwrap();
@@ -465,6 +467,13 @@ where
 
         queue.submit(Some(command_encoder.finish()));
         frame.present();
+    }
+}
+
+impl<'a, T: IRenderPlugin> std::fmt::Debug for Renderer<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Renderer")?;
+        std::fmt::Result::Ok(())
     }
 }
 

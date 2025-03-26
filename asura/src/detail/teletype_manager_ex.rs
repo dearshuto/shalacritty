@@ -14,7 +14,7 @@ use parking_lot::MutexGuard;
 
 use super::TeletypeId;
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Content {
     pub code: char,
     pub x: usize,

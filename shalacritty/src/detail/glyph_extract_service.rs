@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crossfont::{FontDesc, Rasterize, Slant, Style, Weight};
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tracing::instrument;
 
 use crate::Config;
 
@@ -50,6 +51,7 @@ impl GlyphExtractService {
         }
     }
 
+    #[instrument]
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
@@ -66,6 +68,7 @@ impl GlyphExtractService {
         }
     }
 
+    #[instrument]
     async fn extract(&mut self, str: &str) {
         // フォントサイズが不明な状態だとなにもしない
         let Some(font_size) = self.current_font_size else {
@@ -100,6 +103,7 @@ impl GlyphExtractService {
         .await;
     }
 
+    #[instrument]
     async fn apply_config(&mut self, config: Config) {
         // そもそも FontKey がなければ作る
         if self.font_key.is_none() {
@@ -188,5 +192,12 @@ impl GlyphExtractService {
                 crossfont::Size::new(font_size),
             )
             .unwrap()
+    }
+}
+
+impl std::fmt::Debug for GlyphExtractService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GlyphExtractService")?;
+        std::fmt::Result::Ok(())
     }
 }

@@ -9,6 +9,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use term_gfx::IBackend;
 use tokio::{sync::oneshot, task::JoinHandle};
 
+use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, StartCause, WindowEvent},
@@ -278,6 +279,13 @@ where
     }
 }
 
+impl<'a, TBackend: IBackend> std::fmt::Debug for App<'a, TBackend> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("App")?;
+        std::fmt::Result::Ok(())
+    }
+}
+
 #[derive(Clone)]
 struct ServerBackendImpl {
     begin_table: HashMap<String, std::time::SystemTime>,
@@ -361,6 +369,7 @@ impl<'a, TBackend> ApplicationHandler for App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
+    #[instrument]
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // ひとつだけウィンドウを起動しておく
         let window_attributes = winit::window::WindowAttributes::default()
@@ -405,6 +414,7 @@ where
         event_loop.set_control_flow(control_flow);
     }
 
+    #[instrument]
     fn new_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, cause: StartCause) {
         match cause {
             StartCause::ResumeTimeReached { .. } => {
@@ -424,6 +434,7 @@ where
         }
     }
 
+    #[instrument]
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -502,7 +513,7 @@ pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WindowSizeChangedEventArgs {
     pub id: winit::window::WindowId,
     pub width: u32,

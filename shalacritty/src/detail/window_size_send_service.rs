@@ -1,3 +1,5 @@
+use tracing::instrument;
+
 use crate::app::WindowSizeChangedEventArgs;
 
 pub struct WindowSizeSendService {
@@ -20,6 +22,7 @@ impl WindowSizeSendService {
         }
     }
 
+    #[instrument]
     pub async fn serve(mut self) {
         // TODO: デッドロックする
         // ウィンドウサイズの変更をポーリングで監視
@@ -48,5 +51,12 @@ impl WindowSizeSendService {
         self.window_size_sender.push(sender);
 
         receiver
+    }
+}
+
+impl std::fmt::Debug for WindowSizeSendService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WindowSizeSendService")?;
+        std::fmt::Result::Ok(())
     }
 }
