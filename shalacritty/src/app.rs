@@ -92,7 +92,7 @@ where
 
         // シェル管理サービス
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
-        let mut shell_service = ShellService::new(
+        let (mut shell_service, content_receiver) = ShellService::new(
             config_service.listen(),
             window_created_receiver,
             window_size_send_service.listen(),
@@ -103,18 +103,14 @@ where
         // グリフ抽出サービス
         let glyph_extract_service =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
-        let _glyph_container = glyph_extract_service.share_glyph_container();
+        let glyph_container = glyph_extract_service.share_glyph_container();
         let glyph_extract_service = runtime.spawn(async move {
             glyph_extract_service.serve().await;
         });
 
-        // シェル管理サービスタスク
-        let shell_service_task = runtime.spawn(async move {
-            shell_service.serve().await;
-        });
-
         // 表示コンテンツの座標を計算するサービス
-        let content_plot_service = ContentPlotService::new(config_service.listen());
+        let (content_plot_service, mut diff_receiver) =
+            ContentPlotService::new(content_receiver, glyph_container);
         let content_plot_service_task = runtime.spawn(async move {
             content_plot_service.serve().await;
         });
@@ -144,6 +140,18 @@ where
         let profiler_server_task = runtime.spawn(async move {
             if is_profile_server_enabled {
                 profiler_core::Server::serve(([0, 0, 0, 0], 3030), server_backend_local, rx).await;
+            }
+        });
+
+        // 差分を Debug 出力
+        let task = runtime.spawn(async move {
+            if cfg!(debug_assertions) {
+                while let Some(diff) = diff_receiver.recv().await {
+                    println!("==================");
+                    println!("{:?}", diff.contents);
+                }
+            } else {
+                // Release 版ではなにもしない
             }
         });
 
@@ -190,7 +198,13 @@ where
             polling_event_service.serve().await;
         });
 
+        // シェル管理サービスタスク
+        let shell_service_task = runtime.spawn(async move {
+            shell_service.serve().await;
+        });
+
         let service_tasks = vec![
+            task,
             polling_event_service_task,
             config_service_task,
             glyph_extract_service,

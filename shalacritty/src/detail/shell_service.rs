@@ -18,6 +18,7 @@ pub struct ShellService {
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
+    contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, Vec<asura::Content>)>,
 
     active_shell_id: asura::ShellId,
     shell_controller_table: HashMap<asura::ShellId, asura::ShellController>,
@@ -34,23 +35,31 @@ impl ShellService {
         receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
-    ) -> Self {
+    ) -> (
+        Self,
+        tokio::sync::mpsc::Receiver<(asura::ShellId, Vec<asura::Content>)>,
+    ) {
         let (_tab_id, id, terminal_emulator) = asura::TerminalEmulator::new();
+        let (contents_sender, contents_receiver) = tokio::sync::mpsc::channel(1);
 
-        Self {
-            terminal_emulator,
-            window_created_receiver,
-            config_receiver,
-            receiver,
-            input_receiver,
-            polling_event_receiver,
-            string_senders: Vec::default(),
-            active_shell_id: id,
-            shell_controller_table: HashMap::default(),
-            font_size: None,
-            window_width: None,
-            window_height: None,
-        }
+        (
+            Self {
+                terminal_emulator,
+                window_created_receiver,
+                config_receiver,
+                receiver,
+                input_receiver,
+                polling_event_receiver,
+                string_senders: Vec::default(),
+                contents_senders: contents_sender,
+                active_shell_id: id,
+                shell_controller_table: HashMap::default(),
+                font_size: None,
+                window_width: None,
+                window_height: None,
+            },
+            contents_receiver,
+        )
     }
 
     pub async fn serve(mut self) {
@@ -127,21 +136,28 @@ impl ShellService {
             .filter_map(|id| {
                 let controller = self.shell_controller_table.get(&id)?;
 
-                let contents: String = controller
+                let contents: Vec<_> = controller
                     .read_contents()
                     .acquire_contents()
                     .into_iter()
-                    .map(|x| x.code)
                     .collect();
 
+                let contents_str: String = contents.iter().map(|c| c.code).collect();
+
+                // コンテンツとして通知
+                let content_send_task = self.contents_senders.send((id, contents));
+
+                // 文字列として通知
                 let mut task = Vec::default();
                 for sender in &self.string_senders {
-                    let handle = sender.send(contents.clone());
+                    let handle = sender.send(contents_str.clone());
                     task.push(handle);
                 }
-                Some(task)
+                let t = futures::future::join_all(task);
+
+                // コンテンツの通知と文字列の通知を両方待つ
+                Some(futures::future::join(content_send_task, t))
             })
-            .flatten()
             .collect();
         futures::future::join_all(tasks).await;
 
