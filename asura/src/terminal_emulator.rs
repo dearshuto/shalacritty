@@ -1,8 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use alacritty_terminal::{
+    grid::Indexed,
+    term::{cell::Cell, color::Colors},
+};
+
 use crate::{
-    detail::{TileId, VirtualWindow},
-    Config, Multiplexer, ShellController, ShellId, TabId,
+    detail::{self, ContentCache, DiffStream, TileId, VirtualWindow},
+    Config, Content, Multiplexer, ShellController, ShellId, TabId,
 };
 
 pub struct TerminalEmulator {
@@ -106,5 +111,115 @@ impl TerminalEmulator {
         };
 
         controller.send_input(input);
+    }
+
+    /// 指定したシェルの表示要素の差分を検出します
+    pub fn diff(&self, id: ShellId, context: &mut DiffContext) -> Diff {
+        let Some(controller) = self.shell_controller_table.get(&id) else {
+            return Default::default();
+        };
+
+        let mut diff_contents = Vec::default();
+        controller
+            .read_contents()
+            .access_rendarable_content(|renderable_content| {
+                let iter = renderable_content
+                    .display_iter
+                    .enumerate()
+                    .map(|c| CellAdapter((c.0, c.1, renderable_content.colors)));
+                diff_contents = context.diff_stream.calculate(iter);
+            });
+
+        Diff {
+            content_diff: diff_contents,
+        }
+    }
+}
+
+pub struct DiffContext {
+    diff_stream: DiffStream,
+}
+
+impl DiffContext {
+    pub fn new() -> Self {
+        Self {
+            diff_stream: DiffStream::new(),
+        }
+    }
+}
+
+impl Default for DiffContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Diff {
+    content_diff: Vec<DiffType>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum DiffType {
+    Add(DiffContent),
+    Update(DiffContent),
+    Remove(usize),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DiffContent {
+    pub index: usize,
+    pub content: Content,
+}
+
+struct CellAdapter<'a>((usize, Indexed<&'a Cell>, &'a Colors));
+
+impl<'a> Into<(ContentCache, DiffContent)> for CellAdapter<'a> {
+    fn into(self) -> (ContentCache, DiffContent) {
+        let (index, cell, colors) = self.0;
+
+        let fg = detail::convert_color_uint(&cell.fg, colors);
+        let fg_snorm = detail::into_snorm(&fg);
+        let content_cache = ContentCache {
+            code: cell.c,
+            x: cell.point.column.0,
+            y: cell.point.line.0,
+            fg,
+        };
+        let diff_content = DiffContent {
+            index,
+            content: Content {
+                code: cell.c,
+                x: cell.point.column.0,
+                y: cell.point.line.0,
+                fg: fg_snorm,
+            },
+        };
+        (content_cache, diff_content)
+    }
+}
+
+impl<'a> PartialEq<ContentCache> for CellAdapter<'a> {
+    fn eq(&self, other: &ContentCache) -> bool {
+        let (_, cell, colors) = &self.0;
+
+        if cell.c != other.code {
+            return false;
+        }
+
+        if cell.point.column.0 != other.x {
+            return false;
+        }
+
+        if cell.point.line.0 != other.y {
+            return false;
+        }
+
+        let fg = detail::convert_color_uint(&cell.fg, colors);
+        if fg != other.fg {
+            return false;
+        }
+
+        return true;
     }
 }
