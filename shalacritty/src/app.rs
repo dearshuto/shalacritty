@@ -107,22 +107,40 @@ where
         let glyph_extract_service =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
-        let glyph_extract_service = runtime.spawn(async move {
-            glyph_extract_service.serve().await;
-        });
+        let glyph_extract_service = tokio::task::Builder::new()
+            .name("GlyphExtractService")
+            .spawn_on(
+                async move {
+                    glyph_extract_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // 表示コンテンツの座標を計算するサービス
         let (content_plot_service, mut diff_receiver) =
             ContentPlotService::new(content_receiver, glyph_container);
-        let content_plot_service_task = runtime.spawn(async move {
-            content_plot_service.serve().await;
-        });
+        let content_plot_service_task = tokio::task::Builder::new()
+            .name("ContentPlotService")
+            .spawn_on(
+                async move {
+                    content_plot_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // 画像キャッシュサービス
         let image_cache_service = ImageCacheEx::new(runtime.clone(), config_service.listen());
-        let image_cache_service_task = runtime.spawn(async move {
-            image_cache_service.serve().await;
-        });
+        let image_cache_service_task = tokio::task::Builder::new()
+            .name("ImageCacheService")
+            .spawn_on(
+                async move {
+                    image_cache_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // 描画サービス
         // TODO: デッドロックが起きるのでコメントアウト
@@ -140,23 +158,40 @@ where
         let server_backend_local = server_backend.clone();
 
         let (tx, rx) = oneshot::channel::<()>();
-        let profiler_server_task = runtime.spawn(async move {
-            if is_profile_server_enabled {
-                profiler_core::Server::serve(([0, 0, 0, 0], 3030), server_backend_local, rx).await;
-            }
-        });
+        let profiler_server_task = tokio::task::Builder::new()
+            .name("ProfilerServerTask")
+            .spawn_on(
+                async move {
+                    if is_profile_server_enabled {
+                        profiler_core::Server::serve(
+                            ([0, 0, 0, 0], 3030),
+                            server_backend_local,
+                            rx,
+                        )
+                        .await;
+                    }
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // 差分を Debug 出力
-        let task = runtime.spawn(async move {
-            if cfg!(debug_assertions) {
-                while let Some(diff) = diff_receiver.recv().await {
-                    println!("==================");
-                    println!("{:?}", diff.contents);
-                }
-            } else {
-                // Release 版ではなにもしない
-            }
-        });
+        let task = tokio::task::Builder::new()
+            .name("DebugPrintTask")
+            .spawn_on(
+                async move {
+                    if cfg!(debug_assertions) {
+                        while let Some(diff) = diff_receiver.recv().await {
+                            println!("==================");
+                            println!("{:?}", diff.contents);
+                        }
+                    } else {
+                        // Release 版ではなにもしない
+                    }
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             runtime.clone(),
@@ -168,14 +203,20 @@ where
         // 互換用の実装で、将来的に Workspace は解体予定
         let mut window_size_receiver = window_size_send_service.listen();
         let workspace_local = workspace.clone();
-        let workspace_resize_task = runtime.spawn(async move {
-            while let Some(args) = window_size_receiver.recv().await {
-                workspace_local
-                    .lock()
-                    .unwrap()
-                    .resize(args.id, args.width, args.height);
-            }
-        });
+        let workspace_resize_task = tokio::task::Builder::new()
+            .name("WorkspaceResizeTask")
+            .spawn_on(
+                async move {
+                    while let Some(args) = window_size_receiver.recv().await {
+                        workspace_local
+                            .lock()
+                            .unwrap()
+                            .resize(args.id, args.width, args.height);
+                    }
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // Workspace の更新処理を非同期に実行するサービス
         let workspace_update_service = WorkspaceUpdateServiceTentative::new(
@@ -183,28 +224,58 @@ where
             polling_event_service.listen(),
             window_size_send_service.listen(),
         );
-        let workspace_update_task = runtime.spawn(async move {
-            workspace_update_service.serve().await;
-        });
+        let workspace_update_task = tokio::task::Builder::new()
+            .name("WorkspaceUpdateService")
+            .spawn_on(
+                async move {
+                    workspace_update_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
-        let window_size_send_service = runtime.spawn(async move {
-            window_size_send_service.serve().await;
-        });
+        let window_size_send_service = tokio::task::Builder::new()
+            .name("WindowSizeSendService")
+            .spawn_on(
+                async move {
+                    window_size_send_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // 設定ファイルサービスタスク
         // タスク化と同時にムーブするので他のサービスたちが購読を開始してから記述している
-        let config_service_task = runtime.spawn(async move {
-            config_service.serve().await;
-        });
+        let config_service_task = tokio::task::Builder::new()
+            .name("ConfigService")
+            .spawn_on(
+                async move {
+                    config_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
-        let polling_event_service_task = runtime.spawn(async move {
-            polling_event_service.serve().await;
-        });
+        let polling_event_service_task = tokio::task::Builder::new()
+            .name("PollintEventService")
+            .spawn_on(
+                async move {
+                    polling_event_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         // シェル管理サービスタスク
-        let shell_service_task = runtime.spawn(async move {
-            shell_service.serve().await;
-        });
+        let shell_service_task = tokio::task::Builder::new()
+            .name("ShellService")
+            .spawn_on(
+                async move {
+                    shell_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
 
         let window_manage_task = runtime.spawn(async move {
             window_service.serve().await;

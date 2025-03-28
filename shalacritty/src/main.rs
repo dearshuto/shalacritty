@@ -11,6 +11,9 @@ struct Args {
 }
 
 fn main() {
+    #[cfg(feature = "tokio-subscriber")]
+    console_subscriber::init();
+
     let args = Args::parse();
     let renderer = term_gfx::Renderer::new();
 
