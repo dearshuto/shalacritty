@@ -156,7 +156,7 @@ impl Default for DiffContext {
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Diff {
-    content_diff: Vec<DiffType>,
+    pub content_diff: Vec<DiffType>,
 }
 
 #[derive(Debug, PartialEq)]

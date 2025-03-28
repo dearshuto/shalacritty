@@ -11,6 +11,7 @@ use crate::{
 
 pub struct ShellService {
     terminal_emulator: asura::TerminalEmulator,
+    diff_context_table: HashMap<asura::ShellId, asura::DiffContext>,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
@@ -19,7 +20,7 @@ pub struct ShellService {
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
-    contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, Vec<asura::Content>)>,
+    contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, asura::Diff)>,
 
     active_shell_id: asura::ShellId,
     shell_controller_table: HashMap<asura::ShellId, asura::ShellController>,
@@ -38,7 +39,7 @@ impl ShellService {
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> (
         Self,
-        tokio::sync::mpsc::Receiver<(asura::ShellId, Vec<asura::Content>)>,
+        tokio::sync::mpsc::Receiver<(asura::ShellId, asura::Diff)>,
     ) {
         let (_tab_id, id, terminal_emulator) = asura::TerminalEmulator::new();
         let (contents_sender, contents_receiver) = tokio::sync::mpsc::channel(1);
@@ -46,6 +47,7 @@ impl ShellService {
         (
             Self {
                 terminal_emulator,
+                diff_context_table: HashMap::from([(id, asura::DiffContext::new())]),
                 window_created_receiver,
                 config_receiver,
                 receiver,
@@ -138,8 +140,12 @@ impl ShellService {
         let tasks: Vec<_> = dirty_shell_ids
             .into_iter()
             .filter_map(|id| {
-                let controller = self.shell_controller_table.get(&id)?;
+                // コンテンツ差分を通知
+                let context = self.diff_context_table.get_mut(&id)?;
+                let diff_types = self.terminal_emulator.diff(id, context);
+                let content_send_task = self.contents_senders.send((id, diff_types));
 
+                let controller = self.shell_controller_table.get(&id)?;
                 let contents: Vec<_> = controller
                     .read_contents()
                     .acquire_contents()
@@ -147,9 +153,6 @@ impl ShellService {
                     .collect();
 
                 let contents_str: String = contents.iter().map(|c| c.code).collect();
-
-                // コンテンツとして通知
-                let content_send_task = self.contents_senders.send((id, contents));
 
                 // 文字列として通知
                 let mut task = Vec::default();
