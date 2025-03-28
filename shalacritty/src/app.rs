@@ -86,12 +86,8 @@ where
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
         // ウィンドウ管理サービス
-
-        let window_service =
+        let mut window_service =
             WindowService::new(window_created_receiver, polling_event_service.listen());
-        let window_manage_task = runtime.spawn(async move {
-            window_service.serve().await;
-        });
 
         // ウィンドウサイズサービス
         let mut window_size_send_service =
@@ -101,7 +97,7 @@ where
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
         let (mut shell_service, content_receiver) = ShellService::new(
             config_service.listen(),
-            window_created_receiver,
+            window_service.listen(),
             window_size_send_service.listen(),
             input_receiver,
             polling_event_service.listen(),
@@ -210,15 +206,16 @@ where
             shell_service.serve().await;
         });
 
+        let window_manage_task = runtime.spawn(async move {
+            window_service.serve().await;
+        });
+
         let service_tasks = vec![
             task,
             polling_event_service_task,
             config_service_task,
-<<<<<<< HEAD
             glyph_extract_service,
-=======
             window_manage_task,
->>>>>>> 53cb794 ([WIP] Window のインスタンス管理をサービス化)
             window_size_send_service,
             shell_service_task,
             content_plot_service_task,

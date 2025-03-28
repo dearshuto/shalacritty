@@ -5,11 +5,7 @@ mod image_cache_ex;
 mod polling_event_service;
 mod rendering_service;
 mod shell_service;
-<<<<<<< HEAD
-=======
-mod shell_util;
 mod window_service;
->>>>>>> 53cb794 ([WIP] Window のインスタンス管理をサービス化)
 mod window_size_send_service;
 mod workspace_update_service_tentative;
 

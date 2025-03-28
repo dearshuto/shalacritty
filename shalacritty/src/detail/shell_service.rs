@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::mpsc::TryRecvError};
 
 use tracing::instrument;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::{platform::modifier_supplement::KeyEventExtModifierSupplement, window::WindowId};
 
 use crate::{
-    app::{KeyboadInputEventArgs, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
+    app::{KeyboadInputEventArgs, WindowSizeChangedEventArgs},
     workspace::Action,
     Config,
 };
@@ -13,7 +13,7 @@ pub struct ShellService {
     terminal_emulator: asura::TerminalEmulator,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
-    window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
+    window_created_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
@@ -32,7 +32,7 @@ pub struct ShellService {
 impl ShellService {
     pub fn new(
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
-        window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
+        window_created_receiver: tokio::sync::mpsc::Receiver<WindowId>,
         receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
