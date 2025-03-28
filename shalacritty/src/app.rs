@@ -48,7 +48,7 @@ where
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
 
-    workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
+    workspace: Option<Arc<Mutex<Workspace<'static, ServerBackend>>>>,
     renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
@@ -279,6 +279,7 @@ where
 
         let window_manage_task = runtime.spawn(async move {
             window_service.serve().await;
+            println!("asd");
         });
 
         let service_tasks = vec![
@@ -302,7 +303,7 @@ where
             input_sender: Some(input_sender),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
-            workspace,
+            workspace: Some(workspace),
             renderer,
             polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
@@ -327,12 +328,14 @@ where
     TBackend: IBackend,
 {
     fn drop(&mut self) {
+        println!("Drop");
         // 終了を通知して起動したサービスを終了させる
         // channel に紐づいたサービスはインスタンスを破棄することで止める
         self.window_created_sender = None;
         self.window_size_sender = None;
         self.instance = None;
         self.input_sender = None;
+        self.workspace = None;
 
         // ポーリングの終了要求
         let mut sender = None;
@@ -349,7 +352,15 @@ where
 
         // サービスの終了待ち
         let mut service_tasks = Vec::default();
-        std::mem::swap(&mut self.service_tasks, &mut service_tasks);
+        while let Some(task) = self.service_tasks.pop() {
+            let task = self.runtime.spawn(async move {
+                task.await.unwrap();
+            });
+            service_tasks.push(task);
+        }
+
+        // let mut service_tasks = Vec::default();
+        // std::mem::swap(&mut self.service_tasks, &mut service_tasks);
         self.runtime.block_on(async move {
             futures::future::join_all(service_tasks).await;
         });
@@ -460,6 +471,8 @@ where
 
         self.runtime.block_on(async {
             self.workspace
+                .as_ref()
+                .unwrap()
                 .lock()
                 .unwrap()
                 .assign_window(id, &window, width, height)
@@ -493,7 +506,7 @@ where
     fn new_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, cause: StartCause) {
         match cause {
             StartCause::ResumeTimeReached { .. } => {
-                if let Ok(workspace) = self.workspace.lock() {
+                if let Ok(workspace) = self.workspace.as_ref().unwrap().lock() {
                     if workspace.is_empty() {
                         event_loop.exit();
                     }
@@ -512,15 +525,17 @@ where
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        println!("{:?}", event);
         match event {
             WindowEvent::Ime(ime) => match ime {
                 winit::event::Ime::Enabled => {}
                 winit::event::Ime::Preedit(_, _) => {}
                 winit::event::Ime::Commit(str) => {
-                    self.workspace
-                        .lock()
-                        .unwrap()
-                        .send_input(window_id, &str, self.modifiers_state)
+                    self.workspace.as_ref().unwrap().lock().unwrap().send_input(
+                        window_id,
+                        &str,
+                        self.modifiers_state,
+                    )
                 }
                 winit::event::Ime::Disabled => {}
             },
@@ -540,7 +555,12 @@ where
                 // 将来的にこっちに乗り換える
                 // self.renderer.render();
 
-                self.workspace.lock().unwrap().render(window_id);
+                self.workspace
+                    .as_ref()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .render(window_id);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers_state = modifiers.state();
@@ -561,10 +581,11 @@ where
                 }
 
                 let text = event.text_with_all_modifiers().unwrap_or_default();
-                self.workspace
-                    .lock()
-                    .unwrap()
-                    .send_input(window_id, text, self.modifiers_state);
+                self.workspace.as_ref().unwrap().lock().unwrap().send_input(
+                    window_id,
+                    text,
+                    self.modifiers_state,
+                );
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();

@@ -38,14 +38,24 @@ impl WindowService {
                 Err(error) => match error {
                     std::sync::mpsc::TryRecvError::Empty => {
                         for window in self.window_table.values_mut() {
-                            window.request_redraw();
+                            // window.request_redraw();
                         }
                         continue;
                     }
-                    std::sync::mpsc::TryRecvError::Disconnected => break,
+                    std::sync::mpsc::TryRecvError::Disconnected => {
+                        break;
+                    }
                 },
             };
         }
+
+        println!("E");
+        self.polling_event_receiver.close();
+        println!("F");
+        self.window_table.clear();
+        println!("G");
+        self.senders.clear();
+        println!("H");
     }
 
     pub fn listen(&mut self) -> tokio::sync::mpsc::Receiver<WindowId> {
