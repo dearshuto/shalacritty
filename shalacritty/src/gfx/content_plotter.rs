@@ -80,9 +80,9 @@ impl From<GlyphImagePatch> for GlyphTexturePatch {
 
 #[derive(Default)]
 pub struct Diff {
-    character_info_array: Vec<CharacterInfo>,
-    cursor: Option<Point>,
-    item_count: i32,
+    pub character_info_array: Vec<CharacterInfo>,
+    pub cursor: Option<Point>,
+    pub item_count: i32,
 }
 
 impl Diff {

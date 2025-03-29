@@ -526,7 +526,7 @@ where
                 // 将来的にこっちに乗り換える
                 // self.renderer.render();
 
-                self.workspace.lock().unwrap().render(window_id);
+                // self.workspace.lock().unwrap().render(window_id);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers_state = modifiers.state();
