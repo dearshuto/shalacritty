@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
 };
 
 use profiler_core::IServerBackend;
@@ -12,8 +11,8 @@ use tokio::{sync::oneshot, task::JoinHandle};
 use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, StartCause, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event::{ElementState, WindowEvent},
+    event_loop::{EventLoop, EventLoopProxy},
     keyboard::ModifiersState,
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
@@ -47,6 +46,7 @@ where
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
+    redraw_requested_sender: Option<std::sync::mpsc::Sender<()>>,
 
     workspace: Option<Arc<Mutex<Workspace<'static, ServerBackend>>>>,
     renderer: term_gfx::Renderer<TBackend>,
@@ -66,7 +66,11 @@ impl<'a, TBackend> App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
-    pub fn new(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) -> Self {
+    pub fn new(
+        renderer: term_gfx::Renderer<TBackend>,
+        proxy: EventLoopProxy<UserEvent>,
+        is_profile_server_enabled: bool,
+    ) -> Self {
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_time()
@@ -86,8 +90,12 @@ where
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
         // ウィンドウ管理サービス
-        let mut window_service =
-            WindowService::new(window_created_receiver, polling_event_service.listen());
+        let (redraw_requested_sender, redraw_requested_receiver) = std::sync::mpsc::channel();
+        let mut window_service = WindowService::new(
+            window_created_receiver,
+            redraw_requested_receiver,
+            polling_event_service.listen(),
+        );
 
         // ウィンドウサイズサービス
         let mut window_size_send_service =
@@ -196,6 +204,7 @@ where
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             runtime.clone(),
             config_receiver,
+            proxy,
             server_backend,
         )));
 
@@ -304,6 +313,7 @@ where
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
             workspace: Some(workspace),
+            redraw_requested_sender: Some(redraw_requested_sender),
             renderer,
             polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
@@ -316,9 +326,10 @@ where
 
     pub fn run(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
         // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
-        let event_loop = EventLoop::builder().build().unwrap();
+        let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
 
-        let mut app = Self::new(renderer, is_profile_server_enabled);
+        let mut app = Self::new(renderer, proxy, is_profile_server_enabled);
         event_loop.run_app(&mut app).unwrap();
     }
 }
@@ -453,7 +464,7 @@ impl IWorkspaceCallback for ServerBackend {
     }
 }
 
-impl<'a, TBackend> ApplicationHandler for App<'a, TBackend>
+impl<'a, TBackend> ApplicationHandler<UserEvent> for App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
@@ -496,26 +507,6 @@ where
             .unwrap()
             .send(args)
             .unwrap();
-
-        let timer_length = Duration::from_millis(10);
-        let control_flow = ControlFlow::WaitUntil(Instant::now() + timer_length);
-        event_loop.set_control_flow(control_flow);
-    }
-
-    #[instrument]
-    fn new_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, cause: StartCause) {
-        match cause {
-            StartCause::ResumeTimeReached { .. } => {
-                if let Ok(workspace) = self.workspace.as_ref().unwrap().lock() {
-                    if workspace.is_empty() {
-                        event_loop.exit();
-                    }
-                }
-            }
-            StartCause::WaitCancelled { .. } => {}
-            StartCause::Poll => {}
-            StartCause::Init => {}
-        }
     }
 
     #[instrument]
@@ -593,6 +584,29 @@ where
             _ => {}
         }
     }
+
+    fn user_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: UserEvent) {
+        match event {
+            UserEvent::Exit => event_loop.exit(),
+            UserEvent::RequestRedraw => {
+                self.redraw_requested_sender
+                    .as_ref()
+                    .unwrap()
+                    .send(())
+                    .unwrap();
+            }
+        };
+    }
+
+    fn exiting(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let _ = event_loop;
+    }
+}
+
+#[derive(Debug)]
+pub enum UserEvent {
+    Exit,
+    RequestRedraw,
 }
 
 pub struct KeyboadInputEventArgs {
