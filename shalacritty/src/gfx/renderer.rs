@@ -1,6 +1,5 @@
 use std::{collections::HashMap, path::Path};
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tracing::instrument;
 use winit::window::WindowId;
 
@@ -137,21 +136,15 @@ where
         }
     }
 
-    pub async fn register<'w, TWindow>(
+    pub async fn register<TWindow>(
         &mut self,
         id: WindowId,
         instance: &wgpu::Instance,
         window: TWindow,
     ) where
-        TWindow: HasWindowHandle + HasDisplayHandle,
+        TWindow: Into<wgpu::SurfaceTarget<'a>>,
     {
-        let surface = unsafe {
-            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: window.display_handle().unwrap().as_raw(),
-                raw_window_handle: window.window_handle().unwrap().as_raw(),
-            })
-        }
-        .unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),

@@ -15,7 +15,6 @@ fn main() {
     console_subscriber::init();
 
     let args = Args::parse();
-    let renderer = term_gfx::Renderer::new();
 
     // tracing が有効なときのみトレーシングを実行するような分岐
     let _instance = if cfg!(feature = "tracing") {
@@ -29,5 +28,5 @@ fn main() {
         None
     };
 
-    App::run(renderer, args.is_profile_server_enabled);
+    App::run(args.is_profile_server_enabled);
 }

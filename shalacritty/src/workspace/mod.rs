@@ -6,7 +6,6 @@ use std::{collections::HashSet, sync::Arc};
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
 use tracing::instrument;
 use winit::{event_loop::EventLoopProxy, keyboard::ModifiersState, window::WindowId};
@@ -30,7 +29,6 @@ pub trait IWorkspaceCallback {
 }
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
-    instance: wgpu::Instance,
     config_receiver: tokio::sync::watch::Receiver<Config>,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
@@ -67,7 +65,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     ) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
-        let instance = wgpu::Instance::default();
         let glyph_manager = GlyphManager::new(config_receiver.borrow().font_size);
         let content_plotter = ContentPlotter::new();
 
@@ -90,7 +87,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
         let image_alpha = { config_receiver.borrow().image_alpha };
         Self {
-            instance,
             config_receiver,
             glyph_manager,
             content_plotter,
@@ -116,21 +112,13 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         }
     }
 
-    pub async fn assign_window<'w, TWindow>(
-        &mut self,
-        id: winit::window::WindowId,
-        window: TWindow,
-        width: u32,
-        height: u32,
-    ) where
-        TWindow: HasWindowHandle + HasDisplayHandle,
-    {
+    pub async fn assign_window(&mut self, id: winit::window::WindowId, width: u32, height: u32) {
         // 初期サイズ反映
         self.resize(id, width, height);
 
         // 載せ替え予定
-        self.renderer.register(id, &self.instance, window).await;
-        self.renderer.resize(id, width, height);
+        // self.renderer.register(id, &self.instance, window).await;
+        // self.renderer.resize(id, width, height);
     }
 
     #[instrument]

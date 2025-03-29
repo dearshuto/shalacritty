@@ -1,7 +1,7 @@
-use winit::window::WindowId;
+use std::sync::Arc;
 
 use crate::{
-    app::{WindowCreatedEventArgs, WindowSizeChangedEventArgs},
+    app::{RedrawRequestedEventArgs, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
     gfx::{CharacterInfo, RendererUpdateParams},
     Config,
 };
@@ -13,7 +13,9 @@ pub struct RenderingService<'a> {
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-    redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+    redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<RedrawRequestedEventArgs>,
+
+    window: Option<Arc<winit::window::Window>>,
 }
 
 impl<'a> RenderingService<'a> {
@@ -21,7 +23,7 @@ impl<'a> RenderingService<'a> {
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-        redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+        redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<RedrawRequestedEventArgs>,
     ) -> Self {
         Self {
             renderer: crate::gfx::Renderer::new_with_plugin(()),
@@ -30,6 +32,7 @@ impl<'a> RenderingService<'a> {
             window_created_receiver,
             window_size_receiver,
             redraw_requested_window_id_receiver,
+            window: None,
         }
     }
 
@@ -38,26 +41,29 @@ impl<'a> RenderingService<'a> {
             tokio::select!(
             Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_created_receiver.recv() => self.crated(args).await,
-            Some(args) = self.window_size_receiver.recv() => self.try_resize(args),
-            Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id),
+            Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
+            Some(args) = self.redraw_requested_window_id_receiver.recv() => self.redraw(args),
                                                 else => break,
                                             );
         }
     }
 
-    async fn crated(&mut self, args: WindowCreatedEventArgs) {
-        // TODO: Window の寿命を適切に管理する実装を考える
+    async fn crated(&mut self, _args: WindowCreatedEventArgs) {}
 
-        self.renderer
-            .register(args.id, &self.instance, args.window)
-            .await;
-    }
+    async fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
+        let mut window = None;
+        std::mem::swap(&mut window, &mut self.window);
 
-    fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
+        if window.is_some() {
+            self.renderer
+                .register(args.id, &self.instance, window.unwrap())
+                .await;
+        }
+
         self.renderer.resize(args.id, args.width, args.height);
     }
 
-    fn redraw(&mut self, id: WindowId) {
+    fn redraw(&mut self, args: RedrawRequestedEventArgs) {
         let diff = crate::gfx::Diff {
             character_info_array: vec![CharacterInfo {
                 code: 'a',
@@ -71,12 +77,12 @@ impl<'a> RenderingService<'a> {
             item_count: 1,
         };
         self.renderer.update_with_user_data(
-            id,
+            args.id,
             &RendererUpdateParams::<String, ()>::new_with_user_data(())
                 .with_diff(diff)
                 .with_background_color(Some([1.0, 1.0, 1.0, 1.0])),
         );
 
-        self.renderer.render(id);
+        self.renderer.render(args.id);
     }
 }

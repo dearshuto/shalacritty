@@ -4,8 +4,7 @@ use std::{
 };
 
 use profiler_core::IServerBackend;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use term_gfx::IBackend;
+use raw_window_handle::HasWindowHandle;
 use tokio::{sync::oneshot, task::JoinHandle};
 
 use tracing::instrument;
@@ -20,8 +19,8 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService, ShellService,
-        WindowSizeSendService, WorkspaceUpdateServiceTentative,
+        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
+        RenderingService, ShellService, WindowSizeSendService, WorkspaceUpdateServiceTentative,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -35,22 +34,18 @@ use crate::{
 ///      |                                   ^               ^
 ///      ├───────────> ImageCacheService ────┘               │
 ///      └───────────────────────────────────────────────────┘
-pub struct App<'a, TBackend>
-where
-    TBackend: term_gfx::IBackend,
-{
+pub struct App<'a> {
     instance: Option<super::config::Instance>,
 
     window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
 
-    #[allow(unused)]
-    // rendering_service: RenderingService<'a>,
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
+    gfx_window_created_sender: Option<tokio::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
+    redraw_requested_sender: Option<tokio::sync::mpsc::Sender<RedrawRequestedEventArgs>>,
 
     workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
-    renderer: term_gfx::Renderer<TBackend>,
     modifiers_state: ModifiersState,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
 
@@ -63,15 +58,8 @@ where
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, TBackend> App<'a, TBackend>
-where
-    TBackend: term_gfx::IBackend,
-{
-    pub fn new(
-        renderer: term_gfx::Renderer<TBackend>,
-        proxy: EventLoopProxy<UserEvent>,
-        is_profile_server_enabled: bool,
-    ) -> Self {
+impl<'a> App<'a> {
+    pub fn new(proxy: EventLoopProxy<UserEvent>, is_profile_server_enabled: bool) -> Self {
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_time()
@@ -145,15 +133,15 @@ where
 
         // 描画サービス
         // TODO: デッドロックが起きるのでコメントアウト
-        // let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
-        // let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
+        let (gfx_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(5);
+        let (redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
 
-        // let rendering_service = RenderingService::new(
-        //     config_service.listen(),
-        //     window_created_receiver,
-        //     window_size_send_service.listen(),
-        //     redraw_requested_receiver,
-        // );
+        let rendering_service = RenderingService::new(
+            config_service.listen(),
+            window_created_receiver,
+            window_size_send_service.listen(),
+            redraw_requested_receiver,
+        );
 
         let server_backend = ServerBackend::new();
         let server_backend_local = server_backend.clone();
@@ -279,6 +267,17 @@ where
             )
             .unwrap();
 
+        // 描画タスク
+        let rendering_service_task = tokio::task::Builder::new()
+            .name("RenderingService")
+            .spawn_on(
+                async move {
+                    rendering_service.serve().await;
+                },
+                runtime.handle(),
+            )
+            .unwrap();
+
         let service_tasks = vec![
             task,
             polling_event_service_task,
@@ -291,6 +290,7 @@ where
             profiler_server_task,
             workspace_resize_task,
             workspace_update_task,
+            rendering_service_task,
         ];
 
         Self {
@@ -299,32 +299,29 @@ where
             window_table: HashMap::default(),
             input_sender: Some(input_sender),
             window_created_sender: Some(window_created_sender),
+            gfx_window_created_sender: Some(gfx_window_created_sender),
             window_size_sender: Some(window_size_sender),
+            redraw_requested_sender: Some(redraw_requested_sender),
             workspace,
-            renderer,
             polling_close_sender: Some(polling_close_sender),
             modifiers_state: ModifiersState::default(),
             profiler_kill_sender: Some(tx),
-            // rendering_service,
             service_tasks,
             _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn run(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
+    pub fn run(is_profile_server_enabled: bool) {
         // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
         let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
         let proxy = event_loop.create_proxy();
 
-        let mut app = Self::new(renderer, proxy, is_profile_server_enabled);
+        let mut app = Self::new(proxy, is_profile_server_enabled);
         event_loop.run_app(&mut app).unwrap();
     }
 }
 
-impl<'a, TBackend> Drop for App<'a, TBackend>
-where
-    TBackend: IBackend,
-{
+impl<'a> Drop for App<'a> {
     fn drop(&mut self) {
         // 終了を通知して起動したサービスを終了させる
         // channel に紐づいたサービスはインスタンスを破棄することで止める
@@ -332,6 +329,7 @@ where
         self.window_size_sender = None;
         self.instance = None;
         self.input_sender = None;
+        self.redraw_requested_sender = None;
 
         // ポーリングの終了要求
         let mut sender = None;
@@ -355,7 +353,7 @@ where
     }
 }
 
-impl<'a, TBackend: IBackend> std::fmt::Debug for App<'a, TBackend> {
+impl<'a> std::fmt::Debug for App<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("App")?;
         std::fmt::Result::Ok(())
@@ -441,10 +439,7 @@ impl IWorkspaceCallback for ServerBackend {
     }
 }
 
-impl<'a, TBackend> ApplicationHandler<UserEvent> for App<'a, TBackend>
-where
-    TBackend: term_gfx::IBackend,
-{
+impl<'a> ApplicationHandler<UserEvent> for App<'a> {
     #[instrument]
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // ひとつだけウィンドウを起動しておく
@@ -461,18 +456,9 @@ where
             self.workspace
                 .lock()
                 .unwrap()
-                .assign_window(id, &window, width, height)
+                .assign_window(id, width, height)
                 .await;
         });
-
-        // ひとつのウィンドウハンドルにはひとつの swapchain しか作成できないのでいったん無効化
-        if false {
-            let window_handle = window.window_handle().unwrap();
-            let display_handle = window.display_handle().unwrap();
-            self.renderer
-                .register_surface(window_handle, display_handle)
-                .unwrap();
-        }
 
         let window = Arc::new(window);
 
@@ -485,7 +471,12 @@ where
         self.window_created_sender
             .as_ref()
             .unwrap()
-            .send(args)
+            .send(args.clone())
+            .unwrap();
+        self.gfx_window_created_sender
+            .as_ref()
+            .unwrap()
+            .blocking_send(args)
             .unwrap();
 
         self.window_table.insert(id, window);
@@ -523,8 +514,12 @@ where
                     .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
-                // 将来的にこっちに乗り換える
-                // self.renderer.render();
+                // 通知
+                self.redraw_requested_sender
+                    .as_ref()
+                    .unwrap()
+                    .blocking_send(RedrawRequestedEventArgs { id: window_id })
+                    .unwrap_or_default();
 
                 // self.workspace.lock().unwrap().render(window_id);
             }
@@ -583,6 +578,7 @@ pub struct KeyboadInputEventArgs {
     pub state: ModifiersState,
 }
 
+#[derive(Clone)]
 pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
     pub window: Arc<winit::window::Window>,
@@ -593,6 +589,10 @@ pub struct WindowSizeChangedEventArgs {
     pub id: winit::window::WindowId,
     pub width: u32,
     pub height: u32,
+}
+
+pub struct RedrawRequestedEventArgs {
+    pub id: winit::window::WindowId,
 }
 
 pub fn detect_action(text_with_all_modifiers: &str, modifier_state: ModifiersState) -> Action {
