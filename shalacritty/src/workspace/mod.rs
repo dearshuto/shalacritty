@@ -9,9 +9,10 @@ use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
 use tracing::instrument;
-use winit::{keyboard::ModifiersState, window::WindowId};
+use winit::{event_loop::EventLoopProxy, keyboard::ModifiersState, window::WindowId};
 
 use crate::{
+    app::UserEvent,
     gfx::{
         ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
     },
@@ -53,12 +54,15 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     clipboard_context: ClipboardContext,
 
     callback: TCallback,
+
+    event_loop_proxy: EventLoopProxy<UserEvent>,
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
         config_receiver: tokio::sync::watch::Receiver<Config>,
+        event_loop_proxy: EventLoopProxy<UserEvent>,
         callback: TCallback,
     ) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
@@ -108,6 +112,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             image_ids,
             clipboard_context,
             callback,
+            event_loop_proxy,
         }
     }
 
@@ -143,6 +148,14 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.tile_manager.update();
         self.callback
             .end(std::time::SystemTime::now(), "TileManager::update()");
+
+        // シェルがすべて破棄されたらウィンドウを閉じる
+        if self.tile_manager.is_empty() {
+            self.event_loop_proxy
+                .send_event(UserEvent::Exit)
+                .unwrap_or_default();
+            return;
+        }
 
         let is_config_dirty = self.config_diff.is_dirty();
         self.background_renderer_context.image_alpha = current_config.image_alpha;
@@ -218,6 +231,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 .with_background_color(background)
                 .with_image_path(image_path.clone());
         self.renderer.update_with_user_data(id, &update_params);
+
+        // 再描画要求
+        self.event_loop_proxy
+            .send_event(UserEvent::RequestRedraw)
+            .unwrap_or_default();
     }
 
     #[instrument]
@@ -292,10 +310,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                 self.tile_manager.dump_for_debug();
             }
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.tile_manager.is_empty()
     }
 
     // #[allow(dead_code)]
