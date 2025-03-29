@@ -48,7 +48,9 @@ impl<'a> RenderingService<'a> {
         }
     }
 
-    async fn crated(&mut self, _args: WindowCreatedEventArgs) {}
+    async fn crated(&mut self, args: WindowCreatedEventArgs) {
+        self.window = Some(args.window);
+    }
 
     async fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
         let mut window = None;
@@ -64,6 +66,10 @@ impl<'a> RenderingService<'a> {
     }
 
     fn redraw(&mut self, args: RedrawRequestedEventArgs) {
+        if !self.window.is_none() {
+            return;
+        }
+
         let diff = crate::gfx::Diff {
             character_info_array: vec![CharacterInfo {
                 code: 'a',
@@ -80,7 +86,7 @@ impl<'a> RenderingService<'a> {
             args.id,
             &RendererUpdateParams::<String, ()>::new_with_user_data(())
                 .with_diff(diff)
-                .with_background_color(Some([1.0, 1.0, 1.0, 1.0])),
+                .with_background_color(Some([0.1, 0.2, 0.3, 1.0])),
         );
 
         self.renderer.render(args.id);
