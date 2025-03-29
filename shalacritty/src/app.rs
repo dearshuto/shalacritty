@@ -41,7 +41,7 @@ where
 {
     instance: Option<super::config::Instance>,
 
-    window_table: HashMap<winit::window::WindowId, winit::window::Window>,
+    window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
 
     #[allow(unused)]
     // rendering_service: RenderingService<'a>,
@@ -474,9 +474,14 @@ where
                 .unwrap();
         }
 
+        let window = Arc::new(window);
+
         // 通知
         // MEMO: Window インスタンスの管理もサービス化した方が良い？
-        let args = WindowCreatedEventArgs { id };
+        let args = WindowCreatedEventArgs {
+            id,
+            window: Arc::clone(&window),
+        };
         self.window_created_sender
             .as_ref()
             .unwrap()
@@ -580,6 +585,7 @@ pub struct KeyboadInputEventArgs {
 
 pub struct WindowCreatedEventArgs {
     pub id: winit::window::WindowId,
+    pub window: Arc<winit::window::Window>,
 }
 
 #[derive(Debug, Clone)]
