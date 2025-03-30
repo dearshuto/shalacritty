@@ -137,21 +137,12 @@ where
         }
     }
 
-    pub async fn register<'w, TWindow>(
+    pub async fn register_with(
         &mut self,
         id: WindowId,
         instance: &wgpu::Instance,
-        window: TWindow,
-    ) where
-        TWindow: HasWindowHandle + HasDisplayHandle,
-    {
-        let surface = unsafe {
-            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: window.display_handle().unwrap().as_raw(),
-                raw_window_handle: window.window_handle().unwrap().as_raw(),
-            })
-        }
-        .unwrap();
+        surface: wgpu::Surface<'a>,
+    ) {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -213,6 +204,24 @@ where
 
         // プラグイン
         self.render_plugin.register(instance);
+    }
+
+    pub async fn register<'w, TWindow>(
+        &mut self,
+        id: WindowId,
+        instance: &wgpu::Instance,
+        window: TWindow,
+    ) where
+        TWindow: HasWindowHandle + HasDisplayHandle,
+    {
+        let surface = unsafe {
+            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: window.display_handle().unwrap().as_raw(),
+                raw_window_handle: window.window_handle().unwrap().as_raw(),
+            })
+        }
+        .unwrap();
+        self.register_with(id, instance, surface).await
     }
 
     pub fn update_with_user_data<TUpdateParams>(
