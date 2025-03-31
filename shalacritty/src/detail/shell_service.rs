@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::mpsc::TryRecvError};
+use std::collections::HashMap;
 
 use tracing::instrument;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
@@ -23,7 +23,6 @@ pub struct ShellService {
     contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, asura::Diff)>,
 
     active_shell_id: asura::ShellId,
-    shell_controller_table: HashMap<asura::ShellId, asura::ShellController>,
 
     font_size: Option<f32>,
     window_width: Option<u32>,
@@ -56,7 +55,6 @@ impl ShellService {
                 string_senders: Vec::default(),
                 contents_senders: contents_sender,
                 active_shell_id: id,
-                shell_controller_table: HashMap::default(),
                 font_size: None,
                 window_width: None,
                 window_height: None,
@@ -119,42 +117,31 @@ impl ShellService {
             // 画面サイズを連動する処理が必要だが、それはサイズ変更通知が来たときに処理する
         }
 
-        // 終了していたシェルを辞書から除外する
-        let mut dirty_shell_ids = Vec::new();
-        self.shell_controller_table.retain(|key, controller| {
-            match controller.try_recv_event() {
-                Ok(_) => {
-                    // なにか起きたシェルに再描画
-                    dirty_shell_ids.push(*key);
-                    true
-                }
-                Err(error) => match error {
-                    TryRecvError::Empty => true,
-                    TryRecvError::Disconnected => false,
-                },
-            }
-        });
-
-        // 暫定実装
         // 再描画処理
-        let tasks: Vec<_> = dirty_shell_ids
-            .into_iter()
-            .filter_map(|id| {
+        let tasks: Vec<_> = self
+            .diff_context_table
+            .iter_mut()
+            .filter_map(|(id, context)| {
+                if let Some(is_dirty) = self.terminal_emulator.is_dirty(*id) {
+                    if !is_dirty {
+                        // 変化がなかった
+                        return None;
+                    }
+                } else {
+                    // そもそも対応するシェルがなかった
+                    // シェルが閉じてしまったりしてるとこの分岐に入る
+                    return None;
+                }
+
                 // コンテンツ差分を通知
-                let context = self.diff_context_table.get_mut(&id)?;
-                let diff_types = self.terminal_emulator.diff(id, context);
-                let content_send_task = self.contents_senders.send((id, diff_types));
-
-                let controller = self.shell_controller_table.get(&id)?;
-                let contents: Vec<_> = controller
-                    .read_contents()
-                    .acquire_contents()
-                    .into_iter()
-                    .collect();
-
-                let contents_str: String = contents.iter().map(|c| c.code).collect();
+                let diff_types = self.terminal_emulator.diff(*id, context);
+                let content_send_task = self.contents_senders.send((*id, diff_types));
 
                 // 文字列として通知
+                let contents_str = self
+                    .terminal_emulator
+                    .acquire_content_as_string(*id)
+                    .unwrap();
                 let mut task = Vec::default();
                 for sender in &self.string_senders {
                     let handle = sender.send(contents_str.clone());
