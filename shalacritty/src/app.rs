@@ -4,9 +4,8 @@ use std::{
 };
 
 use profiler_core::IServerBackend;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use term_gfx::IBackend;
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::sync::oneshot;
 
 use tracing::instrument;
 use winit::{
@@ -15,16 +14,34 @@ use winit::{
     event_loop::{EventLoop, EventLoopProxy},
     keyboard::ModifiersState,
     platform::modifier_supplement::KeyEventExtModifierSupplement,
+    window::WindowId,
 };
 
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService, ShellService,
-        WindowSizeSendService, WorkspaceUpdateServiceTentative,
+        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
+        RenderingService, ShellService, WindowSizeSendService, WorkspaceUpdateServiceTentative,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
+
+struct Instance {
+    instance: Option<super::config::Instance>,
+
+    workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
+
+    window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
+    window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
+    input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
+
+    // renderer: term_gfx::Renderer<TBackend>,
+    profiler_kill_sender: Option<oneshot::Sender<()>>,
+
+    redraw_requested_sender: Option<tokio::sync::mpsc::Sender<WindowId>>,
+
+    polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
+}
 
 /// WindowSizeChangeEvent ─┬─────────────────────────────────┐
 ///                        │                                 │
@@ -39,39 +56,28 @@ pub struct App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
-    instance: Option<super::config::Instance>,
+    runtime: Arc<tokio::runtime::Runtime>,
+
+    modifiers_state: ModifiersState,
+
+    instance: Option<Instance>,
+
+    is_profile_server_enabled: bool,
+
+    proxy: EventLoopProxy<UserEvent>,
 
     window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
 
-    #[allow(unused)]
-    // rendering_service: RenderingService<'a>,
-    window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
-    window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
-    input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
-
-    workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
-    renderer: term_gfx::Renderer<TBackend>,
-    modifiers_state: ModifiersState,
-    profiler_kill_sender: Option<oneshot::Sender<()>>,
-
-    service_tasks: Vec<JoinHandle<()>>,
-
-    polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
-
-    runtime: Arc<tokio::runtime::Runtime>,
-
-    _marker: std::marker::PhantomData<&'a ()>,
+    _marker: std::marker::PhantomData<&'a TBackend>,
 }
 
 impl<'a, TBackend> App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
-    pub fn new(
-        renderer: term_gfx::Renderer<TBackend>,
-        proxy: EventLoopProxy<UserEvent>,
-        is_profile_server_enabled: bool,
-    ) -> Self {
+    pub fn run(_renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
+        // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
+        let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_time()
@@ -79,252 +85,21 @@ where
                 .unwrap(),
         );
 
-        // ポーリングサービス
-        let (polling_close_sender, polling_close_receiver) = tokio::sync::oneshot::channel();
-        let mut polling_event_service = PollingEventService::new(polling_close_receiver);
-
-        // 設定ファイル監視サービス
-        let (config_watch_instance, config_receiver) = super::config::watch();
-        let mut config_service = ConfigServiceEx::new(config_receiver.clone());
-
-        let (window_created_sender, window_created_receiver) = std::sync::mpsc::channel();
-        let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
-
-        // ウィンドウサイズサービス
-        let mut window_size_send_service =
-            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
-
-        // シェル管理サービス
-        let (input_sender, input_receiver) = std::sync::mpsc::channel();
-        let (mut shell_service, content_receiver) = ShellService::new(
-            config_service.listen(),
-            window_created_receiver,
-            window_size_send_service.listen(),
-            input_receiver,
-            polling_event_service.listen(),
-        );
-
-        // グリフ抽出サービス
-        let glyph_extract_service =
-            GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
-        let glyph_container = glyph_extract_service.share_glyph_container();
-        let glyph_extract_service = tokio::task::Builder::new()
-            .name("GlyphExtractService")
-            .spawn_on(
-                async move {
-                    glyph_extract_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // 表示コンテンツの座標を計算するサービス
-        let (content_plot_service, mut diff_receiver) =
-            ContentPlotService::new(content_receiver, glyph_container);
-        let content_plot_service_task = tokio::task::Builder::new()
-            .name("ContentPlotService")
-            .spawn_on(
-                async move {
-                    content_plot_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // 画像キャッシュサービス
-        let image_cache_service = ImageCacheEx::new(runtime.clone(), config_service.listen());
-        let image_cache_service_task = tokio::task::Builder::new()
-            .name("ImageCacheService")
-            .spawn_on(
-                async move {
-                    image_cache_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // 描画サービス
-        // TODO: デッドロックが起きるのでコメントアウト
-        // let (_window_created_sender, window_created_receiver) = tokio::sync::mpsc::channel(1);
-        // let (_redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
-
-        // let rendering_service = RenderingService::new(
-        //     config_service.listen(),
-        //     window_created_receiver,
-        //     window_size_send_service.listen(),
-        //     redraw_requested_receiver,
-        // );
-
-        let server_backend = ServerBackend::new();
-        let server_backend_local = server_backend.clone();
-
-        let (tx, rx) = oneshot::channel::<()>();
-        let profiler_server_task = tokio::task::Builder::new()
-            .name("ProfilerServerTask")
-            .spawn_on(
-                async move {
-                    if is_profile_server_enabled {
-                        profiler_core::Server::serve(
-                            ([0, 0, 0, 0], 3030),
-                            server_backend_local,
-                            rx,
-                        )
-                        .await;
-                    }
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // 差分を Debug 出力
-        let task = tokio::task::Builder::new()
-            .name("DebugPrintTask")
-            .spawn_on(
-                async move {
-                    if cfg!(debug_assertions) {
-                        while let Some(diff) = diff_receiver.recv().await {
-                            println!("==================");
-                            println!("{:?}", diff.contents);
-                        }
-                    } else {
-                        // Release 版ではなにもしない
-                    }
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
-            runtime.clone(),
-            config_receiver,
-            proxy,
-            server_backend,
-        )));
-
-        // ウィンドウサイズの変更を非同期に Workspace に反映するタスク
-        // 互換用の実装で、将来的に Workspace は解体予定
-        let mut window_size_receiver = window_size_send_service.listen();
-        let workspace_local = workspace.clone();
-        let workspace_resize_task = tokio::task::Builder::new()
-            .name("WorkspaceResizeTask")
-            .spawn_on(
-                async move {
-                    while let Some(args) = window_size_receiver.recv().await {
-                        workspace_local
-                            .lock()
-                            .unwrap()
-                            .resize(args.id, args.width, args.height);
-                    }
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // Workspace の更新処理を非同期に実行するサービス
-        let workspace_update_service = WorkspaceUpdateServiceTentative::new(
-            workspace.clone(),
-            polling_event_service.listen(),
-            window_size_send_service.listen(),
-        );
-        let workspace_update_task = tokio::task::Builder::new()
-            .name("WorkspaceUpdateService")
-            .spawn_on(
-                async move {
-                    workspace_update_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        let window_size_send_service = tokio::task::Builder::new()
-            .name("WindowSizeSendService")
-            .spawn_on(
-                async move {
-                    window_size_send_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // 設定ファイルサービスタスク
-        // タスク化と同時にムーブするので他のサービスたちが購読を開始してから記述している
-        let config_service_task = tokio::task::Builder::new()
-            .name("ConfigService")
-            .spawn_on(
-                async move {
-                    config_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        let polling_event_service_task = tokio::task::Builder::new()
-            .name("PollintEventService")
-            .spawn_on(
-                async move {
-                    polling_event_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        // シェル管理サービスタスク
-        let shell_service_task = tokio::task::Builder::new()
-            .name("ShellService")
-            .spawn_on(
-                async move {
-                    shell_service.serve().await;
-                },
-                runtime.handle(),
-            )
-            .unwrap();
-
-        let service_tasks = vec![
-            task,
-            polling_event_service_task,
-            config_service_task,
-            glyph_extract_service,
-            window_size_send_service,
-            shell_service_task,
-            content_plot_service_task,
-            image_cache_service_task,
-            profiler_server_task,
-            workspace_resize_task,
-            workspace_update_task,
-        ];
-
-        Self {
-            instance: Some(config_watch_instance),
+        let mut app = Self {
             runtime,
+            modifiers_state: Default::default(),
+            instance: None,
+            is_profile_server_enabled,
+            proxy: event_loop.create_proxy(),
             window_table: HashMap::default(),
-            input_sender: Some(input_sender),
-            window_created_sender: Some(window_created_sender),
-            window_size_sender: Some(window_size_sender),
-            workspace,
-            renderer,
-            polling_close_sender: Some(polling_close_sender),
-            modifiers_state: ModifiersState::default(),
-            profiler_kill_sender: Some(tx),
-            // rendering_service,
-            service_tasks,
             _marker: std::marker::PhantomData,
-        }
-    }
+        };
 
-    pub fn run(renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
-        // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
-        let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
-        let proxy = event_loop.create_proxy();
-
-        let mut app = Self::new(renderer, proxy, is_profile_server_enabled);
         event_loop.run_app(&mut app).unwrap();
     }
 }
 
-impl<'a, TBackend> Drop for App<'a, TBackend>
-where
-    TBackend: IBackend,
-{
+impl Drop for Instance {
     fn drop(&mut self) {
         // 終了を通知して起動したサービスを終了させる
         // channel に紐づいたサービスはインスタンスを破棄することで止める
@@ -332,6 +107,7 @@ where
         self.window_size_sender = None;
         self.instance = None;
         self.input_sender = None;
+        self.redraw_requested_sender = None;
 
         // ポーリングの終了要求
         let mut sender = None;
@@ -345,13 +121,6 @@ where
         if let Some(sender) = kill_server_sender {
             sender.send(()).unwrap_or_default();
         }
-
-        // サービスの終了待ち
-        let mut service_tasks = Vec::default();
-        std::mem::swap(&mut self.service_tasks, &mut service_tasks);
-        self.runtime.block_on(async move {
-            futures::future::join_all(service_tasks).await;
-        });
     }
 }
 
@@ -457,24 +226,223 @@ where
         let id = window.id();
         window.set_ime_allowed(true);
 
+        let window = Arc::new(window);
+
+        // ポーリングサービス
+        let (polling_close_sender, polling_close_receiver) = tokio::sync::oneshot::channel();
+        let mut polling_event_service = PollingEventService::new(polling_close_receiver);
+
+        // 設定ファイル監視サービス
+        let (config_watch_instance, config_receiver) = super::config::watch();
+        let mut config_service = ConfigServiceEx::new(config_receiver.clone());
+
+        let (window_created_sender, window_created_receiver) = std::sync::mpsc::channel();
+        let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
+
+        // ウィンドウサイズサービス
+        let mut window_size_send_service =
+            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
+
+        // シェル管理サービス
+        let (input_sender, input_receiver) = std::sync::mpsc::channel();
+        let (mut shell_service, content_receiver) = ShellService::new(
+            config_service.listen(),
+            window_created_receiver,
+            window_size_send_service.listen(),
+            input_receiver,
+            polling_event_service.listen(),
+        );
+
+        // グリフ抽出サービス
+        let glyph_extract_service =
+            GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
+        let glyph_container = glyph_extract_service.share_glyph_container();
+        let _ = tokio::task::Builder::new()
+            .name("GlyphExtractService")
+            .spawn_on(
+                async move {
+                    glyph_extract_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // 表示コンテンツの座標を計算するサービス
+        let (content_plot_service, mut diff_receiver) =
+            ContentPlotService::new(content_receiver, glyph_container);
+        let _ = tokio::task::Builder::new()
+            .name("ContentPlotService")
+            .spawn_on(
+                async move {
+                    content_plot_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // 画像キャッシュサービス
+        let image_cache_service = ImageCacheEx::new(self.runtime.clone(), config_service.listen());
+        let _ = tokio::task::Builder::new()
+            .name("ImageCacheService")
+            .spawn_on(
+                async move {
+                    image_cache_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // 描画サービス
+        let (redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
+        let rendering_service = RenderingService::new(
+            window.clone(),
+            config_service.listen(),
+            window_size_send_service.listen(),
+            redraw_requested_receiver,
+        );
+
+        let _ = tokio::task::Builder::new()
+            .name("RenderingServiceTask")
+            .spawn_on(
+                async move {
+                    rendering_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        let server_backend = ServerBackend::new();
+        let server_backend_local = server_backend.clone();
+        let is_profile_server_enabled_local = self.is_profile_server_enabled;
+
+        let (tx, rx) = oneshot::channel::<()>();
+        let _ = tokio::task::Builder::new()
+            .name("ProfilerServerTask")
+            .spawn_on(
+                async move {
+                    if is_profile_server_enabled_local {
+                        profiler_core::Server::serve(
+                            ([0, 0, 0, 0], 3030),
+                            server_backend_local,
+                            rx,
+                        )
+                        .await;
+                    }
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // 差分を Debug 出力
+        let _ = tokio::task::Builder::new()
+            .name("DebugPrintTask")
+            .spawn_on(
+                async move {
+                    if cfg!(debug_assertions) {
+                        while let Some(diff) = diff_receiver.recv().await {
+                            println!("==================");
+                            println!("{:?}", diff.contents);
+                        }
+                    } else {
+                        // Release 版ではなにもしない
+                    }
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
+            self.runtime.clone(),
+            config_receiver,
+            self.proxy.clone(),
+            server_backend,
+        )));
+
+        // ウィンドウサイズの変更を非同期に Workspace に反映するタスク
+        // 互換用の実装で、将来的に Workspace は解体予定
+        let mut window_size_receiver = window_size_send_service.listen();
+        let workspace_local = workspace.clone();
+        let _ = tokio::task::Builder::new()
+            .name("WorkspaceResizeTask")
+            .spawn_on(
+                async move {
+                    while let Some(args) = window_size_receiver.recv().await {
+                        workspace_local
+                            .lock()
+                            .unwrap()
+                            .resize(args.id, args.width, args.height);
+                    }
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // Workspace の更新処理を非同期に実行するサービス
+        let workspace_update_service = WorkspaceUpdateServiceTentative::new(
+            workspace.clone(),
+            polling_event_service.listen(),
+            window_size_send_service.listen(),
+        );
+        let _ = tokio::task::Builder::new()
+            .name("WorkspaceUpdateService")
+            .spawn_on(
+                async move {
+                    workspace_update_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        let _ = tokio::task::Builder::new()
+            .name("WindowSizeSendService")
+            .spawn_on(
+                async move {
+                    window_size_send_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // 設定ファイルサービスタスク
+        // タスク化と同時にムーブするので他のサービスたちが購読を開始してから記述している
+        let _ = tokio::task::Builder::new()
+            .name("ConfigService")
+            .spawn_on(
+                async move {
+                    config_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        let _ = tokio::task::Builder::new()
+            .name("PollintEventService")
+            .spawn_on(
+                async move {
+                    polling_event_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        // シェル管理サービスタスク
+        let _ = tokio::task::Builder::new()
+            .name("ShellService")
+            .spawn_on(
+                async move {
+                    shell_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
         self.runtime.block_on(async {
-            self.workspace
+            workspace
                 .lock()
                 .unwrap()
                 .assign_window(id, &window, width, height)
                 .await;
         });
-
-        // ひとつのウィンドウハンドルにはひとつの swapchain しか作成できないのでいったん無効化
-        if false {
-            let window_handle = window.window_handle().unwrap();
-            let display_handle = window.display_handle().unwrap();
-            self.renderer
-                .register_surface(window_handle, display_handle)
-                .unwrap();
-        }
-
-        let window = Arc::new(window);
 
         // 通知
         // MEMO: Window インスタンスの管理もサービス化した方が良い？
@@ -482,13 +450,21 @@ where
             id,
             window: Arc::clone(&window),
         };
-        self.window_created_sender
-            .as_ref()
-            .unwrap()
-            .send(args)
-            .unwrap();
+        window_created_sender.send(args).unwrap();
 
         self.window_table.insert(id, window);
+
+        let instance = Instance {
+            instance: Some(config_watch_instance),
+            input_sender: Some(input_sender),
+            window_created_sender: Some(window_created_sender),
+            window_size_sender: Some(window_size_sender),
+            workspace,
+            polling_close_sender: Some(polling_close_sender),
+            redraw_requested_sender: Some(redraw_requested_sender),
+            profiler_kill_sender: Some(tx),
+        };
+        self.instance = Some(instance);
     }
 
     #[instrument]
@@ -503,16 +479,26 @@ where
                 winit::event::Ime::Enabled => {}
                 winit::event::Ime::Preedit(_, _) => {}
                 winit::event::Ime::Commit(str) => {
-                    self.workspace
-                        .lock()
-                        .unwrap()
-                        .send_input(window_id, &str, self.modifiers_state)
+                    let Some(instance) = &self.instance else {
+                        return;
+                    };
+
+                    instance.workspace.lock().unwrap().send_input(
+                        window_id,
+                        &str,
+                        self.modifiers_state,
+                    )
                 }
                 winit::event::Ime::Disabled => {}
             },
             WindowEvent::Resized(size) => {
+                let Some(instance) = &self.instance else {
+                    return;
+                };
                 // 通知
-                self.window_size_sender
+
+                instance
+                    .window_size_sender
                     .as_ref()
                     .unwrap()
                     .send(WindowSizeChangedEventArgs {
@@ -523,21 +509,33 @@ where
                     .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
-                // 将来的にこっちに乗り換える
-                // self.renderer.render();
+                let Some(instance) = &self.instance else {
+                    return;
+                };
+                instance.workspace.lock().unwrap().render(window_id);
 
-                self.workspace.lock().unwrap().render(window_id);
+                // 将来的にこっちに乗り換える
+                // instance
+                //     .redraw_requested_sender
+                //     .as_ref()
+                //     .unwrap()
+                //     .blocking_send(window_id)
+                //     .unwrap();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers_state = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                let Some(instance) = &self.instance else {
+                    return;
+                };
+
                 if event.state != ElementState::Pressed {
                     return;
                 }
 
                 // 通知
-                if let Some(sender) = &self.input_sender {
+                if let Some(sender) = &instance.input_sender {
                     let args = KeyboadInputEventArgs {
                         id: window_id,
                         event: event.clone(),
@@ -547,10 +545,11 @@ where
                 }
 
                 let text = event.text_with_all_modifiers().unwrap_or_default();
-                self.workspace
-                    .lock()
-                    .unwrap()
-                    .send_input(window_id, text, self.modifiers_state);
+                instance.workspace.lock().unwrap().send_input(
+                    window_id,
+                    text,
+                    self.modifiers_state,
+                );
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();

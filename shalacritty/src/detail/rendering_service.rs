@@ -1,31 +1,38 @@
 use winit::window::WindowId;
 
-use crate::{
-    app::{WindowCreatedEventArgs, WindowSizeChangedEventArgs},
-    Config,
-};
+use crate::{app::WindowSizeChangedEventArgs, Config};
 
 pub struct RenderingService<'a> {
+    instance: wgpu::Instance,
     renderer: crate::gfx::Renderer<'a, ()>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
-    window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+    surface: Option<wgpu::Surface<'a>>,
 }
 
 impl<'a> RenderingService<'a> {
-    pub fn new(
+    pub fn new<T>(
+        window: T,
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
-        window_created_receiver: tokio::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
-    ) -> Self {
+    ) -> Self
+    where
+        T: Into<wgpu::SurfaceTarget<'a>>,
+    {
+        let instance = wgpu::Instance::default();
+        let renderer = crate::gfx::Renderer::new_with_plugin(());
+        // 将来的にこっちに乗り換える
+        let _surface = instance.create_surface(window).unwrap();
+
         Self {
-            renderer: crate::gfx::Renderer::new_with_plugin(()),
+            renderer,
             config_receiver,
-            window_created_receiver,
             window_size_receiver,
             redraw_requested_window_id_receiver,
+            instance,
+            surface: None, /*Some(surface)*/
         }
     }
 
@@ -33,23 +40,30 @@ impl<'a> RenderingService<'a> {
         loop {
             tokio::select!(
             Some(_config) = self.config_receiver.recv() => {},
-            Some(args) = self.window_created_receiver.recv() => self.crated(args).await,
-            Some(args) = self.window_size_receiver.recv() => self.try_resize(args),
-            Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id),
+            Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
+            Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id).await,
                                                 else => break,
                                             );
         }
     }
 
-    async fn crated(&mut self, _args: WindowCreatedEventArgs) {
-        // TODO: Window の寿命を適切に管理する実装を考える
-    }
+    async fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
+        if let Some(surface) = self.surface.take() {
+            self.renderer
+                .register_with(args.id, &self.instance, surface)
+                .await;
+        }
 
-    fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
         self.renderer.resize(args.id, args.width, args.height);
     }
 
-    fn redraw(&mut self, id: WindowId) {
+    async fn redraw(&mut self, id: WindowId) {
+        if let Some(surface) = self.surface.take() {
+            self.renderer
+                .register_with(id, &self.instance, surface)
+                .await;
+        }
+
         self.renderer.render(id);
     }
 }
