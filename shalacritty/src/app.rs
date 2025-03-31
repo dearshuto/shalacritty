@@ -254,7 +254,7 @@ where
         );
 
         // グリフ抽出サービス
-        let (glyph_extract_service, _glyph_patch_receiver) =
+        let (glyph_extract_service, glyph_patch_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
         let _ = tokio::task::Builder::new()
@@ -354,6 +354,7 @@ where
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             self.runtime.clone(),
             config_receiver,
+            glyph_patch_receiver,
             self.proxy.clone(),
             server_backend,
         )));
