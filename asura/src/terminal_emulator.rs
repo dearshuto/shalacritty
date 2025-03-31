@@ -113,6 +113,20 @@ impl TerminalEmulator {
         controller.send_input(input);
     }
 
+    pub fn acquire_content_as_string(&self, id: ShellId) -> Option<String> {
+        let Some(x) = self.shell_controller_table.get(&id) else {
+            return None;
+        };
+
+        Some(
+            x.read_contents()
+                .acquire_contents()
+                .iter()
+                .map(|c| c.code)
+                .collect(),
+        )
+    }
+
     /// 指定したシェルの表示要素の差分を検出します
     pub fn diff(&self, id: ShellId, context: &mut DiffContext) -> Diff {
         let Some(controller) = self.shell_controller_table.get(&id) else {
@@ -133,6 +147,14 @@ impl TerminalEmulator {
         Diff {
             content_diff: diff_contents,
         }
+    }
+
+    pub fn is_dirty(&self, id: ShellId) -> Option<bool> {
+        let Some(controller) = self.shell_controller_table.get(&id) else {
+            return None;
+        };
+
+        Some(controller.try_recv_event().is_ok())
     }
 }
 
