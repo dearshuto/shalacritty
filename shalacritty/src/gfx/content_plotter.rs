@@ -35,13 +35,13 @@ pub struct CharacterInfo {
     pub index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GlyphTexturePatch {
-    offset_x: u32,
-    offset_y: u32,
-    width: u32,
-    height: u32,
-    pixels: Vec<u8>,
+    pub offset_x: u32,
+    pub offset_y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
 }
 
 impl GlyphTexturePatch {

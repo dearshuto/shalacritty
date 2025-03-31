@@ -4,7 +4,7 @@ use crossfont::{FontDesc, Rasterize, Slant, Style, Weight};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::instrument;
 
-use crate::Config;
+use crate::{gfx::GlyphTexturePatch, Config};
 
 use super::{CoordRange, GlyphWriterEx};
 
@@ -33,22 +33,28 @@ pub struct GlyphExtractService {
     current_font_size: Option<f32>,
 
     table: Arc<RwLock<HashMap<char, Glyph>>>,
+    sender: tokio::sync::mpsc::Sender<Vec<GlyphTexturePatch>>,
 }
 
 impl GlyphExtractService {
     pub fn new(
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
-    ) -> Self {
-        Self {
-            config_receiver,
-            receiver: string_receiver,
-            rasterizer: crossfont::Rasterizer::new().unwrap(),
-            glyph_writer: GlyphWriterEx::new(8, 8),
-            font_key: None,
-            current_font_size: None,
-            table: Default::default(),
-        }
+    ) -> (Self, tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>) {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        (
+            Self {
+                config_receiver,
+                receiver: string_receiver,
+                rasterizer: crossfont::Rasterizer::new().unwrap(),
+                glyph_writer: GlyphWriterEx::new(8, 8),
+                font_key: None,
+                current_font_size: None,
+                table: Default::default(),
+                sender,
+            },
+            receiver,
+        )
     }
 
     #[instrument]
@@ -91,16 +97,23 @@ impl GlyphExtractService {
         };
 
         // グリフを更新
-        let mut table = self.table.write().await;
-        Self::update_glyph_table(
-            &mut table,
-            &mut self.glyph_writer,
-            &mut self.rasterizer,
-            chars.into_iter(),
-            font_size,
-            font_key,
-        )
-        .await;
+        let patches = {
+            let mut table = self.table.write().await;
+            Self::update_glyph_table(
+                &mut table,
+                &mut self.glyph_writer,
+                &mut self.rasterizer,
+                chars.into_iter(),
+                font_size,
+                font_key,
+            )
+            .await
+        };
+
+        // 差分を通知
+        if !self.sender.is_closed() {
+            self.sender.send(patches).await.unwrap_or_default();
+        }
     }
 
     #[instrument]
@@ -126,16 +139,23 @@ impl GlyphExtractService {
         let chars: Vec<char> = { self.table.read().await.keys().copied().collect() };
 
         // グリフを再抽出
-        let mut table = self.table.write().await;
-        Self::update_glyph_table(
-            &mut table,
-            &mut self.glyph_writer,
-            &mut self.rasterizer,
-            chars.into_iter(),
-            config.font_size,
-            *self.font_key.as_ref().unwrap(),
-        )
-        .await;
+        let patches = {
+            let mut table = self.table.write().await;
+            Self::update_glyph_table(
+                &mut table,
+                &mut self.glyph_writer,
+                &mut self.rasterizer,
+                chars.into_iter(),
+                config.font_size,
+                *self.font_key.as_ref().unwrap(),
+            )
+            .await
+        };
+
+        // 差分を通知
+        if !self.sender.is_closed() {
+            self.sender.send(patches).await.unwrap_or_default();
+        }
     }
 
     async fn update_glyph_table(
@@ -145,7 +165,7 @@ impl GlyphExtractService {
         chars: impl Iterator<Item = char>,
         font_size: f32,
         font_key: crossfont::FontKey,
-    ) {
+    ) -> Vec<GlyphTexturePatch> {
         let key_values = chars.into_iter().map(|character| {
             let glyph = rasterizer
                 .get_glyph(crossfont::GlyphKey {
@@ -157,6 +177,7 @@ impl GlyphExtractService {
             (character, glyph)
         });
 
+        let mut patches = Vec::default();
         for (key, value) in key_values {
             let bytes = match value.buffer {
                 crossfont::BitmapBuffer::Rgb(items) => items,
@@ -167,8 +188,26 @@ impl GlyphExtractService {
             glyph_writer.allocate(key);
             let coord_range = glyph_writer.get_coord_range(key).unwrap();
 
-            table.insert(key, Glyph { bytes, coord_range });
+            table.insert(
+                key,
+                Glyph {
+                    bytes: bytes.clone(),
+                    coord_range,
+                },
+            );
+
+            // 差分検出
+            let pixel_range = glyph_writer.get_pixel_range(key).unwrap();
+            patches.push(GlyphTexturePatch {
+                offset_x: pixel_range.top_left[0],
+                offset_y: pixel_range.top_left[1],
+                width: pixel_range.bottom_right[0] - pixel_range.top_left[0],
+                height: pixel_range.bottom_right[1] - pixel_range.top_left[1],
+                pixels: bytes,
+            });
         }
+
+        patches
     }
 
     fn create_font_key(

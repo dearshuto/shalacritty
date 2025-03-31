@@ -254,7 +254,7 @@ where
         );
 
         // グリフ抽出サービス
-        let glyph_extract_service =
+        let (glyph_extract_service, _glyph_patch_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
         let _ = tokio::task::Builder::new()
