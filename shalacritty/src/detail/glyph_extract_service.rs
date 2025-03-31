@@ -10,6 +10,10 @@ use super::{CoordRange, GlyphWriterEx};
 
 pub struct Glyph {
     pub coord_range: CoordRange,
+    pub width: u32,
+    pub height: u32,
+    pub top: i32,
+    pub left: i32,
     pub bytes: Vec<u8>,
 }
 
@@ -193,6 +197,10 @@ impl GlyphExtractService {
                 Glyph {
                     bytes: bytes.clone(),
                     coord_range,
+                    width: value.width as u32,
+                    height: value.height as u32,
+                    left: value.left,
+                    top: value.top,
                 },
             );
 
