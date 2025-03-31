@@ -1,11 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use profiler_core::IServerBackend;
 use term_gfx::IBackend;
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, task::JoinHandle};
 
 use tracing::instrument;
 use winit::{
@@ -41,6 +42,8 @@ struct Instance {
     redraw_requested_sender: Option<tokio::sync::mpsc::Sender<WindowId>>,
 
     polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
+
+    service_tasks: Vec<JoinHandle<()>>,
 }
 
 /// WindowSizeChangeEvent ─┬─────────────────────────────────┐
@@ -120,6 +123,16 @@ impl Drop for Instance {
         std::mem::swap(&mut kill_server_sender, &mut self.profiler_kill_sender);
         if let Some(sender) = kill_server_sender {
             sender.send(()).unwrap_or_default();
+        }
+
+        for handle in &self.service_tasks {
+            loop {
+                if handle.is_finished() {
+                    break;
+                }
+
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
     }
 }
@@ -257,7 +270,7 @@ where
         let glyph_extract_service =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
-        let _ = tokio::task::Builder::new()
+        let glyph_extract_service_task = tokio::task::Builder::new()
             .name("GlyphExtractService")
             .spawn_on(
                 async move {
@@ -268,9 +281,8 @@ where
             .unwrap();
 
         // 表示コンテンツの座標を計算するサービス
-        let (content_plot_service, mut diff_receiver) =
-            ContentPlotService::new(content_receiver, glyph_container);
-        let _ = tokio::task::Builder::new()
+        let (content_plot_service, _) = ContentPlotService::new(content_receiver, glyph_container);
+        let content_plot_service_task = tokio::task::Builder::new()
             .name("ContentPlotService")
             .spawn_on(
                 async move {
@@ -282,7 +294,7 @@ where
 
         // 画像キャッシュサービス
         let image_cache_service = ImageCacheEx::new(self.runtime.clone(), config_service.listen());
-        let _ = tokio::task::Builder::new()
+        let image_cache_service_task = tokio::task::Builder::new()
             .name("ImageCacheService")
             .spawn_on(
                 async move {
@@ -334,14 +346,15 @@ where
             .unwrap();
 
         // 差分を Debug 出力
+        let mut string_receiver = shell_service.listen_string();
         let _ = tokio::task::Builder::new()
             .name("DebugPrintTask")
             .spawn_on(
                 async move {
                     if cfg!(debug_assertions) {
-                        while let Some(diff) = diff_receiver.recv().await {
+                        while let Some(diff) = string_receiver.recv().await {
                             println!("==================");
-                            println!("{:?}", diff.contents);
+                            println!("{:?}", diff);
                         }
                     } else {
                         // Release 版ではなにもしない
@@ -463,6 +476,11 @@ where
             polling_close_sender: Some(polling_close_sender),
             redraw_requested_sender: Some(redraw_requested_sender),
             profiler_kill_sender: Some(tx),
+            service_tasks: vec![
+                glyph_extract_service_task,
+                content_plot_service_task,
+                image_cache_service_task,
+            ],
         };
         self.instance = Some(instance);
     }
