@@ -6,6 +6,11 @@ pub struct CoordRange {
     pub bottom_right: [f32; 2],
 }
 
+pub struct PixelRange {
+    pub top_left: [u32; 2],
+    pub bottom_right: [u32; 2],
+}
+
 pub struct GlyphWriterEx {
     image_width: u32,
     image_height: u32,
@@ -64,6 +69,19 @@ impl GlyphWriterEx {
 
         Some(coord.clone())
     }
+
+    pub fn get_pixel_range(&self, code: char) -> Option<PixelRange> {
+        let Some(coord) = self.get_coord_range(code) else {
+            return None;
+        };
+
+        // とりあえず UV 座標からピクセル座標を復元する実装でお茶をにごす
+        // 計算誤差を考慮すると、ピクセル座標で取りまわして UV 座標に変換する方がいいかも
+        Some(PixelRange {
+            top_left: std::array::from_fn(|i| (coord.top_left[i] * 4096.0) as u32),
+            bottom_right: std::array::from_fn(|i| (coord.bottom_right[i] * 4096.0) as u32),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +120,30 @@ mod tests {
                 range_b.top_left[1] + stride_y
             ]
         );
+    }
+
+    #[test]
+    fn pixel_range_simple() {
+        let mut writer = GlyphWriterEx::new(8, 8);
+        assert!(writer.allocate('a'));
+
+        let range = writer.get_pixel_range('a').unwrap();
+        assert_eq!(range.top_left, [0, 0]);
+        assert_eq!(range.bottom_right, [8, 8]);
+    }
+
+    #[test]
+    fn pixel_range_multi() {
+        let mut writer = GlyphWriterEx::new(8, 8);
+        assert!(writer.allocate('a'));
+        assert!(writer.allocate('b'));
+
+        let range = writer.get_pixel_range('a').unwrap();
+        assert_eq!(range.top_left, [0, 0]);
+        assert_eq!(range.bottom_right, [8, 8]);
+
+        let range = writer.get_pixel_range('b').unwrap();
+        assert_eq!(range.top_left, [8, 0]);
+        assert_eq!(range.bottom_right, [16, 8]);
     }
 }
