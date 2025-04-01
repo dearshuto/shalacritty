@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crossfont::{FontDesc, Rasterize, Slant, Style, Weight};
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -170,47 +173,52 @@ impl GlyphExtractService {
         font_size: f32,
         font_key: crossfont::FontKey,
     ) -> Vec<GlyphTexturePatch> {
-        let key_values = chars.into_iter().map(|character| {
+        // 重複排除
+        let chars = HashSet::<char>::from_iter(chars);
+
+        let mut patches = Vec::default();
+        for c in chars {
+            // すでに処理ずみならなにもしない
+            if table.contains_key(&c) {
+                continue;
+            }
+
+            // ラスタライズ
             let glyph = rasterizer
                 .get_glyph(crossfont::GlyphKey {
-                    character,
+                    character: c,
                     font_key,
                     size: crossfont::Size::new(font_size),
                 })
                 .unwrap(); // TODO: 不正なフォント対応
-            (character, glyph)
-        });
 
-        let mut patches = Vec::default();
-        for (key, value) in key_values {
-            let bytes = match value.buffer {
+            let bytes = match glyph.buffer {
                 crossfont::BitmapBuffer::Rgb(items) => items,
                 crossfont::BitmapBuffer::Rgba(items) => items,
             };
 
             // 2 次元に配置
-            glyph_writer.allocate(key);
-            let coord_range = glyph_writer.get_coord_range(key).unwrap();
+            glyph_writer.allocate(c);
 
+            let coord_range = glyph_writer.get_coord_range(c).unwrap();
             table.insert(
-                key,
+                c,
                 Glyph {
                     bytes: bytes.clone(),
                     coord_range,
-                    width: value.width as u32,
-                    height: value.height as u32,
-                    left: value.left,
-                    top: value.top,
+                    width: glyph.width as u32,
+                    height: glyph.height as u32,
+                    left: glyph.left,
+                    top: glyph.top,
                 },
             );
 
-            // 差分検出
-            let pixel_range = glyph_writer.get_pixel_range(key).unwrap();
+            let pixel_range = glyph_writer.get_pixel_range(c).unwrap();
             patches.push(GlyphTexturePatch {
                 offset_x: pixel_range.top_left[0],
                 offset_y: pixel_range.top_left[1],
-                width: value.width as u32,
-                height: value.height as u32,
+                width: glyph.width as u32,
+                height: glyph.height as u32,
                 pixels: bytes,
             });
         }
