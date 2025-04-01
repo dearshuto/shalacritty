@@ -209,8 +209,8 @@ impl GlyphExtractService {
             patches.push(GlyphTexturePatch {
                 offset_x: pixel_range.top_left[0],
                 offset_y: pixel_range.top_left[1],
-                width: pixel_range.bottom_right[0] - pixel_range.top_left[0],
-                height: pixel_range.bottom_right[1] - pixel_range.top_left[1],
+                width: value.width as u32,
+                height: value.height as u32,
                 pixels: bytes,
             });
         }
@@ -246,5 +246,52 @@ impl std::fmt::Debug for GlyphExtractService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("GlyphExtractService")?;
         std::fmt::Result::Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+
+        let (config_sender, config_receiver) = tokio::sync::mpsc::channel(1);
+        let (string_sender, string_receiver) = tokio::sync::mpsc::channel(1);
+        let (glyph_extract_service, mut receiver) =
+            GlyphExtractService::new(config_receiver, string_receiver);
+
+        let _service_task = runtime.spawn(async move {
+            glyph_extract_service.serve().await;
+        });
+
+        config_sender
+            .blocking_send(Config {
+                font_size: 32.0,
+                image: Default::default(),
+                image_alpha: Default::default(),
+                background: Default::default(),
+            })
+            .unwrap();
+        receiver.blocking_recv().unwrap();
+
+        string_sender.blocking_send(String::from("ABC")).unwrap();
+
+        if let Some(patch) = receiver.blocking_recv() {
+            for (index, patch) in patch.iter().enumerate() {
+                let image = image::RgbImage::from_vec(
+                    patch.width,
+                    patch.height,
+                    patch.pixels().iter().copied().collect(),
+                )
+                .unwrap();
+                image.save(format!("{}.png", index)).unwrap();
+            }
+        }
     }
 }
