@@ -30,6 +30,7 @@ pub trait IWorkspaceCallback {
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     config_receiver: tokio::sync::watch::Receiver<Config>,
+    diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     string_receiver: tokio::sync::mpsc::Receiver<String>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     glyph_manager: GlyphManager,
@@ -62,6 +63,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
         config_receiver: tokio::sync::watch::Receiver<Config>,
+        diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         event_loop_proxy: EventLoopProxy<UserEvent>,
@@ -94,6 +96,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         Self {
             instance,
             config_receiver,
+            diff_receiver,
             string_receiver,
             glyph_patch_receiver,
             glyph_manager,
@@ -164,6 +167,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         // 冗長だがグリフ抽出のために文字列を別途で取得する
         // チャンネルがつまらないように毎度取得しておく
         let content_string = self.string_receiver.try_recv();
+
+        // 差分検出はこちらに載せ替える予定
+        // 例の如くチャンネルがつまらないように値は吐き出させておく
+        let _diff = self.diff_receiver.try_recv();
 
         // シェルがすべて破棄されたらウィンドウを閉じる
         if self.tile_manager.is_empty() {

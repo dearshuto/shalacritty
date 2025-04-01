@@ -8,7 +8,7 @@ mod shell_service;
 mod window_size_send_service;
 mod workspace_update_service_tentative;
 
-pub use content_plot_service::ContentPlotService;
+pub use content_plot_service::{ContentPlotService, Diff};
 pub use glyph_extract_service::GlyphExtractService;
 pub use glyph_writer_ex::{CoordRange, GlyphWriterEx};
 pub use image_cache_ex::ImageCacheEx;

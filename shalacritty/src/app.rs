@@ -268,7 +268,7 @@ where
             .unwrap();
 
         // 表示コンテンツの座標を計算するサービス
-        let (content_plot_service, mut diff_receiver) = ContentPlotService::new(
+        let (content_plot_service, diff_receiver) = ContentPlotService::new(
             content_receiver,
             window_size_send_service.listen(),
             glyph_container,
@@ -337,14 +337,15 @@ where
             .unwrap();
 
         // 差分を Debug 出力
+        let mut string_receiver = shell_service.listen_string();
         let _ = tokio::task::Builder::new()
             .name("DebugPrintTask")
             .spawn_on(
                 async move {
                     if cfg!(debug_assertions) {
-                        while let Some(diff) = diff_receiver.recv().await {
+                        while let Some(str) = string_receiver.recv().await {
                             println!("==================");
-                            println!("{:?}", diff.contents);
+                            println!("{:?}", str);
                         }
                     } else {
                         // Release 版ではなにもしない
@@ -357,6 +358,7 @@ where
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             self.runtime.clone(),
             config_receiver,
+            diff_receiver,
             shell_service.listen_string(),
             glyph_patch_receiver,
             self.proxy.clone(),
