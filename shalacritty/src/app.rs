@@ -268,8 +268,11 @@ where
             .unwrap();
 
         // 表示コンテンツの座標を計算するサービス
-        let (content_plot_service, mut diff_receiver) =
-            ContentPlotService::new(content_receiver, glyph_container);
+        let (content_plot_service, mut diff_receiver) = ContentPlotService::new(
+            content_receiver,
+            window_size_send_service.listen(),
+            glyph_container,
+        );
         let _ = tokio::task::Builder::new()
             .name("ContentPlotService")
             .spawn_on(
