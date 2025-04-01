@@ -102,7 +102,7 @@ where
         // キャッシュの更新
         // 使用済みサイズを切り詰めれば更新完了
         cache_container.truncate(shortest_index);
-    } else if shortest_index > cache_len {
+    } else {
         // 新たな値が長くなっていたので残りすべてを「追加」で処理する
         for (_index, new_old) in iter {
             let new = new_old.left().unwrap();
@@ -177,6 +177,52 @@ mod tests {
                     fg: [1.0, 1.0, 1.0]
                 }
             })]
+        );
+    }
+
+    #[test]
+    fn add_multiple() {
+        let new = [
+            ContentCache {
+                code: 'a',
+                x: 1,
+                y: 2,
+                fg: [255, 255, 255],
+            },
+            ContentCache {
+                code: 'b',
+                x: 3,
+                y: 4,
+                fg: [255, 255, 255],
+            },
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|x| EnumerableContentCache(x));
+
+        let diff_types = super::calculate(&mut Vec::default(), new);
+        assert_eq!(
+            diff_types,
+            [
+                DiffType::Add(DiffContent {
+                    index: 0,
+                    content: Content {
+                        code: 'a',
+                        x: 1,
+                        y: 2,
+                        fg: [1.0, 1.0, 1.0]
+                    }
+                }),
+                DiffType::Add(DiffContent {
+                    index: 1,
+                    content: Content {
+                        code: 'b',
+                        x: 3,
+                        y: 4,
+                        fg: [1.0, 1.0, 1.0]
+                    }
+                })
+            ]
         );
     }
 }
