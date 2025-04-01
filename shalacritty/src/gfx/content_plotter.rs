@@ -99,6 +99,33 @@ impl Diff {
     }
 }
 
+// 互換性のための型変換
+// 一部未対応なので拡充していく
+impl From<crate::detail::Diff> for Diff {
+    fn from(value: crate::detail::Diff) -> Self {
+        Self {
+            character_info_array: value
+                .contents
+                .into_iter()
+                .map(|c| CharacterInfo {
+                    // 描画情報は行列に落とし込んであるので文字コード情報不要なはず
+                    // 将来的に消すが、ひとまず適当な値にしておく
+                    code: 'a',
+                    transform: c.transform,
+                    fore_ground_color: c.fore_ground_color,
+                    uv0: c.uv0,
+                    uv1: c.uv1,
+                    index: c.index,
+                })
+                .collect(),
+            // TODO
+            cursor: None,
+            // TODO
+            item_count: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CompressedPoint {
     value: i32,
