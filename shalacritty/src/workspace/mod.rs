@@ -13,9 +13,7 @@ use winit::{event_loop::EventLoopProxy, keyboard::ModifiersState, window::Window
 
 use crate::{
     app::UserEvent,
-    gfx::{
-        ContentPlotter, GlyphManager, GlyphTexturePatch, IContent, Renderer, RendererUpdateParams,
-    },
+    gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
     multiplexers::{TileId, TileManager},
     Config,
 };
@@ -32,6 +30,7 @@ pub trait IWorkspaceCallback {
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     config_receiver: tokio::sync::watch::Receiver<Config>,
+    string_receiver: tokio::sync::mpsc::Receiver<String>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
@@ -63,6 +62,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
         config_receiver: tokio::sync::watch::Receiver<Config>,
+        string_receiver: tokio::sync::mpsc::Receiver<String>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         event_loop_proxy: EventLoopProxy<UserEvent>,
         callback: TCallback,
@@ -94,6 +94,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         Self {
             instance,
             config_receiver,
+            string_receiver,
             glyph_patch_receiver,
             glyph_manager,
             content_plotter,
@@ -160,6 +161,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             Vec::default()
         };
 
+        // 冗長だがグリフ抽出のために文字列を別途で取得する
+        // チャンネルがつまらないように毎度取得しておく
+        let content_string = self.string_receiver.try_recv();
+
         // シェルがすべて破棄されたらウィンドウを閉じる
         if self.tile_manager.is_empty() {
             self.event_loop_proxy
@@ -204,16 +209,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         );
 
         // グリフの抽出
-        let glyph_texture_patches: Vec<GlyphTexturePatch> = self
-            .glyph_manager
-            .extract_range(
-                contents
-                    .iter()
-                    .map(|c| c.code())
-                    .collect::<Vec<char>>()
-                    .into_iter(),
-            )
-            .collect();
+        let glyph_texture_patches: Vec<GlyphTexturePatch> = if let Ok(str) = content_string {
+            self.glyph_manager.extract_range(str.chars()).collect()
+        } else {
+            Vec::default()
+        };
 
         let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
 
