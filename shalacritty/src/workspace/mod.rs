@@ -32,6 +32,7 @@ pub trait IWorkspaceCallback {
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     config_receiver: tokio::sync::watch::Receiver<Config>,
+    glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
 
@@ -62,6 +63,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
         config_receiver: tokio::sync::watch::Receiver<Config>,
+        glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         event_loop_proxy: EventLoopProxy<UserEvent>,
         callback: TCallback,
     ) -> Self {
@@ -92,6 +94,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         Self {
             instance,
             config_receiver,
+            glyph_patch_receiver,
             glyph_manager,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
@@ -148,6 +151,14 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.tile_manager.update();
         self.callback
             .end(std::time::SystemTime::now(), "TileManager::update()");
+
+        // いまのところ使用はしていないが、値を吐き出させないと新たな値を送信できないので処理だけしておく
+        let _glyph_texture_patches = if let Ok(glyph_patches) = self.glyph_patch_receiver.try_recv()
+        {
+            glyph_patches
+        } else {
+            Vec::default()
+        };
 
         // シェルがすべて破棄されたらウィンドウを閉じる
         if self.tile_manager.is_empty() {
