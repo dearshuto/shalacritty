@@ -357,7 +357,7 @@ where
 
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             self.runtime.clone(),
-            config_receiver,
+            config_service.listen(),
             diff_receiver,
             shell_service.listen_string(),
             glyph_patch_receiver,
