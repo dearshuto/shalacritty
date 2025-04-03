@@ -122,6 +122,12 @@ impl ConfigServiceEx {
 
     pub fn listen(&mut self) -> tokio::sync::mpsc::Receiver<Config> {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
+
+        // 初期値を積んでおく
+        sender
+            .blocking_send(self.receiver.borrow().clone())
+            .unwrap();
+
         self.senders.push(sender);
 
         receiver

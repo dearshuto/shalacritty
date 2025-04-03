@@ -29,7 +29,7 @@ pub trait IWorkspaceCallback {
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
-    config_receiver: tokio::sync::watch::Receiver<Config>,
+    config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     string_receiver: tokio::sync::mpsc::Receiver<String>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
@@ -45,6 +45,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 
     // 設定の差分
     config_diff: ConfigDiff,
+    config_cache: Config,
 
     is_force_dirty: bool,
 
@@ -62,7 +63,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
-        config_receiver: tokio::sync::watch::Receiver<Config>,
+        mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
@@ -71,14 +72,17 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     ) -> Self {
         let clipboard_context = ClipboardContext::new().unwrap();
 
+        // まずは初期設定を確保
+        let config = config_receiver.blocking_recv().unwrap();
+
         let instance = wgpu::Instance::default();
-        let glyph_manager = GlyphManager::new(config_receiver.borrow().font_size);
+        let glyph_manager = GlyphManager::new(config.font_size);
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
         let mut image_cache = ImageCache::new(runtime);
         let mut image_ids = Vec::default();
-        for path in &config_receiver.borrow().background.path {
+        for path in &config.background.path {
             // 監視開始
             let Some(id) = image_cache.register(path) else {
                 continue;
@@ -92,7 +96,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             image_cache.operate_image_and_wait(*id, |_| {});
         }
 
-        let image_alpha = { config_receiver.borrow().image_alpha };
+        let image_alpha = { config.image_alpha };
         Self {
             instance,
             config_receiver,
@@ -105,6 +109,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             tile_id_set: HashSet::from([tile_id]),
             tile_manager,
             config_diff: ConfigDiff::new(),
+            config_cache: config,
             is_force_dirty: false,
             background_renderer_context: BackgroundRendererContext {
                 active_id: if image_ids.is_empty() {
@@ -142,8 +147,12 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
     #[instrument]
     pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
+        if let Ok(latest_config) = self.config_receiver.try_recv() {
+            self.config_cache = latest_config;
+        }
+
         // 設定の差分検出
-        let current_config = self.config_receiver.borrow();
+        let current_config = &self.config_cache;
         self.callback
             .begin(std::time::SystemTime::now(), "config_diff");
         self.config_diff.update(&current_config);
