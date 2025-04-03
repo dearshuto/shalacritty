@@ -19,7 +19,7 @@ use winit::{
 
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowSizeChangedEventArgs},
-    gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
+    gfx::{ContentPlotter, GlyphTexturePatch, Renderer, RendererUpdateParams},
     multiplexers::{TileId, TileManager},
     Config,
 };
@@ -40,10 +40,9 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
-    string_receiver: tokio::sync::mpsc::Receiver<String>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
-    glyph_manager: GlyphManager,
+    container: crate::detail::Container,
     content_plotter: ContentPlotter,
 
     renderer: Renderer<'a, BackgroundRenderer<BackgroundRendererContext>>,
@@ -80,9 +79,9 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
-        string_receiver: tokio::sync::mpsc::Receiver<String>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+        container: crate::detail::Container,
         event_loop_proxy: EventLoopProxy<UserEvent>,
         callback: TCallback,
     ) -> Self {
@@ -92,7 +91,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let config = config_receiver.blocking_recv().unwrap();
 
         let instance = wgpu::Instance::default();
-        let glyph_manager = GlyphManager::new(config.font_size);
         let content_plotter = ContentPlotter::new();
 
         let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
@@ -120,9 +118,8 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             window_size_changed_receiver,
             config_receiver,
             diff_receiver,
-            string_receiver,
             glyph_patch_receiver,
-            glyph_manager,
+            container,
             redraw_requested_receiver,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
@@ -154,7 +151,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.input_receiver.recv() => self.apply_input(args),
-            Some(_) = self.polling_event_receiver.recv() => self.update_impl(),
+            Some(_) = self.polling_event_receiver.recv() => self.update_impl().await,
             Some(args) = self.window_size_changed_receiver.recv() => self.apply_window_size_changed(args),
             Some(id) = self.redraw_requested_receiver.recv() => self.render(id),
             else => {},
@@ -179,11 +176,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.renderer.resize(id, width, height);
     }
 
-    fn update_impl(&mut self) {
+    async fn update_impl(&mut self) {
         let temp = self.window_size_table.clone();
 
         for (id, (width, height)) in temp {
-            self.update(id, width, height);
+            self.update(id, width, height).await;
         }
     }
 
@@ -215,7 +212,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     #[instrument]
-    fn update(&mut self, id: WindowId, width: u32, height: u32) {
+    async fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
         let current_config = &self.config_cache;
         self.callback
@@ -230,17 +227,16 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.callback
             .end(std::time::SystemTime::now(), "TileManager::update()");
 
-        // いまのところ使用はしていないが、値を吐き出させないと新たな値を送信できないので処理だけしておく
-        let _glyph_texture_patches = if let Ok(glyph_patches) = self.glyph_patch_receiver.try_recv()
+        // グリフ差分の抽出
+        let glyph_texture_patches = if let Ok(glyph_patches) = self.glyph_patch_receiver.try_recv()
         {
             glyph_patches
         } else {
             Vec::default()
         };
-
-        // 冗長だがグリフ抽出のために文字列を別途で取得する
-        // チャンネルがつまらないように毎度取得しておく
-        let content_string = self.string_receiver.try_recv();
+        if !glyph_texture_patches.is_empty() {
+            self.is_force_dirty = true;
+        }
 
         // 差分検出はこちらに載せ替える予定
         // 例の如くチャンネルがつまらないように値は吐き出させておく
@@ -259,11 +255,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
         let background = self.config_diff.consume_clear_color();
         let image_path = self.config_diff.consume_background_path_migrated();
-
-        // フォントサイズの更新
-        if let Some(font_size) = self.config_diff.consume_font_size() {
-            self.glyph_manager.set_font_size(font_size);
-        }
 
         // 強制更新のフラグが立ってたらダーティーフラグは見ない
         if self.is_force_dirty {
@@ -290,27 +281,24 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         );
 
         // グリフの抽出
-        let glyph_texture_patches: Vec<GlyphTexturePatch> = if let Ok(str) = content_string {
-            self.glyph_manager.extract_range(str.chars()).collect()
-        } else {
-            Vec::default()
-        };
-
         let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
 
         self.callback.begin(
             std::time::SystemTime::now(),
             "ContentPlotter::calculate_diff()",
         );
-        let diff = self.content_plotter.calculate_diff(
-            contents.into_iter(),
-            &Point {
-                column: Column::from(cursor_x as usize),
-                line: Line::from(cursor_y as usize),
-            },
-            &self.glyph_manager,
-            (width, height),
-        );
+        let diff = self
+            .content_plotter
+            .calculate_diff(
+                contents.into_iter(),
+                &Point {
+                    column: Column::from(cursor_x as usize),
+                    line: Line::from(cursor_y as usize),
+                },
+                self.container.clone(),
+                (width, height),
+            )
+            .await;
         self.callback.end(
             std::time::SystemTime::now(),
             "ContentPlotter::calculate_diff()",

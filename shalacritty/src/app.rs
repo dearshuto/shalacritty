@@ -256,15 +256,6 @@ where
         let (glyph_extract_service, glyph_patch_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
-        let _ = tokio::task::Builder::new()
-            .name("GlyphExtractService")
-            .spawn_on(
-                async move {
-                    glyph_extract_service.serve().await;
-                },
-                self.runtime.handle(),
-            )
-            .unwrap();
 
         // 表示コンテンツの座標を計算するサービス
         let (content_plot_service, diff_receiver) = ContentPlotService::new(
@@ -365,9 +356,9 @@ where
             window_size_send_service.listen(),
             config_service.listen(),
             diff_receiver,
-            shell_service.listen_string(),
             glyph_patch_receiver,
             redraw_requested_receiver_for_workspace,
+            glyph_extract_service.share_glyph_container(),
             self.proxy.clone(),
             server_backend,
         );
@@ -410,6 +401,16 @@ where
             .spawn_on(
                 async move {
                     shell_service.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
+
+        let _ = tokio::task::Builder::new()
+            .name("GlyphExtractService")
+            .spawn_on(
+                async move {
+                    glyph_extract_service.serve().await;
                 },
                 self.runtime.handle(),
             )
