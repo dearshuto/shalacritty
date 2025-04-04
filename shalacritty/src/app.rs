@@ -13,7 +13,6 @@ use winit::{
     event::{ElementState, WindowEvent},
     event_loop::{EventLoop, EventLoopProxy},
     keyboard::ModifiersState,
-    platform::modifier_supplement::KeyEventExtModifierSupplement,
     window::WindowId,
 };
 
@@ -34,6 +33,7 @@ struct Instance {
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
+    input_sender_for_workspace: Option<tokio::sync::mpsc::Sender<KeyboadInputEventArgs>>,
 
     // renderer: term_gfx::Renderer<TBackend>,
     profiler_kill_sender: Option<oneshot::Sender<()>>,
@@ -355,8 +355,11 @@ where
             )
             .unwrap();
 
+        let (input_sender_for_workspace, input_receiver_for_workspace) =
+            tokio::sync::mpsc::channel(1);
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             self.runtime.clone(),
+            input_receiver_for_workspace,
             config_service.listen(),
             diff_receiver,
             shell_service.listen_string(),
@@ -464,6 +467,7 @@ where
         let instance = Instance {
             instance: Some(config_watch_instance),
             input_sender: Some(input_sender),
+            input_sender_for_workspace: Some(input_sender_for_workspace),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
             workspace,
@@ -490,11 +494,24 @@ where
                         return;
                     };
 
-                    instance.workspace.lock().unwrap().send_input(
-                        window_id,
-                        &str,
-                        self.modifiers_state,
-                    )
+                    if let Some(sender) = &instance.input_sender {
+                        sender
+                            .send(KeyboadInputEventArgs {
+                                id: window_id,
+                                input_type: InputType::String(str.clone()),
+                                state: self.modifiers_state,
+                            })
+                            .unwrap();
+                    }
+                    if let Some(sender) = &instance.input_sender_for_workspace {
+                        sender
+                            .blocking_send(KeyboadInputEventArgs {
+                                id: window_id,
+                                input_type: InputType::String(str),
+                                state: self.modifiers_state,
+                            })
+                            .unwrap();
+                    }
                 }
                 winit::event::Ime::Disabled => {}
             },
@@ -545,18 +562,19 @@ where
                 if let Some(sender) = &instance.input_sender {
                     let args = KeyboadInputEventArgs {
                         id: window_id,
-                        event: event.clone(),
+                        input_type: InputType::WindowEvent(event.clone()),
                         state: self.modifiers_state,
                     };
                     sender.send(args).unwrap();
                 }
-
-                let text = event.text_with_all_modifiers().unwrap_or_default();
-                instance.workspace.lock().unwrap().send_input(
-                    window_id,
-                    text,
-                    self.modifiers_state,
-                );
+                if let Some(sender) = &instance.input_sender_for_workspace {
+                    let args = KeyboadInputEventArgs {
+                        id: window_id,
+                        input_type: InputType::WindowEvent(event),
+                        state: self.modifiers_state,
+                    };
+                    sender.blocking_send(args).unwrap();
+                }
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -583,9 +601,14 @@ pub enum UserEvent {
     RequestRedraw,
 }
 
+pub enum InputType {
+    WindowEvent(winit::event::KeyEvent),
+    String(String),
+}
+
 pub struct KeyboadInputEventArgs {
     pub id: winit::window::WindowId,
-    pub event: winit::event::KeyEvent,
+    pub input_type: InputType,
     pub state: ModifiersState,
 }
 
