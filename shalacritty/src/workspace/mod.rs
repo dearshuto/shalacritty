@@ -9,10 +9,13 @@ use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
 use tracing::instrument;
-use winit::{event_loop::EventLoopProxy, keyboard::ModifiersState, window::WindowId};
+use winit::{
+    event_loop::EventLoopProxy, keyboard::ModifiersState,
+    platform::modifier_supplement::KeyEventExtModifierSupplement, window::WindowId,
+};
 
 use crate::{
-    app::UserEvent,
+    app::{KeyboadInputEventArgs, UserEvent},
     gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
     multiplexers::{TileId, TileManager},
     Config,
@@ -29,6 +32,7 @@ pub trait IWorkspaceCallback {
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
+    input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     string_receiver: tokio::sync::mpsc::Receiver<String>,
@@ -63,6 +67,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
+        input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
@@ -99,6 +104,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let image_alpha = { config.image_alpha };
         Self {
             instance,
+            input_receiver,
             config_receiver,
             diff_receiver,
             string_receiver,
@@ -149,6 +155,22 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
         if let Ok(latest_config) = self.config_receiver.try_recv() {
             self.config_cache = latest_config;
+        }
+
+        // 入力の反映
+        if let Ok(args) = self.input_receiver.try_recv() {
+            match args.input_type {
+                crate::app::InputType::WindowEvent(key_event) => {
+                    if let Some(str) = key_event.text_with_all_modifiers() {
+                        self.send_input(args.id, str, args.state);
+                    } else if let Some(str) = key_event.text {
+                        self.send_input(args.id, str.as_str(), args.state);
+                    }
+                }
+                crate::app::InputType::String(str) => {
+                    self.send_input(args.id, &str, args.state);
+                }
+            }
         }
 
         // 設定の差分検出
@@ -281,7 +303,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     #[instrument]
-    pub fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
+    fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
         let action = crate::app::detect_action(text, modifier_state);
         match action {
             Action::Input(str) => self.tile_manager.send_input(str),

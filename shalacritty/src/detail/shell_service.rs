@@ -161,8 +161,14 @@ impl ShellService {
     }
 
     async fn apply_input(&mut self, args: KeyboadInputEventArgs) {
-        let text_with_all_modifiers = args.event.text_with_all_modifiers().unwrap_or_default();
-        let action = crate::app::detect_action(text_with_all_modifiers, args.state);
+        let text_with_all_modifiers = match args.input_type {
+            crate::app::InputType::WindowEvent(key_event) => {
+                key_event.text_with_all_modifiers().unwrap().to_string()
+            }
+            crate::app::InputType::String(str) => str,
+        };
+
+        let action = crate::app::detect_action(&text_with_all_modifiers, args.state);
         match action {
             Action::Input(text) => self
                 .terminal_emulator
