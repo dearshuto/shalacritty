@@ -20,7 +20,7 @@ use crate::{
     config::ConfigServiceEx,
     detail::{
         ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
-        RenderingService, ShellService, WindowSizeSendService, WorkspaceUpdateServiceTentative,
+        RenderingService, ShellService, WindowSizeSendService,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -358,9 +358,11 @@ where
             tokio::sync::mpsc::channel(1);
         let (redraw_requsted_sender_for_workspace, redraw_requested_receiver_for_workspace) =
             tokio::sync::mpsc::channel(1);
-        let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
+        let mut workspace = Workspace::new_with_callback(
             self.runtime.clone(),
+            polling_event_service.listen(),
             input_receiver_for_workspace,
+            window_size_send_service.listen(),
             config_service.listen(),
             diff_receiver,
             shell_service.listen_string(),
@@ -368,42 +370,7 @@ where
             redraw_requested_receiver_for_workspace,
             self.proxy.clone(),
             server_backend,
-        )));
-
-        // ウィンドウサイズの変更を非同期に Workspace に反映するタスク
-        // 互換用の実装で、将来的に Workspace は解体予定
-        let mut window_size_receiver = window_size_send_service.listen();
-        let workspace_local = workspace.clone();
-        let _ = tokio::task::Builder::new()
-            .name("WorkspaceResizeTask")
-            .spawn_on(
-                async move {
-                    while let Some(args) = window_size_receiver.recv().await {
-                        workspace_local
-                            .lock()
-                            .unwrap()
-                            .resize(args.id, args.width, args.height);
-                    }
-                },
-                self.runtime.handle(),
-            )
-            .unwrap();
-
-        // Workspace の更新処理を非同期に実行するサービス
-        let workspace_update_service = WorkspaceUpdateServiceTentative::new(
-            workspace.clone(),
-            polling_event_service.listen(),
-            window_size_send_service.listen(),
         );
-        let _ = tokio::task::Builder::new()
-            .name("WorkspaceUpdateService")
-            .spawn_on(
-                async move {
-                    workspace_update_service.serve().await;
-                },
-                self.runtime.handle(),
-            )
-            .unwrap();
 
         let _ = tokio::task::Builder::new()
             .name("WindowSizeSendService")
@@ -449,12 +416,19 @@ where
             .unwrap();
 
         self.runtime.block_on(async {
-            workspace
-                .lock()
-                .unwrap()
-                .assign_window(id, &window, width, height)
-                .await;
+            workspace.assign_window(id, &window, width, height).await;
         });
+
+        // Workspace の更新処理を非同期に実行するサービス
+        let _ = tokio::task::Builder::new()
+            .name("WorkspaceUpdateService")
+            .spawn_on(
+                async move {
+                    workspace.serve().await;
+                },
+                self.runtime.handle(),
+            )
+            .unwrap();
 
         // 通知
         // MEMO: Window インスタンスの管理もサービス化した方が良い？
