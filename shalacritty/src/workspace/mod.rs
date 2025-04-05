@@ -1,7 +1,10 @@
 mod detail;
 mod diff_calculator;
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -15,7 +18,7 @@ use winit::{
 };
 
 use crate::{
-    app::{KeyboadInputEventArgs, UserEvent},
+    app::{KeyboadInputEventArgs, UserEvent, WindowSizeChangedEventArgs},
     gfx::{ContentPlotter, GlyphManager, GlyphTexturePatch, Renderer, RendererUpdateParams},
     multiplexers::{TileId, TileManager},
     Config,
@@ -32,7 +35,9 @@ pub trait IWorkspaceCallback {
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
+    polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
+    window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     string_receiver: tokio::sync::mpsc::Receiver<String>,
@@ -63,12 +68,16 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     callback: TCallback,
 
     event_loop_proxy: EventLoopProxy<UserEvent>,
+
+    window_size_table: HashMap<WindowId, (u32, u32)>,
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
+        polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
         input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
+        window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
@@ -106,7 +115,9 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let image_alpha = { config.image_alpha };
         Self {
             instance,
+            polling_event_receiver,
             input_receiver,
+            window_size_changed_receiver,
             config_receiver,
             diff_receiver,
             string_receiver,
@@ -134,6 +145,20 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             clipboard_context,
             callback,
             event_loop_proxy,
+            window_size_table: HashMap::default(),
+        }
+    }
+
+    pub async fn serve(mut self) {
+        loop {
+            tokio::select!(
+            Some(config) = self.config_receiver.recv() => self.apply_config(config),
+            Some(args) = self.input_receiver.recv() => self.apply_input(args),
+            Some(_) = self.polling_event_receiver.recv() => self.update_impl(),
+            Some(args) = self.window_size_changed_receiver.recv() => self.apply_window_size_changed(args),
+            Some(id) = self.redraw_requested_receiver.recv() => self.render(id),
+            else => {},
+            );
         }
     }
 
@@ -154,33 +179,43 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.renderer.resize(id, width, height);
     }
 
-    #[instrument]
-    pub fn update(&mut self, id: WindowId, width: u32, height: u32) {
-        if let Ok(latest_config) = self.config_receiver.try_recv() {
-            self.config_cache = latest_config;
-        }
+    fn update_impl(&mut self) {
+        let temp = self.window_size_table.clone();
 
+        for (id, (width, height)) in temp {
+            self.update(id, width, height);
+        }
+    }
+
+    fn apply_window_size_changed(&mut self, args: WindowSizeChangedEventArgs) {
+        self.window_size_table
+            .insert(args.id, (args.width, args.height));
+
+        self.resize(args.id, args.width, args.height);
+    }
+
+    fn apply_input(&mut self, args: KeyboadInputEventArgs) {
         // 入力の反映
-        if let Ok(args) = self.input_receiver.try_recv() {
-            match args.input_type {
-                crate::app::InputType::WindowEvent(key_event) => {
-                    if let Some(str) = key_event.text_with_all_modifiers() {
-                        self.send_input(args.id, str, args.state);
-                    } else if let Some(str) = key_event.text {
-                        self.send_input(args.id, str.as_str(), args.state);
-                    }
-                }
-                crate::app::InputType::String(str) => {
-                    self.send_input(args.id, &str, args.state);
+        match args.input_type {
+            crate::app::InputType::WindowEvent(key_event) => {
+                if let Some(str) = key_event.text_with_all_modifiers() {
+                    self.send_input(args.id, str, args.state);
+                } else if let Some(str) = key_event.text {
+                    self.send_input(args.id, str.as_str(), args.state);
                 }
             }
+            crate::app::InputType::String(str) => {
+                self.send_input(args.id, &str, args.state);
+            }
         }
+    }
 
-        // 再描画要求
-        if let Ok(id) = self.redraw_requested_receiver.try_recv() {
-            self.render(id);
-        }
+    fn apply_config(&mut self, config: Config) {
+        self.config_cache = config;
+    }
 
+    #[instrument]
+    fn update(&mut self, id: WindowId, width: u32, height: u32) {
         // 設定の差分検出
         let current_config = &self.config_cache;
         self.callback
@@ -302,7 +337,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     #[instrument]
-    pub fn resize(&mut self, id: WindowId, width: u32, height: u32) {
+    fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         self.background_renderer_context.window_size = (width, height);
 
         self.tile_manager.resize(width, height);
