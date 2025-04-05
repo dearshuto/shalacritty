@@ -37,6 +37,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     string_receiver: tokio::sync::mpsc::Receiver<String>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
+    redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     glyph_manager: GlyphManager,
     content_plotter: ContentPlotter,
 
@@ -72,6 +73,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         string_receiver: tokio::sync::mpsc::Receiver<String>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
+        redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
         event_loop_proxy: EventLoopProxy<UserEvent>,
         callback: TCallback,
     ) -> Self {
@@ -110,6 +112,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             string_receiver,
             glyph_patch_receiver,
             glyph_manager,
+            redraw_requested_receiver,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
             tile_id_set: HashSet::from([tile_id]),
@@ -171,6 +174,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
                     self.send_input(args.id, &str, args.state);
                 }
             }
+        }
+
+        // 再描画要求
+        if let Ok(id) = self.redraw_requested_receiver.try_recv() {
+            self.render(id);
         }
 
         // 設定の差分検出
@@ -288,7 +296,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     #[instrument]
-    pub fn render(&mut self, id: WindowId) {
+    fn render(&mut self, id: WindowId) {
         // self.renderer.render(id);
         self.renderer.render(id);
     }

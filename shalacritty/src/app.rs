@@ -28,8 +28,6 @@ use crate::{
 struct Instance {
     instance: Option<super::config::Instance>,
 
-    workspace: Arc<Mutex<Workspace<'static, ServerBackend>>>,
-
     window_created_sender: Option<std::sync::mpsc::Sender<WindowCreatedEventArgs>>,
     window_size_sender: Option<std::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
     input_sender: Option<std::sync::mpsc::Sender<KeyboadInputEventArgs>>,
@@ -39,6 +37,7 @@ struct Instance {
     profiler_kill_sender: Option<oneshot::Sender<()>>,
 
     redraw_requested_sender: Option<tokio::sync::mpsc::Sender<WindowId>>,
+    redraw_requested_sender_for_workspace: Option<tokio::sync::mpsc::Sender<WindowId>>,
 
     polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
 }
@@ -357,6 +356,8 @@ where
 
         let (input_sender_for_workspace, input_receiver_for_workspace) =
             tokio::sync::mpsc::channel(1);
+        let (redraw_requsted_sender_for_workspace, redraw_requested_receiver_for_workspace) =
+            tokio::sync::mpsc::channel(1);
         let workspace = Arc::new(Mutex::new(Workspace::new_with_callback(
             self.runtime.clone(),
             input_receiver_for_workspace,
@@ -364,6 +365,7 @@ where
             diff_receiver,
             shell_service.listen_string(),
             glyph_patch_receiver,
+            redraw_requested_receiver_for_workspace,
             self.proxy.clone(),
             server_backend,
         )));
@@ -470,9 +472,9 @@ where
             input_sender_for_workspace: Some(input_sender_for_workspace),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
-            workspace,
             polling_close_sender: Some(polling_close_sender),
             redraw_requested_sender: Some(redraw_requested_sender),
+            redraw_requested_sender_for_workspace: Some(redraw_requsted_sender_for_workspace),
             profiler_kill_sender: Some(tx),
         };
         self.instance = Some(instance);
@@ -533,11 +535,14 @@ where
                     .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
-                let Some(instance) = &self.instance else {
-                    return;
-                };
-                instance.workspace.lock().unwrap().render(window_id);
-
+                if let Some(instance) = &self.instance {
+                    instance
+                        .redraw_requested_sender_for_workspace
+                        .as_ref()
+                        .unwrap()
+                        .blocking_send(window_id)
+                        .unwrap_or_default();
+                }
                 // 将来的にこっちに乗り換える
                 // instance
                 //     .redraw_requested_sender
