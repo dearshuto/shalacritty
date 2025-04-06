@@ -20,6 +20,7 @@ pub struct Glyph {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct Container {
     table: Arc<RwLock<HashMap<char, Glyph>>>,
 }
