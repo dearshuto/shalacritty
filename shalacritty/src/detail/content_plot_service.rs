@@ -190,8 +190,8 @@ impl ContentPlotService {
         // フレームバッファーのサイズで変わる
         // 文字間を開けて見栄えを整えるために文字サイズを 0.6 倍している
         let normalized_matrix = nalgebra::Matrix3::new_nonuniform_scaling(&nalgebra::Vector2::new(
-            0.6f32 / window_size.0 as f32,
-            0.6f32 / window_size.1 as f32,
+            (window_size.0 as f32).recip(),
+            (window_size.1 as f32).recip(),
         ));
 
         // [0, 1] => [-1, 1]

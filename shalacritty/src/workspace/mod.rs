@@ -249,7 +249,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
         // 差分検出はこちらに載せ替える予定
         // 例の如くチャンネルがつまらないように値は吐き出させておく
-        let _diff = self.diff_receiver.try_recv();
+        let diff = self.diff_receiver.try_recv();
+        if diff.is_ok() {
+            self.is_force_dirty = true;
+        }
 
         // コンテンツの取得
         // 将来的にこちらに載せ替える
@@ -282,33 +285,20 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             }
         }
 
-        self.callback.begin(
-            std::time::SystemTime::now(),
-            "ContentPlotter::calculate_diff()",
-        );
-        let diff = self
-            .content_plotter
-            .calculate_diff(
-                self.contents_cache.iter().cloned(),
-                &Point {
-                    column: Column::from(self.cursor_cache.0),
-                    line: Line::from(self.cursor_cache.1 as usize),
-                },
-                self.container.clone(),
-                (width, height),
-            )
-            .await;
-        self.callback.end(
-            std::time::SystemTime::now(),
-            "ContentPlotter::calculate_diff()",
-        );
+        let update_params = {
+            let update_params =
+                RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
+                    .with_glyph_texture_patches(glyph_texture_patches)
+                    .with_background_color(background)
+                    .with_image_path(image_path.clone());
 
-        let update_params =
-            RendererUpdateParams::new_with_user_data(self.background_renderer_context.clone())
-                .with_diff(diff)
-                .with_glyph_texture_patches(glyph_texture_patches)
-                .with_background_color(background)
-                .with_image_path(image_path.clone());
+            if let Ok(diff) = diff {
+                update_params.with_diff(diff.into())
+            } else {
+                update_params
+            }
+        };
+
         self.renderer.update_with_user_data(id, &update_params);
 
         // 再描画要求
