@@ -193,9 +193,9 @@ impl GlyphExtractService {
                 })
                 .unwrap(); // TODO: 不正なフォント対応
 
-            let bytes = match glyph.buffer {
-                crossfont::BitmapBuffer::Rgb(items) => items,
-                crossfont::BitmapBuffer::Rgba(items) => items,
+            let bytes: Vec<u8> = match glyph.buffer {
+                crossfont::BitmapBuffer::Rgb(items) => items.chunks(3).map(|rgb| rgb[0]).collect(),
+                crossfont::BitmapBuffer::Rgba(items) => items.chunks(4).map(|rgb| rgb[0]).collect(),
             };
 
             // 2 次元に配置
@@ -293,7 +293,7 @@ mod tests {
 
         if let Some(patch) = receiver.blocking_recv() {
             for (index, patch) in patch.iter().enumerate() {
-                let image = image::RgbImage::from_vec(
+                let image = image::GrayImage::from_vec(
                     patch.width,
                     patch.height,
                     patch.pixels().iter().copied().collect(),
