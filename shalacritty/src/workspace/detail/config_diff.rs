@@ -74,12 +74,6 @@ impl ConfigDiff {
         false
     }
 
-    pub fn consume_font_size(&mut self) -> Option<f32> {
-        let mut dst = None;
-        std::mem::swap(&mut dst, &mut self.font_size);
-        dst
-    }
-
     pub fn consume_clear_color(&mut self) -> Option<[f32; 4]> {
         let mut dst = None;
         std::mem::swap(&mut dst, &mut self.clear_color);

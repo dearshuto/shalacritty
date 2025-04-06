@@ -5,9 +5,10 @@ use alacritty_terminal::{
 
 use nalgebra::{Matrix3, Vector2};
 
-use crate::util::{DiffCalculator, IDiffCalculator};
-
-use super::GlyphManager;
+use crate::{
+    detail::Container,
+    util::{DiffCalculator, IDiffCalculator},
+};
 
 // TODO: content_plotter.rs の実装を term-gfx に移行する
 // 移行途中なので一時的に detail を参照しています
@@ -166,11 +167,11 @@ impl ContentPlotter {
         Self { diff_calculator }
     }
 
-    pub fn calculate_diff<TCells, TContent>(
+    pub async fn calculate_diff<TCells, TContent>(
         &mut self,
         cells: TCells,
         cursor_point: &Point,
-        glyph_manager: &GlyphManager,
+        glyph_manager: Container,
         size: (u32, u32),
     ) -> Diff
     where
@@ -191,6 +192,8 @@ impl ContentPlotter {
         let item_count = items.len();
         let diff = self.diff_calculator.calculate(items.into_iter());
 
+        let glyph_manager = glyph_manager.read().await;
+
         // 表示要素を描画に必要な情報に変換
         let items = (0..diff.items().len())
             .map(|index| {
@@ -198,7 +201,11 @@ impl ContentPlotter {
                 let item_index = diff.indicies()[index];
 
                 let code = item.code;
-                let glyph = glyph_manager.get_rasterized_glyph(code);
+                let glyph = if let Some(glyph) = glyph_manager.get(&code) {
+                    glyph
+                } else {
+                    glyph_manager.get(&'-').unwrap()
+                };
 
                 // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
                 let local_pixel_scale_matrix = Matrix3::new_nonuniform_scaling(&Vector2::new(
@@ -238,7 +245,7 @@ impl ContentPlotter {
                     * local_pixel_translate_matrix
                     * local_pixel_scale_matrix;
 
-                let character = glyph_manager.get_clip_rect(code);
+                let coord_range = &glyph.coord_range;
                 let fore_ground_color = match item.color {
                     Color::Named(c) => Self::convert_named_color(c),
                     Color::Spec(rgb) => [
@@ -253,8 +260,8 @@ impl ContentPlotter {
                     code,
                     transform: transform_matrix.transpose().remove_column(2),
                     fore_ground_color,
-                    uv0: nalgebra::Vector2::new(character.uv_begin[0], character.uv_begin[1]),
-                    uv1: nalgebra::Vector2::new(character.uv_end[0], character.uv_end[1]),
+                    uv0: nalgebra::Vector2::from(coord_range.top_left),
+                    uv1: nalgebra::Vector2::from(coord_range.bottom_right),
                     index: item_index,
                 }
             })
