@@ -54,7 +54,7 @@ impl GlyphExtractService {
                 config_receiver,
                 receiver: string_receiver,
                 rasterizer: crossfont::Rasterizer::new().unwrap(),
-                glyph_writer: GlyphWriterEx::new(8, 8),
+                glyph_writer: GlyphWriterEx::new(32, 32),
                 font_key: None,
                 current_font_size: None,
                 table: Default::default(),
