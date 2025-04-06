@@ -253,7 +253,7 @@ where
         );
 
         // グリフ抽出サービス
-        let (glyph_extract_service, glyph_patch_receiver) =
+        let (mut glyph_extract_service, glyph_patch_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_string());
         let glyph_container = glyph_extract_service.share_glyph_container();
 
@@ -261,6 +261,7 @@ where
         let (content_plot_service, diff_receiver) = ContentPlotService::new(
             content_receiver,
             window_size_send_service.listen(),
+            glyph_extract_service.listen(),
             glyph_container,
         );
         let _ = tokio::task::Builder::new()
