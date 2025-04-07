@@ -42,6 +42,7 @@ pub struct GlyphExtractService {
 
     table: Arc<RwLock<HashMap<char, Glyph>>>,
     sender: tokio::sync::mpsc::Sender<Vec<GlyphTexturePatch>>,
+    extract_senders: Vec<tokio::sync::mpsc::Sender<String>>,
 }
 
 impl GlyphExtractService {
@@ -60,6 +61,7 @@ impl GlyphExtractService {
                 current_font_size: None,
                 table: Default::default(),
                 sender,
+                extract_senders: Vec::default(),
             },
             receiver,
         )
@@ -74,6 +76,12 @@ impl GlyphExtractService {
             else => break,
             )
         }
+    }
+
+    pub fn listen(&mut self) -> tokio::sync::mpsc::Receiver<String> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        self.extract_senders.push(sender);
+        return receiver;
     }
 
     pub fn share_glyph_container(&self) -> Container {
@@ -105,7 +113,7 @@ impl GlyphExtractService {
         };
 
         // グリフを更新
-        let patches = {
+        let (patches, rasterized_chars) = {
             let mut table = self.table.write().await;
             Self::update_glyph_table(
                 &mut table,
@@ -117,6 +125,11 @@ impl GlyphExtractService {
             )
             .await
         };
+
+        // 更新した文字を通知
+        for sender in &self.extract_senders {
+            sender.send(rasterized_chars.clone()).await.unwrap();
+        }
 
         // 差分を通知
         if !self.sender.is_closed() {
@@ -147,7 +160,7 @@ impl GlyphExtractService {
         let chars: Vec<char> = { self.table.read().await.keys().copied().collect() };
 
         // グリフを再抽出
-        let patches = {
+        let (patches, rasterized_chars) = {
             let mut table = self.table.write().await;
             Self::update_glyph_table(
                 &mut table,
@@ -159,6 +172,11 @@ impl GlyphExtractService {
             )
             .await
         };
+
+        // 抽出した文字を通知
+        for sender in &self.extract_senders {
+            sender.send(rasterized_chars.clone()).await.unwrap();
+        }
 
         // 差分を通知
         if !self.sender.is_closed() {
@@ -173,7 +191,9 @@ impl GlyphExtractService {
         chars: impl Iterator<Item = char>,
         font_size: f32,
         font_key: crossfont::FontKey,
-    ) -> Vec<GlyphTexturePatch> {
+    ) -> (Vec<GlyphTexturePatch>, String) {
+        let mut string = String::new();
+
         // 重複排除
         let chars = HashSet::<char>::from_iter(chars);
 
@@ -183,6 +203,8 @@ impl GlyphExtractService {
             if table.contains_key(&c) {
                 continue;
             }
+
+            string.push(c);
 
             // ラスタライズ
             let glyph = rasterizer
@@ -224,7 +246,7 @@ impl GlyphExtractService {
             });
         }
 
-        patches
+        (patches, string)
     }
 
     fn create_font_key(

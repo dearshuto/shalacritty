@@ -22,6 +22,7 @@ pub struct RendarableContent {
 pub struct ContentPlotService {
     contents_receiver: tokio::sync::mpsc::Receiver<(asura::ShellId, asura::Diff)>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
+    rasterized_chars_receiver: tokio::sync::mpsc::Receiver<String>,
 
     diff_sender: tokio::sync::mpsc::Sender<Diff>,
 
@@ -34,6 +35,7 @@ impl ContentPlotService {
     pub fn new(
         contents_receiver: tokio::sync::mpsc::Receiver<(asura::ShellId, asura::Diff)>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
+        rasterized_chars_receiver: tokio::sync::mpsc::Receiver<String>,
         container: crate::detail::glyph_extract_service::Container,
     ) -> (Self, tokio::sync::mpsc::Receiver<Diff>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
@@ -42,6 +44,7 @@ impl ContentPlotService {
             Self {
                 contents_receiver,
                 window_size_receiver,
+                rasterized_chars_receiver,
                 diff_sender: sender,
                 container,
                 size: None,
@@ -56,6 +59,7 @@ impl ContentPlotService {
             tokio::select!(
             Some((id, diff)) = self.contents_receiver.recv() => self.calculate_diff(id, diff).await,
             Some(args) = self.window_size_receiver.recv() => self.apply_window_size(args).await,
+            Some(_rasterized_chars) = self.rasterized_chars_receiver.recv() => {},
             else => break,
             );
         }
