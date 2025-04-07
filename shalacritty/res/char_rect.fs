@@ -12,5 +12,5 @@ void main()
     // グリフをアルファで抜く
     // TODO: 色に対応する
     vec4 alpha = texture(sampler2D(u_GlyphTexture, u_GlyphSampler), v_Uv);
-    o_Color = vec4(v_ForeGroundColor.xyz, alpha) + vec4(0.5, 0.0, 0.0, 1.0);
+    o_Color = vec4(v_ForeGroundColor.xyz, alpha);
 }
