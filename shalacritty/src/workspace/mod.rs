@@ -4,6 +4,7 @@ mod diff_calculator;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Duration,
 };
 
 use alacritty_terminal::index::{Column, Line, Point};
@@ -11,6 +12,7 @@ use copypasta::{ClipboardContext, ClipboardProvider};
 use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tracing::instrument;
 use winit::{
     event_loop::EventLoopProxy, keyboard::ModifiersState,
@@ -37,7 +39,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
-    window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
+    window_size_changed_receiver: Option<ReceiverStream<WindowSizeChangedEventArgs>>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
@@ -115,7 +117,9 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             instance,
             polling_event_receiver,
             input_receiver,
-            window_size_changed_receiver,
+            window_size_changed_receiver: Some(tokio_stream::wrappers::ReceiverStream::new(
+                window_size_changed_receiver,
+            )),
             config_receiver,
             diff_receiver,
             glyph_patch_receiver,
@@ -147,12 +151,20 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     }
 
     pub async fn serve(mut self) {
+        let s = self
+            .window_size_changed_receiver
+            .take()
+            .unwrap()
+            .throttle(Duration::from_millis(250))
+            .fuse();
+        futures::pin_mut!(s);
+
         loop {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.input_receiver.recv() => self.apply_input(args),
             Some(_) = self.polling_event_receiver.recv() => self.update_impl().await,
-            Some(args) = self.window_size_changed_receiver.recv() => self.apply_window_size_changed(args),
+            Some(args) = s.next() => self.apply_window_size_changed(args),
             Some(id) = self.redraw_requested_receiver.recv() => self.render(id),
             else => {},
             );
