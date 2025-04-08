@@ -204,16 +204,17 @@ impl GlyphExtractService {
                 continue;
             }
 
-            string.push(c);
-
             // ラスタライズ
-            let glyph = rasterizer
-                .get_glyph(crossfont::GlyphKey {
-                    character: c,
-                    font_key,
-                    size: crossfont::Size::new(font_size),
-                })
-                .unwrap(); // TODO: 不正なフォント対応
+            let Ok(glyph) = rasterizer.get_glyph(crossfont::GlyphKey {
+                character: c,
+                font_key,
+                size: crossfont::Size::new(font_size),
+            }) else {
+                // TODO: 豆腐対応
+                continue;
+            };
+
+            string.push(c);
 
             let bytes: Vec<u8> = match glyph.buffer {
                 crossfont::BitmapBuffer::Rgb(items) => items.chunks(3).map(|rgb| rgb[0]).collect(),
