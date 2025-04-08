@@ -163,7 +163,11 @@ impl ShellService {
     async fn apply_input(&mut self, args: KeyboadInputEventArgs) {
         let text_with_all_modifiers = match args.input_type {
             crate::app::InputType::WindowEvent(key_event) => {
-                key_event.text_with_all_modifiers().unwrap().to_string()
+                if let Some(text) = key_event.text_with_all_modifiers() {
+                    text.to_string()
+                } else {
+                    String::new()
+                }
             }
             crate::app::InputType::String(str) => str,
         };
