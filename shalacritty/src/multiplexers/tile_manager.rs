@@ -292,10 +292,6 @@ impl<TShellManager: IShellManager> TileManager<TShellManager> {
         self.shell_manager.get_cursor_position(*shell_id)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.id_set.is_empty()
-    }
-
     pub fn consume_dirty(&mut self) -> Option<bool> {
         let virtual_window_ids = self
             .virtual_window_manager

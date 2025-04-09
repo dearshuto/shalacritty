@@ -245,6 +245,7 @@ where
         // シェル管理サービス
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
         let (mut shell_service, content_receiver) = ShellService::new(
+            self.proxy.clone(),
             config_service.listen(),
             window_created_receiver,
             window_size_send_service.listen(),

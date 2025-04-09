@@ -20,6 +20,8 @@ pub struct TerminalEmulator {
     tab_shell_table: HashMap<TabId, HashSet<ShellId>>,
 
     shell_tile_table: HashMap<ShellId, TileId>,
+
+    dirty_table: HashMap<ShellId, bool>,
 }
 
 impl TerminalEmulator {
@@ -49,8 +51,33 @@ impl TerminalEmulator {
                 tab_table,
                 tab_shell_table,
                 shell_tile_table,
+                dirty_table: HashMap::from([(shell_id, false)]),
             },
         )
+    }
+
+    pub fn update(&mut self) {
+        self.shell_controller_table
+            .retain(|key, value| match value.try_recv_event() {
+                Ok(event) => match event {
+                    crate::multiplexer::Event::Updated => {
+                        self.dirty_table.insert(*key, true);
+                        true
+                    }
+                    crate::multiplexer::Event::Exit => false,
+                    crate::multiplexer::Event::Others => {
+                        self.dirty_table.insert(*key, false);
+                        true
+                    }
+                },
+                Err(error) => match error {
+                    std::sync::mpsc::TryRecvError::Empty => {
+                        self.dirty_table.insert(*key, false);
+                        true
+                    }
+                    std::sync::mpsc::TryRecvError::Disconnected => false,
+                },
+            });
     }
 
     /// タブを生成します
@@ -150,11 +177,11 @@ impl TerminalEmulator {
     }
 
     pub fn is_dirty(&self, id: ShellId) -> Option<bool> {
-        let Some(controller) = self.shell_controller_table.get(&id) else {
-            return None;
-        };
+        self.dirty_table.get(&id).copied()
+    }
 
-        Some(controller.try_recv_event().is_ok())
+    pub fn is_empty(&self) -> bool {
+        self.shell_controller_table.is_empty()
     }
 }
 
