@@ -102,14 +102,17 @@ impl GlyphExtractService {
             return;
         };
 
-        let chars: Vec<char> = {
+        let chars = {
+            // 重複排除
+            let mut str: HashSet<char> = str.chars().collect();
+
             // ロック区間は最短で
             let table = self.table.read().await;
 
             // キャッシュに存在しない文字をしぼりこむ
-            str.chars()
-                .filter(|character| !table.contains_key(&character))
-                .collect()
+            str.retain(|character| !table.contains_key(&character));
+
+            str
         };
 
         // グリフを更新
@@ -119,7 +122,7 @@ impl GlyphExtractService {
                 &mut table,
                 &mut self.glyph_writer,
                 &mut self.rasterizer,
-                chars.into_iter(),
+                chars,
                 font_size,
                 font_key,
             )
@@ -157,7 +160,7 @@ impl GlyphExtractService {
 
         // フォントサイズが変更になったので、全てラスタライズしなおす
         // ラスタライズが必要な文字を抽出する処理は早めにロックを解放したいのでスコープを作る
-        let chars: Vec<char> = { self.table.read().await.keys().copied().collect() };
+        let chars = { self.table.read().await.keys().copied().collect() };
 
         // グリフを再抽出
         let (patches, rasterized_chars) = {
@@ -166,7 +169,7 @@ impl GlyphExtractService {
                 &mut table,
                 &mut self.glyph_writer,
                 &mut self.rasterizer,
-                chars.into_iter(),
+                chars,
                 config.font_size,
                 *self.font_key.as_ref().unwrap(),
             )
@@ -188,15 +191,11 @@ impl GlyphExtractService {
         table: &mut HashMap<char, Glyph>,
         glyph_writer: &mut GlyphWriterEx,
         rasterizer: &mut crossfont::Rasterizer,
-        chars: impl Iterator<Item = char>,
+        chars: HashSet<char>,
         font_size: f32,
         font_key: crossfont::FontKey,
     ) -> (Vec<GlyphTexturePatch>, String) {
         let mut string = String::new();
-
-        // 重複排除
-        let chars = HashSet::<char>::from_iter(chars);
-
         let mut patches = Vec::default();
         for c in chars {
             // すでに処理ずみならなにもしない
