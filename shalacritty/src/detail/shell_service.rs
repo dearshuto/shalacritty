@@ -23,6 +23,7 @@ pub struct ShellService {
     polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
+    content_senders: Vec<tokio::sync::mpsc::Sender<Vec<asura::Content>>>,
     contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, asura::Diff)>,
 
     active_shell_id: asura::ShellId,
@@ -58,6 +59,7 @@ impl ShellService {
                 input_receiver,
                 polling_event_receiver,
                 string_senders: Vec::default(),
+                content_senders: Vec::default(),
                 contents_senders: contents_sender,
                 active_shell_id: id,
                 font_size: None,
@@ -83,6 +85,12 @@ impl ShellService {
     pub fn listen_string(&mut self) -> tokio::sync::mpsc::Receiver<String> {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
         self.string_senders.push(sender);
+        receiver
+    }
+
+    pub fn listen_content_tentative(&mut self) -> tokio::sync::mpsc::Receiver<Vec<asura::Content>> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        self.content_senders.push(sender);
         receiver
     }
 
@@ -145,6 +153,27 @@ impl ShellService {
                     return None;
                 }
 
+                // コンテンツを通知
+                let mut contents_notification_tasks = Vec::default();
+                for sender in &self.content_senders {
+                    let content = self
+                        .terminal_emulator
+                        .diff(*id, &mut asura::DiffContext::new());
+                    let contents: Vec<_> = content
+                        .content_diff
+                        .into_iter()
+                        .filter_map(|x| {
+                            let asura::DiffType::Add(content) = x else {
+                                return None;
+                            };
+
+                            Some(content.content)
+                        })
+                        .collect();
+
+                    contents_notification_tasks.push(sender.send(contents));
+                }
+
                 // コンテンツ差分を通知
                 let diff_types = self.terminal_emulator.diff(*id, context);
                 let content_send_task = self.contents_senders.send((*id, diff_types));
@@ -159,10 +188,12 @@ impl ShellService {
                     let handle = sender.send(contents_str.clone());
                     task.push(handle);
                 }
+
                 let t = futures::future::join_all(task);
+                let t_content = futures::future::join_all(contents_notification_tasks);
 
                 // コンテンツの通知と文字列の通知を両方待つ
-                Some(futures::future::join(content_send_task, t))
+                Some(futures::future::join3(t, t_content, content_send_task))
             })
             .collect();
         futures::future::join_all(tasks).await;

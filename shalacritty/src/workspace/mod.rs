@@ -9,7 +9,10 @@ use std::{
 
 use alacritty_terminal::index::{Column, Line, Point};
 use copypasta::{ClipboardContext, ClipboardProvider};
-use detail::{BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId};
+use detail::{
+    AsuraContentAdapter, BackgroundRenderer, ContentAdapter, IBackgroundRendererContext,
+    ImageCache, ImageId,
+};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
@@ -26,7 +29,7 @@ use crate::{
     Config,
 };
 
-use self::detail::{ConfigDiff, ContentAdapter, MultiplexersAdapter};
+use self::detail::{ConfigDiff, MultiplexersAdapter};
 pub use detail::Action;
 
 pub trait IWorkspaceCallback {
@@ -42,6 +45,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     window_size_changed_receiver: Option<ReceiverStream<WindowSizeChangedEventArgs>>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
+    content_receiver: tokio::sync::mpsc::Receiver<Vec<asura::Content>>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     container: crate::detail::Container,
@@ -81,6 +85,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
+        content_receiver: tokio::sync::mpsc::Receiver<Vec<asura::Content>>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
         container: crate::detail::Container,
@@ -122,6 +127,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             )),
             config_receiver,
             diff_receiver,
+            content_receiver,
             glyph_patch_receiver,
             container,
             redraw_requested_receiver,
@@ -253,6 +259,18 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         // 差分検出はこちらに載せ替える予定
         // 例の如くチャンネルがつまらないように値は吐き出させておく
         let _diff = self.diff_receiver.try_recv();
+
+        // コンテンツの取得
+        // 将来的にこちらに載せ替える
+        let _contents = if let Ok(contents) = self.content_receiver.try_recv() {
+            self.is_force_dirty = true;
+            contents
+                .into_iter()
+                .map(Into::<AsuraContentAdapter>::into)
+                .collect()
+        } else {
+            Vec::default()
+        };
 
         let is_config_dirty = self.config_diff.is_dirty();
         self.background_renderer_context.image_alpha = current_config.image_alpha;
