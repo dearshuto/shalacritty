@@ -161,9 +161,15 @@ impl TerminalEmulator {
         };
 
         let mut diff_contents = Vec::default();
+        let mut cursor_position = (0, 0);
         controller
             .read_contents()
             .access_rendarable_content(|renderable_content| {
+                cursor_position = (
+                    renderable_content.cursor.point.column.0,
+                    renderable_content.cursor.point.line.0,
+                );
+
                 let iter = renderable_content
                     .display_iter
                     .enumerate()
@@ -173,7 +179,16 @@ impl TerminalEmulator {
 
         Diff {
             content_diff: diff_contents,
+            cursor_position,
         }
+    }
+
+    pub fn acquire_cursor_position_tentative(&self, id: ShellId) -> Option<(usize, i32)> {
+        let Some(controller) = self.shell_controller_table.get(&id) else {
+            return None;
+        };
+
+        Some(controller.read_contents().get_cursor_point())
     }
 
     pub fn is_dirty(&self, id: ShellId) -> Option<bool> {
@@ -206,6 +221,7 @@ impl Default for DiffContext {
 #[derive(Debug, Default, PartialEq)]
 pub struct Diff {
     pub content_diff: Vec<DiffType>,
+    pub cursor_position: (usize, i32),
 }
 
 #[derive(Debug, PartialEq)]

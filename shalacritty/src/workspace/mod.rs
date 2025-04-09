@@ -1,17 +1,12 @@
 mod detail;
 mod diff_calculator;
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use alacritty_terminal::index::{Column, Line, Point};
-use copypasta::{ClipboardContext, ClipboardProvider};
+use copypasta::ClipboardContext;
 use detail::{
-    AsuraContentAdapter, BackgroundRenderer, ContentAdapter, IBackgroundRendererContext,
-    ImageCache, ImageId,
+    AsuraContentAdapter, BackgroundRenderer, IBackgroundRendererContext, ImageCache, ImageId,
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tokio::runtime::Runtime;
@@ -25,11 +20,10 @@ use winit::{
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowSizeChangedEventArgs},
     gfx::{ContentPlotter, GlyphTexturePatch, Renderer, RendererUpdateParams},
-    multiplexers::{TileId, TileManager},
     Config,
 };
 
-use self::detail::{ConfigDiff, MultiplexersAdapter};
+use self::detail::ConfigDiff;
 pub use detail::Action;
 
 pub trait IWorkspaceCallback {
@@ -46,17 +40,13 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
     content_receiver: tokio::sync::mpsc::Receiver<Vec<asura::Content>>,
+    cursor_receiver: tokio::sync::mpsc::Receiver<(usize, i32)>,
     glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
     redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     container: crate::detail::Container,
     content_plotter: ContentPlotter,
 
     renderer: Renderer<'a, BackgroundRenderer<BackgroundRendererContext>>,
-
-    // WindowId -> TileId
-    tile_id_set: HashSet<TileId>,
-
-    tile_manager: TileManager<MultiplexersAdapter>,
 
     // 設定の差分
     config_diff: ConfigDiff,
@@ -68,6 +58,7 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 
     image_ids: Vec<ImageId>,
 
+    #[allow(unused)]
     clipboard_context: ClipboardContext,
 
     callback: TCallback,
@@ -75,6 +66,11 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     event_loop_proxy: EventLoopProxy<UserEvent>,
 
     window_size_table: HashMap<WindowId, (u32, u32)>,
+
+    // 新実装に載せ替えるまでのつなぎで必要
+    // 旧実装の差分検出の互換性保持のためにコンテンツ一覧をキャッシュしている
+    contents_cache: Vec<AsuraContentAdapter>,
+    cursor_cache: (usize, i32),
 }
 
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
@@ -86,6 +82,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
         diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         content_receiver: tokio::sync::mpsc::Receiver<Vec<asura::Content>>,
+        cursor_receiver: tokio::sync::mpsc::Receiver<(usize, i32)>,
         glyph_patch_receiver: tokio::sync::mpsc::Receiver<Vec<GlyphTexturePatch>>,
         redraw_requested_receiver: tokio::sync::mpsc::Receiver<WindowId>,
         container: crate::detail::Container,
@@ -100,7 +97,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let instance = wgpu::Instance::default();
         let content_plotter = ContentPlotter::new();
 
-        let (tile_manager, tile_id) = TileManager::new(MultiplexersAdapter::new());
         let mut image_cache = ImageCache::new(runtime);
         let mut image_ids = Vec::default();
         for path in &config.background.path {
@@ -128,13 +124,12 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             config_receiver,
             diff_receiver,
             content_receiver,
+            cursor_receiver,
             glyph_patch_receiver,
             container,
             redraw_requested_receiver,
             content_plotter,
             renderer: Renderer::new_with_plugin(BackgroundRenderer::new()),
-            tile_id_set: HashSet::from([tile_id]),
-            tile_manager,
             config_diff: ConfigDiff::new(),
             config_cache: config,
             is_force_dirty: false,
@@ -153,6 +148,8 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             callback,
             event_loop_proxy,
             window_size_table: HashMap::default(),
+            contents_cache: Vec::default(),
+            cursor_cache: (0, 0),
         }
     }
 
@@ -239,12 +236,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         self.callback
             .end(std::time::SystemTime::now(), "config_diff");
 
-        self.callback
-            .begin(std::time::SystemTime::now(), "TileManager::update()");
-        self.tile_manager.update();
-        self.callback
-            .end(std::time::SystemTime::now(), "TileManager::update()");
-
         // グリフ差分の抽出
         let glyph_texture_patches = if let Ok(glyph_patches) = self.glyph_patch_receiver.try_recv()
         {
@@ -262,15 +253,18 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
 
         // コンテンツの取得
         // 将来的にこちらに載せ替える
-        let _contents = if let Ok(contents) = self.content_receiver.try_recv() {
+        if let Ok(contents) = self.content_receiver.try_recv() {
             self.is_force_dirty = true;
-            contents
+            self.contents_cache = contents
                 .into_iter()
                 .map(Into::<AsuraContentAdapter>::into)
                 .collect()
-        } else {
-            Vec::default()
-        };
+        }
+
+        if let Ok(cursor) = self.cursor_receiver.try_recv() {
+            self.is_force_dirty = true;
+            self.cursor_cache = cursor;
+        }
 
         let is_config_dirty = self.config_diff.is_dirty();
         self.background_renderer_context.image_alpha = current_config.image_alpha;
@@ -282,28 +276,11 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         if self.is_force_dirty {
             self.is_force_dirty = false;
         } else {
-            let Some(is_tty_dirty) = self.tile_manager.consume_dirty() else {
-                return;
-            };
-
             // 差分がなかったらなにもしない
-            if !is_tty_dirty && !is_config_dirty {
+            if !is_config_dirty {
                 return;
             }
         }
-
-        self.callback.begin(
-            std::time::SystemTime::now(),
-            "TileManager::enumerate_content()",
-        );
-        let contents: Vec<ContentAdapter> = self.tile_manager.enumerate_content().collect();
-        self.callback.end(
-            std::time::SystemTime::now(),
-            "TileManager::enumerate_content()",
-        );
-
-        // グリフの抽出
-        let (cursor_x, cursor_y) = self.tile_manager.get_cursor_position();
 
         self.callback.begin(
             std::time::SystemTime::now(),
@@ -312,10 +289,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let diff = self
             .content_plotter
             .calculate_diff(
-                contents.into_iter(),
+                self.contents_cache.iter().cloned(),
                 &Point {
-                    column: Column::from(cursor_x as usize),
-                    line: Line::from(cursor_y as usize),
+                    column: Column::from(self.cursor_cache.0),
+                    line: Line::from(self.cursor_cache.1 as usize),
                 },
                 self.container.clone(),
                 (width, height),
@@ -350,8 +327,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     fn resize(&mut self, id: WindowId, width: u32, height: u32) {
         self.background_renderer_context.window_size = (width, height);
 
-        self.tile_manager.resize(width, height);
-
         self.renderer.resize(id, width, height);
     }
 
@@ -359,58 +334,22 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     fn send_input(&mut self, _id: WindowId, text: &str, modifier_state: ModifiersState) {
         let action = crate::app::detect_action(text, modifier_state);
         match action {
-            Action::Input(str) => self.tile_manager.send_input(str),
-            Action::Paste => {
-                let Ok(content) = self.clipboard_context.get_contents() else {
-                    return;
-                };
-
-                self.tile_manager.send_input(&content);
-            }
-            Action::SplitHorizontal => {
-                let id = self.tile_id_set.iter().next().unwrap();
-                let new_id = self.tile_manager.split_horizontal(*id);
-                self.tile_id_set.insert(new_id);
-                self.is_force_dirty = true;
-
-                // for id in self.window_manager.ids() {
-                //     let Some(window) = self.window_manager.try_get_window(*id) else {
-                //         continue;
-                //     };
-
-                //     self.tile_manager
-                //         .resize(window.inner_size().width, window.inner_size().height);
-                // }
-            }
+            Action::Input(_str) => {}
+            Action::Paste => {}
+            Action::SplitHorizontal => {}
             Action::NewTab => {
                 self.is_force_dirty = true;
-                self.tile_manager.activate_tab(99)
             }
-            Action::ActivateNextTile => {
-                self.tile_manager.activate_next_tile();
-            }
+            Action::ActivateNextTile => {}
             Action::ActivateTab(index) => {
                 self.is_force_dirty = true;
-                self.tile_manager.activate_tab(index);
-
-                // タブが切り替わったタイミングで切り替え先の tty にリサイズをかける
-                // ウィンドウのリサイズタイミングで全ての tty をリサイズしてもいいかも
-                // MEMO:  ウィンドウはひとつを仮定
-                // if let Some(window_id) = self.window_manager.ids().first() {
-                //     if let Some(window) = self.window_manager.try_get_window(*window_id) {
-                //         self.tile_manager
-                //             .resize(window.inner_size().width, window.inner_size().height);
-                //     }
-                // }
 
                 // 背景画像の切り替え
                 let id = self.image_ids.get(index as usize);
                 self.background_renderer_context
                     .set_active_image_id(id.cloned());
             }
-            Action::DumpDebugInfo => {
-                self.tile_manager.dump_for_debug();
-            }
+            Action::DumpDebugInfo => {}
         }
     }
 

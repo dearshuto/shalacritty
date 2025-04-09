@@ -25,6 +25,7 @@ pub struct ShellService {
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
     content_senders: Vec<tokio::sync::mpsc::Sender<Vec<asura::Content>>>,
     contents_senders: tokio::sync::mpsc::Sender<(asura::ShellId, asura::Diff)>,
+    cursor_position_senders: Vec<tokio::sync::mpsc::Sender<(usize, i32)>>,
 
     active_shell_id: asura::ShellId,
 
@@ -61,6 +62,7 @@ impl ShellService {
                 string_senders: Vec::default(),
                 content_senders: Vec::default(),
                 contents_senders: contents_sender,
+                cursor_position_senders: Vec::default(),
                 active_shell_id: id,
                 font_size: None,
                 window_width: None,
@@ -91,6 +93,14 @@ impl ShellService {
     pub fn listen_content_tentative(&mut self) -> tokio::sync::mpsc::Receiver<Vec<asura::Content>> {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
         self.content_senders.push(sender);
+        receiver
+    }
+
+    pub fn listen_cursor_position_tentative(
+        &mut self,
+    ) -> tokio::sync::mpsc::Receiver<(usize, i32)> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        self.cursor_position_senders.push(sender);
         receiver
     }
 
@@ -135,6 +145,18 @@ impl ShellService {
         if self.terminal_emulator.is_empty() {
             self.event_loop_proxy.send_event(UserEvent::Exit).unwrap();
             return;
+        }
+
+        // カーソル通知
+        for id in self.diff_context_table.keys() {
+            if let Some(position) = self
+                .terminal_emulator
+                .acquire_cursor_position_tentative(*id)
+            {
+                for sender in &self.cursor_position_senders {
+                    sender.send(position.clone()).await.unwrap();
+                }
+            }
         }
 
         // 再描画処理

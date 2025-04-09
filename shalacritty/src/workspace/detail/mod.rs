@@ -11,4 +11,4 @@ pub use background_renderer::{BackgroundRenderer, IBackgroundRendererContext};
 pub use config_diff::ConfigDiff;
 pub use image_cache::{ImageCache, ImageId};
 #[allow(unused_imports)]
-pub use multiplexers_adapter::{ContentAdapter, MultiplexersAdapter, PositionAdapter};
+pub use multiplexers_adapter::{ContentAdapter, PositionAdapter};
