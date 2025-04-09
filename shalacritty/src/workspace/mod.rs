@@ -254,14 +254,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         // 例の如くチャンネルがつまらないように値は吐き出させておく
         let _diff = self.diff_receiver.try_recv();
 
-        // シェルがすべて破棄されたらウィンドウを閉じる
-        if self.tile_manager.is_empty() {
-            self.event_loop_proxy
-                .send_event(UserEvent::Exit)
-                .unwrap_or_default();
-            return;
-        }
-
         let is_config_dirty = self.config_diff.is_dirty();
         self.background_renderer_context.image_alpha = current_config.image_alpha;
 

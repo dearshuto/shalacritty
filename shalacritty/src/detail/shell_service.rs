@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 
 use tracing::instrument;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::{
+    event_loop::EventLoopProxy, platform::modifier_supplement::KeyEventExtModifierSupplement,
+};
 
 use crate::{
-    app::{KeyboadInputEventArgs, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
+    app::{KeyboadInputEventArgs, UserEvent, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
     workspace::Action,
     Config,
 };
 
 pub struct ShellService {
+    event_loop_proxy: EventLoopProxy<UserEvent>,
     terminal_emulator: asura::TerminalEmulator,
     diff_context_table: HashMap<asura::ShellId, asura::DiffContext>,
 
@@ -31,6 +34,7 @@ pub struct ShellService {
 
 impl ShellService {
     pub fn new(
+        event_loop_proxy: EventLoopProxy<UserEvent>,
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
@@ -45,6 +49,7 @@ impl ShellService {
 
         (
             Self {
+                event_loop_proxy,
                 terminal_emulator,
                 diff_context_table: HashMap::from([(id, asura::DiffContext::new())]),
                 window_created_receiver,
@@ -115,6 +120,13 @@ impl ShellService {
         if let Ok(_args) = self.window_created_receiver.try_recv() {
             // 初期化時にシェルをひとつ起動しているのでウィンドウ作成のタイミングでやることはとくにない
             // 画面サイズを連動する処理が必要だが、それはサイズ変更通知が来たときに処理する
+        }
+
+        self.terminal_emulator.update();
+
+        if self.terminal_emulator.is_empty() {
+            self.event_loop_proxy.send_event(UserEvent::Exit).unwrap();
+            return;
         }
 
         // 再描画処理

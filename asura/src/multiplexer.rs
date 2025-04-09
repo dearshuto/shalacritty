@@ -16,6 +16,33 @@ use crate::{
     shell_id::ShellId,
 };
 
+pub enum Event {
+    Updated,
+    Exit,
+    Others,
+}
+
+impl From<alacritty_terminal::event::Event> for Event {
+    fn from(value: alacritty_terminal::event::Event) -> Self {
+        match value {
+            // alacritty_terminal::event::Event::MouseCursorDirty => todo!(),
+            // alacritty_terminal::event::Event::Title(_) => todo!(),
+            // alacritty_terminal::event::Event::ResetTitle => todo!(),
+            // alacritty_terminal::event::Event::ClipboardStore(clipboard_type, _) => todo!(),
+            // alacritty_terminal::event::Event::ClipboardLoad(clipboard_type, _) => todo!(),
+            // alacritty_terminal::event::Event::ColorRequest(_, _) => todo!(),
+            // alacritty_terminal::event::Event::PtyWrite(_) => todo!(),
+            // alacritty_terminal::event::Event::TextAreaSizeRequest(_) => todo!(),
+            // alacritty_terminal::event::Event::CursorBlinkingChange => todo!(),
+            alacritty_terminal::event::Event::Wakeup => Event::Updated,
+            // alacritty_terminal::event::Event::Bell => todo!(),
+            alacritty_terminal::event::Event::Exit => Event::Exit,
+            // alacritty_terminal::event::Event::ChildExit(_) => todo!(),
+            _ => Event::Others,
+        }
+    }
+}
+
 pub struct ShellController {
     // ターミナルの更新イベントの receiver
     // alacritty_terminal モジュールが asura 経由で外部ににじみ出ないように隠蔽している
@@ -42,16 +69,16 @@ impl ShellController {
         }
     }
 
-    pub fn recv_event(&self) -> Result<(), RecvError> {
+    pub fn recv_event(&self) -> Result<Event, RecvError> {
         match self.event_receiver.recv() {
-            Ok(_event) => Ok(()),
+            Ok(event) => Ok(event.into()),
             Err(error) => Err(error),
         }
     }
 
-    pub fn try_recv_event(&self) -> Result<(), TryRecvError> {
+    pub fn try_recv_event(&self) -> Result<Event, TryRecvError> {
         match self.event_receiver.try_recv() {
-            Ok(_) => return Ok(()),
+            Ok(event) => Ok(event.into()),
             Err(error) => Err(error),
         }
     }
