@@ -196,7 +196,7 @@ impl ContentPlotter {
 
         // 表示要素を描画に必要な情報に変換
         let items = (0..diff.items().len())
-            .map(|index| {
+            .filter_map(|index| {
                 let item = &diff.items()[index];
                 let item_index = diff.indicies()[index];
 
@@ -204,7 +204,7 @@ impl ContentPlotter {
                 let glyph = if let Some(glyph) = glyph_manager.get(&code) {
                     glyph
                 } else {
-                    glyph_manager.get(&'-').unwrap()
+                    return None;
                 };
 
                 // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
@@ -256,14 +256,14 @@ impl ContentPlotter {
                     ],
                     Color::Indexed(i) => Self::convert_index_color(i),
                 };
-                CharacterInfo {
+                Some(CharacterInfo {
                     code,
                     transform: transform_matrix.transpose().remove_column(2),
                     fore_ground_color,
                     uv0: nalgebra::Vector2::from(coord_range.top_left),
                     uv1: nalgebra::Vector2::from(coord_range.bottom_right),
                     index: item_index,
-                }
+                })
             })
             .collect::<Vec<CharacterInfo>>();
 
