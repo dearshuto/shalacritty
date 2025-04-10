@@ -83,7 +83,7 @@ impl From<GlyphImagePatch> for GlyphTexturePatch {
 pub struct Diff {
     character_info_array: Vec<CharacterInfo>,
     cursor: Option<Point>,
-    item_count: i32,
+    item_count: Option<i32>,
 }
 
 impl Diff {
@@ -95,7 +95,7 @@ impl Diff {
         self.cursor.as_ref()
     }
 
-    pub fn item_count(&self) -> i32 {
+    pub fn item_count(&self) -> Option<i32> {
         self.item_count
     }
 }
@@ -121,8 +121,7 @@ impl From<crate::detail::Diff> for Diff {
                 .collect(),
             // TODO
             cursor: None,
-            // TODO
-            item_count: 0,
+            item_count: value.content_count.map(|x| x as i32),
         }
     }
 }
@@ -270,7 +269,7 @@ impl ContentPlotter {
         Diff {
             character_info_array: items,
             cursor: Some(*cursor_point),
-            item_count: item_count as i32,
+            item_count: Some(item_count as i32),
         }
     }
 

@@ -260,7 +260,9 @@ impl<'a> TextRenderer<'a> {
         };
 
         // 文字数
-        self.character_count = diff.item_count() as u32;
+        if let Some(character_count) = diff.item_count() {
+            self.character_count = character_count as u32;
+        }
 
         for buffer_patch in buffer_patches {
             for index in 0..buffer_patch.count {
