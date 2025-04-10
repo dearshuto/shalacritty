@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tracing::instrument;
 
@@ -29,6 +29,8 @@ pub struct ContentPlotService {
     container: crate::detail::glyph_extract_service::Container,
 
     size: Option<(u32, u32)>,
+
+    miss_contents: Vec<asura::DiffContent>,
 }
 
 impl ContentPlotService {
@@ -48,6 +50,7 @@ impl ContentPlotService {
                 diff_sender: sender,
                 container,
                 size: None,
+                miss_contents: Vec::default(),
             },
             receiver,
         )
@@ -59,7 +62,7 @@ impl ContentPlotService {
             tokio::select!(
             Some((id, diff)) = self.contents_receiver.recv() => self.calculate_diff(id, diff).await,
             Some(args) = self.window_size_receiver.recv() => self.apply_window_size(args).await,
-            Some(_rasterized_chars) = self.rasterized_chars_receiver.recv() => {},
+            Some(rasterized_chars) = self.rasterized_chars_receiver.recv() => self.apply_rasterized_chars(&rasterized_chars).await,
             else => break,
             );
         }
@@ -67,6 +70,41 @@ impl ContentPlotService {
 
     async fn apply_window_size(&mut self, args: WindowSizeChangedEventArgs) {
         self.size = Some((args.width, args.height));
+    }
+
+    async fn apply_rasterized_chars(&mut self, chars: &str) {
+        // ウィンドウサイズが不明だと計算できない
+        let Some(size) = self.size else {
+            return;
+        };
+
+        let glyph_table = self.container.read().await;
+        let chars = HashSet::<char>::from_iter(chars.chars());
+
+        // 要素を pop しながら走査するので後ろから調べる
+        let mut contents = Vec::default();
+        for index in (0..self.miss_contents.len()).rev() {
+            // 新たにラスタライズされた文字に含まれているか
+            let miss_content_code = &self.miss_contents[index].content.code;
+            if !chars.contains(&miss_content_code) {
+                // まだラスタライズできてなかった
+                continue;
+            }
+
+            // 描画コンテンツに変換する
+            // ラスタライズの完了チェックはしてあるので必ず成功することを期待してノーチェックで unwrap()
+            let miss_content = self.miss_contents.remove(index);
+            let content = Self::into_rendarable_content(&miss_content, &glyph_table, size).unwrap();
+
+            contents.push(content);
+        }
+
+        // 使い終わったら早めにドロップしてロックを解放する
+        drop(glyph_table);
+
+        // 新たにラスタライズに成功した要素を通知
+        let diff = Diff { contents };
+        self.diff_sender.send(diff).await.unwrap_or_default();
     }
 
     #[instrument]
@@ -77,16 +115,29 @@ impl ContentPlotService {
         };
 
         let mut contents = Vec::default();
+        let mut miss_contents = Vec::default();
         let coord_table = self.container.read().await;
 
         // 差分検出範囲
         for diff_type in diff.content_diff {
             match diff_type {
                 asura::DiffType::Add(content) => {
-                    contents.push(Self::into_rendarable_content(content, &coord_table, size));
+                    if let Some(content) =
+                        Self::into_rendarable_content(&content, &coord_table, size)
+                    {
+                        contents.push(content);
+                    } else {
+                        miss_contents.push(content);
+                    }
                 }
                 asura::DiffType::Update(content) => {
-                    contents.push(Self::into_rendarable_content(content, &coord_table, size));
+                    if let Some(content) =
+                        Self::into_rendarable_content(&content, &coord_table, size)
+                    {
+                        contents.push(content);
+                    } else {
+                        miss_contents.push(content);
+                    }
                 }
                 asura::DiffType::Remove(_index) => {}
             };
@@ -100,31 +151,23 @@ impl ContentPlotService {
     }
 
     fn into_rendarable_content(
-        diff_content: asura::DiffContent,
+        diff_content: &asura::DiffContent,
         glyph_table: &HashMap<char, Glyph>,
         window_size: (u32, u32),
-    ) -> RendarableContent {
-        let (uv0, uv1, width, height, left, top) =
-            if let Some(glyph) = glyph_table.get(&diff_content.content.code) {
-                (
-                    nalgebra::Vector2::from(glyph.coord_range.top_left),
-                    nalgebra::Vector2::from(glyph.coord_range.bottom_right),
-                    glyph.width,
-                    glyph.height,
-                    glyph.left,
-                    glyph.top,
-                )
-            } else {
-                // ラスタライズが追いついてなかったので適当なグリフを指定
-                (
-                    nalgebra::Vector2::new(1.0, 1.0),
-                    nalgebra::Vector2::new(1.0, 1.0),
-                    0,
-                    0,
-                    0,
-                    0,
-                )
-            };
+    ) -> Option<RendarableContent> {
+        let Some(glyph) = glyph_table.get(&diff_content.content.code) else {
+            // ラスタライズが追いついてなかった
+            return None;
+        };
+
+        let (uv0, uv1, width, height, left, top) = (
+            nalgebra::Vector2::from(glyph.coord_range.top_left),
+            nalgebra::Vector2::from(glyph.coord_range.bottom_right),
+            glyph.width,
+            glyph.height,
+            glyph.left,
+            glyph.top,
+        );
 
         // ピクセル座標で 1x1 の四角形をフォントのサイズにスケール
         let local_pixel_scale_matrix = nalgebra::Matrix3::new_nonuniform_scaling(
@@ -163,13 +206,13 @@ impl ContentPlotService {
             * local_pixel_scale_matrix;
 
         let fg = diff_content.content.fg;
-        RendarableContent {
+        Some(RendarableContent {
             index: diff_content.index,
             transform: transform_matrix.transpose().remove_column(2),
             fore_ground_color: [fg[0], fg[1], fg[2], 1.0],
             uv0,
             uv1,
-        }
+        })
     }
 }
 
