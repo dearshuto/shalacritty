@@ -160,7 +160,7 @@ impl TerminalEmulator {
             return Default::default();
         };
 
-        let mut diff_contents = Vec::default();
+        let mut diff_data = None;
         let mut cursor_position = (0, 0);
         controller
             .read_contents()
@@ -174,12 +174,14 @@ impl TerminalEmulator {
                     .display_iter
                     .enumerate()
                     .map(|c| CellAdapter((c.0, c.1, renderable_content.colors)));
-                diff_contents = context.diff_stream.calculate(iter);
+                diff_data = Some(context.diff_stream.calculate(iter));
             });
 
+        let diff_data = diff_data.unwrap();
         Diff {
-            content_diff: diff_contents,
+            content_diff: diff_data.diff_types,
             cursor_position,
+            content_count: diff_data.item_count,
         }
     }
 
@@ -222,6 +224,7 @@ impl Default for DiffContext {
 pub struct Diff {
     pub content_diff: Vec<DiffType>,
     pub cursor_position: (usize, i32),
+    pub content_count: Option<usize>,
 }
 
 #[derive(Debug, PartialEq)]
