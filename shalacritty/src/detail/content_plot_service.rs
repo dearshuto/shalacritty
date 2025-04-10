@@ -8,6 +8,7 @@ use super::glyph_extract_service::Glyph;
 
 pub struct Diff {
     pub contents: Vec<RendarableContent>,
+    pub content_count: Option<usize>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -103,7 +104,10 @@ impl ContentPlotService {
         drop(glyph_table);
 
         // 新たにラスタライズに成功した要素を通知
-        let diff = Diff { contents };
+        let diff = Diff {
+            contents,
+            content_count: None,
+        };
         self.diff_sender.send(diff).await.unwrap_or_default();
     }
 
@@ -146,7 +150,10 @@ impl ContentPlotService {
         // 使い終わったら早めにドロップしてロックを解放する
         drop(coord_table);
 
-        let diff = Diff { contents };
+        let diff = Diff {
+            contents,
+            content_count: diff.content_count,
+        };
         self.diff_sender.send(diff).await.unwrap_or_default();
     }
 

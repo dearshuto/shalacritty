@@ -10,6 +10,11 @@ pub struct ContentCache {
     pub fg: [u8; 3],
 }
 
+pub struct DiffData {
+    pub diff_types: Vec<DiffType>,
+    pub item_count: Option<usize>,
+}
+
 /// 差分検出器
 pub struct DiffStream {
     cache: Vec<ContentCache>,
@@ -22,7 +27,7 @@ impl DiffStream {
         }
     }
 
-    pub fn calculate<U>(&mut self, sequence: impl Iterator<Item = U>) -> Vec<DiffType>
+    pub fn calculate<U>(&mut self, sequence: impl Iterator<Item = U>) -> DiffData
     where
         U: Into<(ContentCache, DiffContent)> + PartialEq<ContentCache>,
     {
@@ -34,7 +39,7 @@ impl DiffStream {
 fn calculate<U>(
     cache_container: &mut Vec<ContentCache>,
     sequence: impl Iterator<Item = U>,
-) -> Vec<DiffType>
+) -> DiffData
 where
     U: Into<(ContentCache, DiffContent)> + PartialEq<ContentCache>,
 {
@@ -88,7 +93,10 @@ where
 
     // 新旧のシーケンスの長さが同じだったので差分検出だけで済んだ
     let Some(shortest_index) = shortest_index else {
-        return diff_contents;
+        return DiffData {
+            diff_types: diff_contents,
+            item_count: None,
+        };
     };
 
     if shortest_index < cache_len {
@@ -110,9 +118,12 @@ where
             cache_container.push(cache);
             diff_contents.push(DiffType::Add(output));
         }
-    }
+    };
 
-    diff_contents
+    DiffData {
+        diff_types: diff_contents,
+        item_count: Some(shortest_index),
+    }
 }
 
 #[cfg(test)]
@@ -148,9 +159,9 @@ mod tests {
 
     #[test]
     fn empty() {
-        let diff_types =
+        let diff_data =
             super::calculate::<EnumerableContentCache>(&mut Vec::default(), [].into_iter());
-        assert!(diff_types.is_empty());
+        assert!(diff_data.diff_types.is_empty());
     }
 
     #[test]
@@ -165,9 +176,9 @@ mod tests {
         .enumerate()
         .map(|x| EnumerableContentCache(x));
 
-        let diff_types = super::calculate(&mut Vec::default(), new);
+        let diff_data = super::calculate(&mut Vec::default(), new);
         assert_eq!(
-            diff_types,
+            diff_data.diff_types,
             [DiffType::Add(DiffContent {
                 index: 0,
                 content: Content {
@@ -200,9 +211,9 @@ mod tests {
         .enumerate()
         .map(|x| EnumerableContentCache(x));
 
-        let diff_types = super::calculate(&mut Vec::default(), new);
+        let diff_data = super::calculate(&mut Vec::default(), new);
         assert_eq!(
-            diff_types,
+            diff_data.diff_types,
             [
                 DiffType::Add(DiffContent {
                     index: 0,
