@@ -3,7 +3,6 @@ mod config;
 pub mod detail;
 mod gfx;
 mod multiplexers;
-mod tty;
 mod util;
 mod workspace;
 

@@ -359,6 +359,7 @@ where
             config_service.listen(),
             diff_receiver,
             shell_service.listen_content_tentative(),
+            shell_service.listen_cursor_position_tentative(),
             glyph_patch_receiver,
             redraw_requested_receiver_for_workspace,
             glyph_extract_service.share_glyph_container(),

@@ -3,6 +3,7 @@ use alacritty_terminal::{
     vte::ansi::Color,
 };
 
+#[derive(Debug, Clone)]
 pub struct AsuraContentAdapter(asura::Content);
 
 impl crate::gfx::IContent for AsuraContentAdapter {
