@@ -90,7 +90,7 @@ impl GlyphExtractService {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(self), fields(str = str))]
     async fn extract(&mut self, str: &str) {
         // フォントサイズが不明な状態だとなにもしない
         let Some(font_size) = self.current_font_size else {
@@ -187,6 +187,7 @@ impl GlyphExtractService {
         }
     }
 
+    #[instrument(skip(table, glyph_writer, rasterizer))]
     async fn update_glyph_table(
         table: &mut HashMap<char, Glyph>,
         glyph_writer: &mut GlyphWriterEx,
@@ -249,6 +250,7 @@ impl GlyphExtractService {
         (patches, string)
     }
 
+    #[instrument(skip(rasterizer))]
     fn create_font_key(
         rasterizer: &mut crossfont::Rasterizer,
         font_size: f32,
