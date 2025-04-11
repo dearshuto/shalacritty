@@ -59,6 +59,14 @@ impl ContentPlotService {
 
     #[instrument]
     pub async fn serve(mut self) {
+        // ウィンドウサイズは必須なので最低でも初回の通知は待つ
+        if let Some(args) = self.window_size_receiver.recv().await {
+            self.apply_window_size(args).await;
+        } else {
+            // なんらかの理由で送信元が終了していたら続行不可能なので処理を抜ける
+            return;
+        }
+
         loop {
             tokio::select!(
             Some((id, diff)) = self.contents_receiver.recv() => self.calculate_diff(id, diff).await,
@@ -75,9 +83,7 @@ impl ContentPlotService {
 
     async fn apply_rasterized_chars(&mut self, chars: &str) {
         // ウィンドウサイズが不明だと計算できない
-        let Some(size) = self.size else {
-            return;
-        };
+        let size = self.size.unwrap();
 
         let glyph_table = self.container.read().await;
         let chars = HashSet::<char>::from_iter(chars.chars());
@@ -114,9 +120,7 @@ impl ContentPlotService {
     #[instrument]
     async fn calculate_diff(&mut self, _id: asura::ShellId, diff: asura::Diff) {
         // ウィンドウサイズが不明だと計算できない
-        let Some(size) = self.size else {
-            return;
-        };
+        let size = self.size.unwrap();
 
         let mut contents = Vec::default();
         let mut miss_contents = Vec::default();
