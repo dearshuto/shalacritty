@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use notify::{event::CreateKind, RecommendedWatcher, Watcher};
 use tracing::instrument;
@@ -16,14 +13,10 @@ pub struct ImageCacheEx {
 }
 
 impl ImageCacheEx {
-    pub fn new(
-        runtime: Arc<tokio::runtime::Runtime>,
-        config_receiver: tokio::sync::mpsc::Receiver<Config>,
-    ) -> Self {
+    pub fn new(config_receiver: tokio::sync::mpsc::Receiver<Config>) -> Self {
         let (file_watcher_sender, file_watcher_receiver) = tokio::sync::mpsc::channel(1);
 
         let watcher = notify::recommended_watcher(EventHandler {
-            runtime,
             sender: file_watcher_sender,
         })
         .unwrap();
@@ -80,7 +73,6 @@ impl std::fmt::Debug for ImageCacheEx {
 }
 
 struct EventHandler {
-    runtime: Arc<tokio::runtime::Runtime>,
     sender: tokio::sync::mpsc::Sender<Vec<PathBuf>>,
 }
 
@@ -95,14 +87,12 @@ impl notify::EventHandler for EventHandler {
             notify::EventKind::Access(_access_kind) => {}
             notify::EventKind::Create(create_kind) => {
                 if create_kind == CreateKind::File {
-                    self.runtime
-                        .block_on(async { self.sender.send(event.paths).await.unwrap() });
+                    self.sender.blocking_send(event.paths).unwrap();
                 }
             }
             notify::EventKind::Modify(_modify_kind) => {
                 // 本来はデータの更新のみでよいと思うが、とりあえずすべての変更をトリガーにしておく
-                self.runtime
-                    .block_on(async { self.sender.send(event.paths).await.unwrap() });
+                self.sender.blocking_send(event.paths).unwrap();
             }
             notify::EventKind::Remove(_remove_kind) => {}
             notify::EventKind::Other => {}
