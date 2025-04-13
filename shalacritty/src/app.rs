@@ -276,7 +276,7 @@ where
             .unwrap();
 
         // 画像キャッシュサービス
-        let image_cache_service = ImageCacheEx::new(self.runtime.clone(), config_service.listen());
+        let image_cache_service = ImageCacheEx::new(config_service.listen());
         let _ = tokio::task::Builder::new()
             .name("ImageCacheService")
             .spawn_on(
