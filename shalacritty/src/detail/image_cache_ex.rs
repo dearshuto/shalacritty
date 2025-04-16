@@ -1,19 +1,31 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
+use image::codecs::{jpeg::JpegDecoder, png::PngDecoder};
 use notify::{event::CreateKind, RecommendedWatcher, Watcher};
 use tracing::instrument;
 
 use crate::Config;
+
+pub struct ImageLoadedEventArgs {
+    pub image: image::DynamicImage,
+}
 
 pub struct ImageCacheEx {
     watcher: RecommendedWatcher,
 
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     file_watcher_receiver: tokio::sync::mpsc::Receiver<Vec<PathBuf>>,
+
+    image_sender: tokio::sync::mpsc::Sender<ImageLoadedEventArgs>,
 }
 
 impl ImageCacheEx {
-    pub fn new(config_receiver: tokio::sync::mpsc::Receiver<Config>) -> Self {
+    pub fn new(
+        config_receiver: tokio::sync::mpsc::Receiver<Config>,
+    ) -> (Self, tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>) {
         let (file_watcher_sender, file_watcher_receiver) = tokio::sync::mpsc::channel(1);
 
         let watcher = notify::recommended_watcher(EventHandler {
@@ -21,11 +33,17 @@ impl ImageCacheEx {
         })
         .unwrap();
 
-        Self {
-            watcher,
-            config_receiver,
-            file_watcher_receiver,
-        }
+        let (image_sender, image_receiver) = tokio::sync::mpsc::channel(1);
+
+        (
+            Self {
+                watcher,
+                config_receiver,
+                file_watcher_receiver,
+                image_sender,
+            },
+            image_receiver,
+        )
     }
 
     /// 画像キャッシュサービスを起動します
@@ -41,7 +59,7 @@ impl ImageCacheEx {
             else {
                         break
             },
-                            Some(paths) = self.file_watcher_receiver.recv() => self.apply_files(paths.into_iter()),
+                            Some(paths) = self.file_watcher_receiver.recv() => self.apply_files(paths.into_iter()).await,
                             else => break,
                         );
         }
@@ -56,12 +74,31 @@ impl ImageCacheEx {
         }
     }
 
-    fn apply_files<T, I>(&mut self, _paths: I)
+    async fn apply_files<T, I>(&mut self, paths: I)
     where
         T: AsRef<Path>,
         I: Iterator<Item = T>,
     {
-        // TODO
+        for path in paths {
+            let Some(extension) = path.as_ref().extension() else {
+                continue;
+            };
+
+            let mut reader = File::open(path.as_ref()).unwrap();
+
+            let image = if extension == "png" || extension == "PNG" {
+                let decoder = PngDecoder::new(&mut reader).unwrap();
+                image::DynamicImage::from_decoder(decoder).unwrap()
+            } else if extension == "jpg" || extension == "JPG" {
+                let decoder = JpegDecoder::new(&mut reader).unwrap();
+                image::DynamicImage::from_decoder(decoder).unwrap()
+            } else {
+                panic!()
+            };
+
+            let args = ImageLoadedEventArgs { image };
+            self.image_sender.send(args).await.unwrap();
+        }
     }
 }
 

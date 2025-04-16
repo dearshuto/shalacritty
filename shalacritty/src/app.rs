@@ -276,7 +276,7 @@ where
             .unwrap();
 
         // 画像キャッシュサービス
-        let image_cache_service = ImageCacheEx::new(config_service.listen());
+        let (image_cache_service, image_receiver) = ImageCacheEx::new(config_service.listen());
         let _ = tokio::task::Builder::new()
             .name("ImageCacheService")
             .spawn_on(
@@ -294,6 +294,7 @@ where
             config_service.listen(),
             window_size_send_service.listen(),
             redraw_requested_receiver,
+            image_receiver,
         );
 
         let _ = tokio::task::Builder::new()
