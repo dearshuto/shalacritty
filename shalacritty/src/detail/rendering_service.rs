@@ -73,3 +73,10 @@ impl<'a> RenderingService<'a> {
         self.renderer.render(id);
     }
 }
+
+struct Instance<'a> {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    adapter: wgpu::Adapter,
+    surface: wgpu::Surface<'a>,
+}
