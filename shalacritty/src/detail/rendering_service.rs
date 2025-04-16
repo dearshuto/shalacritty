@@ -2,11 +2,14 @@ use winit::window::WindowId;
 
 use crate::{app::WindowSizeChangedEventArgs, Config};
 
+use super::ImageLoadedEventArgs;
+
 pub struct RenderingService<'a> {
     instance: wgpu::Instance,
     renderer: crate::gfx::Renderer<'a, ()>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
+    image_receiver: tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>,
     redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     surface: Option<wgpu::Surface<'a>>,
 }
@@ -17,6 +20,7 @@ impl<'a> RenderingService<'a> {
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+        image_receiver: tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>,
     ) -> Self
     where
         T: Into<wgpu::SurfaceTarget<'a>>,
@@ -30,6 +34,7 @@ impl<'a> RenderingService<'a> {
             renderer,
             config_receiver,
             window_size_receiver,
+            image_receiver,
             redraw_requested_window_id_receiver,
             instance,
             surface: None, /*Some(surface)*/
@@ -41,9 +46,10 @@ impl<'a> RenderingService<'a> {
             tokio::select!(
             Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
+            Some(_args) = self.image_receiver.recv() => {},
             Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id).await,
-                                                else => break,
-                                            );
+                                                    else => break,
+                                                );
         }
     }
 
