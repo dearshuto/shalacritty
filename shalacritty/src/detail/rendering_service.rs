@@ -6,12 +6,13 @@ use super::ImageLoadedEventArgs;
 
 pub struct RenderingService<'a> {
     instance: wgpu::Instance,
-    renderer: crate::gfx::Renderer<'a, ()>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     image_receiver: tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>,
     redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
     surface: Option<wgpu::Surface<'a>>,
+
+    internal_instance: Option<Instance<'a>>,
 }
 
 impl<'a> RenderingService<'a> {
@@ -26,18 +27,17 @@ impl<'a> RenderingService<'a> {
         T: Into<wgpu::SurfaceTarget<'a>>,
     {
         let instance = wgpu::Instance::default();
-        let renderer = crate::gfx::Renderer::new_with_plugin(());
         // 将来的にこっちに乗り換える
         let _surface = instance.create_surface(window).unwrap();
 
         Self {
-            renderer,
             config_receiver,
             window_size_receiver,
             image_receiver,
             redraw_requested_window_id_receiver,
             instance,
             surface: None, /*Some(surface)*/
+            internal_instance: None,
         }
     }
 
@@ -46,31 +46,48 @@ impl<'a> RenderingService<'a> {
             tokio::select!(
             Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
-            Some(_args) = self.image_receiver.recv() => {},
+            Some(args) = self.image_receiver.recv() => self.apply_image(args),
             Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id).await,
-                                                    else => break,
-                                                );
+                                                        else => break,
+                                                    );
         }
     }
 
-    async fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {
-        if let Some(surface) = self.surface.take() {
-            self.renderer
-                .register_with(args.id, &self.instance, surface)
-                .await;
-        }
+    async fn try_resize(&mut self, args: WindowSizeChangedEventArgs) {}
 
-        self.renderer.resize(args.id, args.width, args.height);
+    fn apply_image(&mut self, _args: ImageLoadedEventArgs) {
+        let Some(_instance) = &self.internal_instance else {
+            return;
+        };
+
+        // TODO
     }
 
-    async fn redraw(&mut self, id: WindowId) {
-        if let Some(surface) = self.surface.take() {
-            self.renderer
-                .register_with(id, &self.instance, surface)
-                .await;
-        }
+    async fn redraw(&mut self, _id: WindowId) {
+        let Some(instance) = &self.internal_instance else {
+            return;
+        };
 
-        self.renderer.render(id);
+        let device = &instance.device;
+        let queue = &instance.queue;
+
+        let mut command_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        // 文字描画
+        {
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+        }
     }
 }
 
@@ -79,4 +96,16 @@ struct Instance<'a> {
     queue: wgpu::Queue,
     adapter: wgpu::Adapter,
     surface: wgpu::Surface<'a>,
+
+    // 背景
+    background_pipeline: wgpu::RenderPipeline,
+    background_bind_group: wgpu::BindGroup,
+
+    // テキスト描画
+    text_pipeline: wgpu::RenderPipeline,
+    text_bind_gtoup: wgpu::BindGroup,
+    character_count: u32,
+
+    rect_vertex_buffer: wgpu::Buffer,
+    rect_index_buffer: wgpu::Buffer,
 }
