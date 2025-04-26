@@ -9,6 +9,14 @@ use super::ImageLoadedEventArgs;
 
 const INIT_IMAGE_ALPHA: f32 = 0.3;
 
+pub struct CharacterData {
+    pub transform0: [f32; 4],
+    pub transform1: [f32; 4],
+    pub fore_ground_color: [f32; 4],
+    pub uv_bl: [f32; 2],
+    pub uv_tr: [f32; 2],
+}
+
 // 頂点シェーダーに渡す定数バッファーの型定義
 #[derive(bytemuck::NoUninit, Clone, Copy, Debug)]
 #[repr(C)]
@@ -37,7 +45,7 @@ pub struct RenderingService<'a> {
 }
 
 impl<'a> RenderingService<'a> {
-    pub async fn new<T>(
+    pub fn new<T>(
         window: T,
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
@@ -66,7 +74,7 @@ impl<'a> RenderingService<'a> {
             tokio::select!(
             Some(_config) = self.config_receiver.recv() => {},
             Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
-            Some(args) = self.image_receiver.recv() => self.apply_image(args),
+            Some(args) = self.image_receiver.recv() => self.apply_image(args).await,
             Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id).await,
                                                         else => break,
                                                     );
@@ -105,10 +113,23 @@ impl<'a> RenderingService<'a> {
         surface.configure(device, &config);
     }
 
-    fn apply_image(&mut self, _args: ImageLoadedEventArgs) {
-        let _instance = &self.internal_instance;
+    async fn apply_image(&mut self, args: ImageLoadedEventArgs) {
+        if self.internal_instance.is_none() {
+            self.internal_instance =
+                Some(Self::create_instance(&self.instance, &self.surface).await);
+        }
 
-        // TODO
+        let internal_instance = self.internal_instance.as_mut().unwrap();
+        let device = &internal_instance.device;
+        let queue = &internal_instance.queue;
+        let sampler = &internal_instance.sampler;
+        let format = wgpu::TextureFormat::R8Unorm; // TODO
+
+        let background_instance = internal_instance
+            .background_instance
+            .get_or_insert_with(|| {
+                Self::create_background_instance(device, queue, sampler, &args.image, format)
+            });
     }
 
     async fn redraw(&mut self, _id: WindowId) {
@@ -216,6 +237,8 @@ impl<'a> RenderingService<'a> {
             .await
             .unwrap();
 
+        let format = surface.get_capabilities(&adapter).formats[0];
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: None,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -283,12 +306,16 @@ impl<'a> RenderingService<'a> {
 
             let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("char_rect.vs.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "../gfx/detail/char_rect.vs.wgsl"
+                ))),
             });
 
             let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("char_rect.fs.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "../gfx/detail/char_rect.fs.wgsl"
+                ))),
             });
             let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
@@ -338,6 +365,14 @@ impl<'a> RenderingService<'a> {
                 view_formats: &[wgpu::TextureFormat::R8Unorm],
             });
 
+            // 文字ごとの情報
+            let character_storage_block = device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: std::mem::size_of::<CharacterData>() as u64 * 32 * 1024,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
             // リソースたちのバインド設定
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
@@ -349,7 +384,7 @@ impl<'a> RenderingService<'a> {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&texture.create_view(
+                        resource: wgpu::BindingResource::TextureView(&glyph_texture.create_view(
                             &wgpu::TextureViewDescriptor {
                                 label: None,
                                 format: Some(wgpu::TextureFormat::R8Unorm),
@@ -401,20 +436,22 @@ impl<'a> RenderingService<'a> {
 
     fn create_background_instance(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         sampler: &wgpu::Sampler,
-        format: wgpu::TextureFormat,
+        image: &image::DynamicImage,
+        swapchain_format: wgpu::TextureFormat,
     ) -> BackgroundInstance {
         let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "../../gfx/detail/background.vs.wgsl"
+                "../gfx/detail/background.vs.wgsl"
             ))),
         });
 
         let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "../../gfx/detail/background.fs.wgsl"
+                "../gfx/detail/background.fs.wgsl"
             ))),
         });
 
@@ -491,7 +528,7 @@ impl<'a> RenderingService<'a> {
                 module: &pixel_shader_module,
                 entry_point: "main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: swapchain_format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -526,6 +563,39 @@ impl<'a> RenderingService<'a> {
             mapped_at_creation: true,
         });
 
+        let (format, data): (wgpu::TextureFormat, &[u8]) = match image.color() {
+            image::ColorType::Rgb8 => (wgpu::TextureFormat::Rgba8Unorm, &[]),
+            image::ColorType::Rgba8 => {
+                let image = image.as_rgba8().unwrap();
+                (wgpu::TextureFormat::Rgba8Unorm, image.as_raw().as_slice())
+            }
+            // image::ColorType::L8 => todo!(),
+            // image::ColorType::La8 => todo!(),
+            // image::ColorType::L16 => todo!(),
+            // image::ColorType::La16 => todo!(),
+            // image::ColorType::Rgb16 => todo!(),
+            // image::ColorType::Rgba16 => todo!(),
+            // image::ColorType::Rgb32F => todo!(),
+            // image::ColorType::Rgba32F => todo!(),
+            _ => (wgpu::TextureFormat::R8Unorm, &[]),
+        };
+
+        let texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: todo!(),
+                size: todo!(),
+                mip_level_count: todo!(),
+                sample_count: todo!(),
+                dimension: todo!(),
+                format,
+                usage: todo!(),
+                view_formats: todo!(),
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            data,
+        );
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
@@ -536,7 +606,7 @@ impl<'a> RenderingService<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&new_texture.create_view(
+                    resource: wgpu::BindingResource::TextureView(&texture.create_view(
                         &wgpu::TextureViewDescriptor {
                             label: None,
                             format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
@@ -566,6 +636,7 @@ impl<'a> RenderingService<'a> {
             bind_group,
             view_constant_buffer,
             material_constant_buffer,
+            texture,
         }
     }
 }
@@ -575,6 +646,7 @@ struct Instance {
     queue: wgpu::Queue,
     adapter: wgpu::Adapter,
 
+    #[allow(unused)]
     sampler: wgpu::Sampler,
 
     // 背景
@@ -592,8 +664,10 @@ struct Instance {
 
 struct BackgroundInstance {
     render_pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
+
+    bind_group_layout: wgpu::BindGroupLayout,
     view_constant_buffer: wgpu::Buffer,
     material_constant_buffer: wgpu::Buffer,
+    texture: wgpu::Texture,
 }
