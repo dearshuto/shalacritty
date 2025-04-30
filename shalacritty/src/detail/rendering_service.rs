@@ -113,9 +113,60 @@ impl<'a> RenderingService<'a> {
         surface.configure(device, &config);
     }
 
-    async fn apply_image(&mut self, _args: ImageLoadedEventArgs) {}
+    async fn apply_image(&mut self, args: ImageLoadedEventArgs) {
+        if self.internal_instance.is_none() {
+            self.internal_instance =
+                Some(Self::create_instance(&self.instance, &self.surface).await);
+        }
 
-    async fn apply_glyph_texture_patch(&mut self, patches: &GlyphTexturePatch) {
+        let internal_instance = self.internal_instance.as_mut().unwrap();
+
+        match &internal_instance.background_instance {
+            Some(background_instance)
+                if background_instance.texture.format() != wgpu::TextureFormat::R8Unorm =>
+            {
+                // TODO: フォーマットに互換性がなければインスタンスごと作り直す
+                // TODO: 既存のサイズを超える画像が指定されたらインスタンスごと作り直す
+                // TODO: 上記の条件を正しく判定する
+            }
+            Some(background_instance) => {
+                // 画像の内容を更新
+                let queue = &internal_instance.queue;
+                let texture = &background_instance.texture;
+                queue.write_texture(
+                    texture.as_image_copy(),
+                    &[],
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: None,
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: args.image.width(),
+                        height: args.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            None => {
+                // インスタンスが未生成だったのでまずは作成
+                internal_instance.background_instance = Some(Self::create_background_instance(
+                    &internal_instance.device,
+                    &internal_instance.queue,
+                    &internal_instance.sampler,
+                    &args.image,
+                    wgpu::TextureFormat::R8Unorm,
+                ));
+            }
+        };
+    }
+
+    // TODO
+    #[allow(unused)]
+    async fn apply_glyph_texture_patch<T>(&mut self, patches: T)
+    where
+        T: Iterator<Item = GlyphTexturePatch>,
+    {
         if self.internal_instance.is_none() {
             self.internal_instance =
                 Some(Self::create_instance(&self.instance, &self.surface).await);
@@ -124,6 +175,22 @@ impl<'a> RenderingService<'a> {
         let internal_instance = self.internal_instance.as_ref().unwrap();
         let queue = &internal_instance.queue;
         let glyph_texture = &internal_instance.glyph_texture;
+        for patch in patches {
+            queue.write_texture(
+                glyph_texture.as_image_copy(),
+                &[],
+                wgpu::ImageDataLayout {
+                    offset: 1, // TODO
+                    bytes_per_row: None,
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: patch.width(),
+                    height: patch.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     async fn redraw(&mut self, _id: WindowId) {
