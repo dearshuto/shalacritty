@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 use winit::window::WindowId;
 
-use crate::{app::WindowSizeChangedEventArgs, Config};
+use crate::{app::WindowSizeChangedEventArgs, gfx::GlyphTexturePatch, Config};
 
 use super::ImageLoadedEventArgs;
 
@@ -113,23 +113,17 @@ impl<'a> RenderingService<'a> {
         surface.configure(device, &config);
     }
 
-    async fn apply_image(&mut self, args: ImageLoadedEventArgs) {
+    async fn apply_image(&mut self, _args: ImageLoadedEventArgs) {}
+
+    async fn apply_glyph_texture_patch(&mut self, patches: &GlyphTexturePatch) {
         if self.internal_instance.is_none() {
             self.internal_instance =
                 Some(Self::create_instance(&self.instance, &self.surface).await);
         }
 
-        let internal_instance = self.internal_instance.as_mut().unwrap();
-        let device = &internal_instance.device;
+        let internal_instance = self.internal_instance.as_ref().unwrap();
         let queue = &internal_instance.queue;
-        let sampler = &internal_instance.sampler;
-        let format = wgpu::TextureFormat::R8Unorm; // TODO
-
-        let background_instance = internal_instance
-            .background_instance
-            .get_or_insert_with(|| {
-                Self::create_background_instance(device, queue, sampler, &args.image, format)
-            });
+        let glyph_texture = &internal_instance.glyph_texture;
     }
 
     async fn redraw(&mut self, _id: WindowId) {
@@ -583,14 +577,18 @@ impl<'a> RenderingService<'a> {
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
-                label: todo!(),
-                size: todo!(),
-                mip_level_count: todo!(),
-                sample_count: todo!(),
-                dimension: todo!(),
+                label: None,
+                size: wgpu::Extent3d {
+                    width: image.width(),
+                    height: image.height(),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: todo!(),
-                view_formats: todo!(),
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
             data,
@@ -662,6 +660,8 @@ struct Instance {
     rect_index_buffer: wgpu::Buffer,
 }
 
+// TODO: 背景描画を実装する
+#[allow(unused)]
 struct BackgroundInstance {
     render_pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
