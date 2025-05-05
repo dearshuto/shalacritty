@@ -294,6 +294,7 @@ where
             config_service.listen(),
             window_size_send_service.listen(),
             redraw_requested_receiver,
+            diff_receiver,
             image_receiver,
         );
 

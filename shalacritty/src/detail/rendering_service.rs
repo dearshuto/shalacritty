@@ -37,6 +37,7 @@ pub struct RenderingService<'a> {
     window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     image_receiver: tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>,
     redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+    diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
 
     instance: wgpu::Instance,
     surface: wgpu::Surface<'a>,
@@ -50,6 +51,7 @@ impl<'a> RenderingService<'a> {
         config_receiver: tokio::sync::mpsc::Receiver<Config>,
         window_size_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         redraw_requested_window_id_receiver: tokio::sync::mpsc::Receiver<WindowId>,
+        diff_receiver: tokio::sync::mpsc::Receiver<crate::detail::Diff>,
         image_receiver: tokio::sync::mpsc::Receiver<ImageLoadedEventArgs>,
     ) -> Self
     where
@@ -63,6 +65,7 @@ impl<'a> RenderingService<'a> {
             window_size_receiver,
             image_receiver,
             redraw_requested_window_id_receiver,
+            diff_receiver,
             instance,
             surface,
             internal_instance: None,
@@ -76,8 +79,9 @@ impl<'a> RenderingService<'a> {
             Some(args) = self.window_size_receiver.recv() => self.try_resize(args).await,
             Some(args) = self.image_receiver.recv() => self.apply_image(args).await,
             Some(window_id) = self.redraw_requested_window_id_receiver.recv() => self.redraw(window_id).await,
-                                                        else => break,
-                                                    );
+            Some(args) = self.diff_receiver.recv() => self.apply_diff(args),
+            else => break,
+            );
         }
     }
 
@@ -190,6 +194,21 @@ impl<'a> RenderingService<'a> {
                     depth_or_array_layers: 1,
                 },
             );
+        }
+    }
+
+    fn apply_diff(&mut self, diff: crate::detail::Diff) {
+        let Some(internal_instance) = &self.internal_instance else {
+            return;
+        };
+
+        // TODO
+        for content in diff.contents {
+            let queue = &internal_instance.queue;
+            let character_storae_block = &internal_instance.character_storage_block;
+
+            let offset = (size_of::<CharacterData>() * content.index) as wgpu::BufferAddress;
+            queue.write_buffer(character_storae_block, offset, &[]);
         }
     }
 
@@ -315,7 +334,7 @@ impl<'a> RenderingService<'a> {
             border_color: None,
         });
 
-        let (text_pipeline, text_bind_group, glyph_texture) = {
+        let (text_pipeline, text_bind_group, glyph_texture, character_storage_block) = {
             let bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
@@ -465,7 +484,12 @@ impl<'a> RenderingService<'a> {
                 ],
             });
 
-            (render_pipeline, bind_group, glyph_texture)
+            (
+                render_pipeline,
+                bind_group,
+                glyph_texture,
+                character_storage_block,
+            )
         };
 
         let rect_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -490,6 +514,7 @@ impl<'a> RenderingService<'a> {
             glyph_texture,
             text_bind_group,
             character_count: 0,
+            character_storage_block,
             rect_vertex_buffer,
             rect_index_buffer,
         }
@@ -722,6 +747,7 @@ struct Instance {
     text_bind_group: wgpu::BindGroup,
     glyph_texture: wgpu::Texture,
     character_count: u32,
+    character_storage_block: wgpu::Buffer,
 
     rect_vertex_buffer: wgpu::Buffer,
     rect_index_buffer: wgpu::Buffer,
