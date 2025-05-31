@@ -287,35 +287,29 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn it_works() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_time()
-            .build()
-            .unwrap();
-
+    #[tokio::test]
+    async fn it_works() {
         let (config_sender, config_receiver) = tokio::sync::mpsc::channel(1);
         let (string_sender, string_receiver) = tokio::sync::mpsc::channel(1);
         let (glyph_extract_service, mut receiver) =
             GlyphExtractService::new(config_receiver, string_receiver);
 
-        let _service_task = runtime.spawn(async move {
-            glyph_extract_service.serve().await;
-        });
+        let task = tokio::spawn(async { glyph_extract_service.serve().await });
 
         config_sender
-            .blocking_send(Config {
+            .send(Config {
                 font_size: 32.0,
                 image: Default::default(),
                 image_alpha: Default::default(),
                 background: Default::default(),
             })
+            .await
             .unwrap();
-        receiver.blocking_recv().unwrap();
+        receiver.recv().await.unwrap();
 
-        string_sender.blocking_send(String::from("ABC")).unwrap();
+        string_sender.send(String::from("ABC")).await.unwrap();
 
-        if let Some(patch) = receiver.blocking_recv() {
+        if let Some(patch) = receiver.recv().await {
             for (index, patch) in patch.iter().enumerate() {
                 let image = image::GrayImage::from_vec(
                     patch.width,
@@ -326,5 +320,7 @@ mod tests {
                 image.save(format!("{}.png", index)).unwrap();
             }
         }
+
+        task.await.unwrap();
     }
 }

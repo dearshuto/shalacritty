@@ -51,23 +51,16 @@ impl std::fmt::Debug for PollingEventService {
 mod tests {
     use super::*;
 
-    #[test]
-    fn it_works() {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_time()
-            .build()
-            .unwrap();
-
+    #[tokio::test]
+    async fn it_works() {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let mut service = PollingEventService::new(receiver);
 
-        let task = runtime.spawn(async move {
+        let task = tokio::spawn(async move {
             service.serve().await;
         });
 
         sender.send(()).unwrap();
-        runtime.block_on(async {
-            task.await.unwrap();
-        });
+        task.await.unwrap();
     }
 }
