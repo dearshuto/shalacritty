@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use ash::*;
+use ash::{ext::subpass_merge_feedback, *};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tracing::instrument::WithSubscriber;
@@ -294,14 +294,56 @@ impl<'a> RenderingService<'a> {
         };
 
         let render_pass = {
-            let create_info = vk::RenderPassCreateInfo::default();
+            let attachments = [vk::AttachmentDescription::default()
+                .format(vk::Format::R8G8B8A8_UNORM)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
+            let color_attachments = [vk::AttachmentReference {
+                attachment: 0,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            }];
+            let subpasses = [vk::SubpassDescription::default()
+                .color_attachments(&color_attachments)
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)];
+            let create_info = vk::RenderPassCreateInfo::default()
+                .attachments(&attachments)
+                .subpasses(&subpasses);
             unsafe { device.create_render_pass(&create_info, None) }.unwrap()
         };
 
         let pipeline = {
-            let create_info = vk::GraphicsPipelineCreateInfo::default();
+            let shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&[]);
+            let shader_module =
+                unsafe { device.create_shader_module(&shader_module_create_info, None) }.unwrap();
+            let background_shader_stage_create_info = [
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(shader_module)
+                    .name(c"main_vs"),
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(shader_module)
+                    .name(c"main_fs"),
+            ];
+            let text_shader_stage_create_info = [
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(shader_module)
+                    .name(c"maint_vs"),
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(shader_module)
+                    .name(c"maint_vs"),
+            ];
+            let create_info = [
+                vk::GraphicsPipelineCreateInfo::default()
+                    .stages(&background_shader_stage_create_info),
+                vk::GraphicsPipelineCreateInfo::default().stages(&text_shader_stage_create_info),
+            ];
             unsafe {
-                device.create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+                device.create_graphics_pipelines(vk::PipelineCache::null(), &create_info, None)
             }
             .unwrap()
         }[0];
