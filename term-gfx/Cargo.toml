@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ash = {version =  "0.38.0", default-features = false, features = ["linked", "debug", "std"]}
-ash-window = "*"
+ash = { workspace = true }
+ash-window = { workspace = true }
 bytemuck = "*"
 crossfont = { workspace = true }
 naga = { version = "23.1.0", features = ["glsl-in", "spv-in", "spv-out"] }
