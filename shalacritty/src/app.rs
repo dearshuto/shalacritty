@@ -68,6 +68,8 @@ where
     window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
 
     _marker: std::marker::PhantomData<&'a TBackend>,
+
+    debug_window: Option<DebugWindow>,
 }
 
 impl<'a, TBackend> App<'a, TBackend>
@@ -92,6 +94,7 @@ where
             proxy: event_loop.create_proxy(),
             window_table: HashMap::default(),
             _marker: std::marker::PhantomData,
+            debug_window: None,
         };
 
         event_loop.run_app(&mut app).unwrap();
@@ -458,6 +461,13 @@ where
             profiler_kill_sender: Some(tx),
         };
         self.instance = Some(instance);
+
+        #[cfg(debug_assertions)]
+        {
+            let window_attributes = winit::window::WindowAttributes::default();
+            let window = event_loop.create_window(window_attributes).unwrap();
+            self.debug_window = Some(DebugWindow { window });
+        }
     }
 
     #[instrument]
@@ -472,6 +482,12 @@ where
                 winit::event::Ime::Enabled => {}
                 winit::event::Ime::Preedit(_, _) => {}
                 winit::event::Ime::Commit(str) => {
+                    if let Some(debug_window) = &self.debug_window {
+                        if debug_window.window.id() == window_id {
+                            return;
+                        }
+                    }
+
                     let Some(instance) = &self.instance else {
                         return;
                     };
@@ -498,6 +514,12 @@ where
                 winit::event::Ime::Disabled => {}
             },
             WindowEvent::Resized(size) => {
+                if let Some(debug_window) = &self.debug_window {
+                    if debug_window.window.id() == window_id {
+                        return;
+                    }
+                }
+
                 let Some(instance) = &self.instance else {
                     return;
                 };
@@ -515,6 +537,12 @@ where
                     .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
+                if let Some(debug_window) = &self.debug_window {
+                    if debug_window.window.id() == window_id {
+                        return;
+                    }
+                }
+
                 if let Some(instance) = &self.instance {
                     instance
                         .redraw_requested_sender_for_workspace
@@ -532,9 +560,21 @@ where
                 //     .unwrap();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
+                if let Some(debug_window) = &self.debug_window {
+                    if debug_window.window.id() == window_id {
+                        return;
+                    }
+                }
+
                 self.modifiers_state = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(debug_window) = &self.debug_window {
+                    if debug_window.window.id() == window_id {
+                        return;
+                    }
+                }
+
                 let Some(instance) = &self.instance else {
                     return;
                 };
@@ -661,4 +701,9 @@ pub fn detect_action(text_with_all_modifiers: &str, modifier_state: ModifiersSta
     //===============================================================
 
     Action::Input(text_with_all_modifiers)
+}
+
+struct DebugWindow {
+    #[allow(unused)]
+    window: winit::window::Window,
 }
