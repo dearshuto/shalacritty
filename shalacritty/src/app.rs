@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::{ElementState, WindowEvent},
     event_loop::{EventLoop, EventLoopProxy},
     keyboard::ModifiersState,
@@ -19,7 +20,7 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
+        self, ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
         RenderingService, ShellService, WindowSizeSendService,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
@@ -449,6 +450,23 @@ where
 
         self.window_table.insert(id, window);
 
+        #[cfg(debug_assertions)]
+        {
+            let window_attributes = winit::window::WindowAttributes::default()
+                .with_inner_size(PhysicalSize::new(640, 480))
+                .with_resizable(false);
+            let window = event_loop.create_window(window_attributes).unwrap();
+            let rendering_service = detail::RenderingServiceVk::new(&window);
+            tokio::task::Builder::new()
+                .name("WorkspaceUpdateService")
+                .spawn_on(
+                    async move { rendering_service.serve().await },
+                    self.runtime.handle(),
+                )
+                .unwrap();
+            self.debug_window = Some(DebugWindow { window });
+        }
+
         let instance = Instance {
             instance: Some(config_watch_instance),
             input_sender: Some(input_sender),
@@ -461,13 +479,6 @@ where
             profiler_kill_sender: Some(tx),
         };
         self.instance = Some(instance);
-
-        #[cfg(debug_assertions)]
-        {
-            let window_attributes = winit::window::WindowAttributes::default();
-            let window = event_loop.create_window(window_attributes).unwrap();
-            self.debug_window = Some(DebugWindow { window });
-        }
     }
 
     #[instrument]
