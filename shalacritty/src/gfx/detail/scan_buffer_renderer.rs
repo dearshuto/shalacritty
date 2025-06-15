@@ -54,14 +54,14 @@ impl<'a> ScanBufferRenderer<'a> {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[1.0f32, 1.0]),
+            contents: bytemuck::cast_slice(&[1.0f32, 1.0, 0.0, 0.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0,
+                    binding: 6,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -71,7 +71,7 @@ impl<'a> ScanBufferRenderer<'a> {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -93,28 +93,24 @@ impl<'a> ScanBufferRenderer<'a> {
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
+
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("terminal.wgsl"))),
+        });
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: None,
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                        "copy_scan_buffer.vs.wgsl"
-                    ))),
-                }),
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "copy_vs",
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: None,
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                        "copy_scan_buffer.fs.wgsl"
-                    ))),
-                }),
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "copy_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: swapchain_format,
                     blend: None,
@@ -128,12 +124,13 @@ impl<'a> ScanBufferRenderer<'a> {
             multiview: None,
             cache: None,
         });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding: 0,
+                    binding: 6,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                         buffer: &buffer,
                         offset: 0,
@@ -141,7 +138,7 @@ impl<'a> ScanBufferRenderer<'a> {
                     }),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 1,
+                    binding: 7,
                     resource: wgpu::BindingResource::TextureView(
                         &color_target.create_view(&wgpu::TextureViewDescriptor::default()),
                     ),

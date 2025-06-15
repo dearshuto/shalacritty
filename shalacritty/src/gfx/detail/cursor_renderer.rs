@@ -43,7 +43,7 @@ impl<'a> CursorRenderer<'a> {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
+                binding: 3,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -60,14 +60,9 @@ impl<'a> CursorRenderer<'a> {
             push_constant_ranges: &[],
         });
 
-        let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rect.vs.wgsl"))),
-        });
-
-        let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rect.fs.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("terminal.wgsl"))),
         });
 
         // 頂点アトリビュート
@@ -85,8 +80,8 @@ impl<'a> CursorRenderer<'a> {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vertex_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "rect_vs",
                 buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
@@ -94,8 +89,8 @@ impl<'a> CursorRenderer<'a> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &pixel_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "rect_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: None,
@@ -134,7 +129,7 @@ impl<'a> CursorRenderer<'a> {
             label: None,
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
-                binding: 0,
+                binding: 3,
                 resource: constant_buffer.as_entire_binding(),
             }],
         });

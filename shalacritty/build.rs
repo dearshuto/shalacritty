@@ -1,79 +1,24 @@
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-};
+use std::path::PathBuf;
 
 fn main() {
-    let settings = [
-        (
-            include_str!("res/rect.vs"),
-            "src/gfx/detail/rect.vs.wgsl",
-            naga::ShaderStage::Vertex,
-        ),
-        (
-            include_str!("res/rect.fs"),
-            "src/gfx/detail/rect.fs.wgsl",
-            naga::ShaderStage::Fragment,
-        ),
-        (
-            include_str!("res/char_rect.vs"),
-            "src/gfx/detail/char_rect.vs.wgsl",
-            naga::ShaderStage::Vertex,
-        ),
-        (
-            include_str!("res/char_rect.fs"),
-            "src/gfx/detail/char_rect.fs.wgsl",
-            naga::ShaderStage::Fragment,
-        ),
-        (
-            include_str!("res/background.vs"),
-            "src/gfx/detail/background.vs.wgsl",
-            naga::ShaderStage::Vertex,
-        ),
-        (
-            include_str!("res/background.fs"),
-            "src/gfx/detail/background.fs.wgsl",
-            naga::ShaderStage::Fragment,
-        ),
-        (
-            include_str!("res/copy_scan_buffer.vs"),
-            "src/gfx/detail/copy_scan_buffer.vs.wgsl",
-            naga::ShaderStage::Vertex,
-        ),
-        (
-            include_str!("res/copy_scan_buffer.fs"),
-            "src/gfx/detail/copy_scan_buffer.fs.wgsl",
-            naga::ShaderStage::Fragment,
-        ),
-    ];
+    let cargo_path = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let cargo_dir = PathBuf::from(cargo_path);
 
-    for setting in settings {
-        let shader_binary = convert_to_wgsl(setting.0, setting.2);
-        let shader_binary_file = File::create(setting.1).unwrap();
-        let mut f = BufWriter::new(shader_binary_file);
-        f.write_all(shader_binary.as_bytes()).unwrap();
-    }
-}
+    let src = cargo_dir.join("res/terminal.slang");
+    let dst = cargo_dir.join("src/gfx/detail/terminal.wgsl");
 
-fn convert_to_wgsl(source: &str, stage: naga::ShaderStage) -> String {
-    let options = naga::front::glsl::Options::from(stage);
-    let vertex_module = naga::front::glsl::Frontend::default()
-        .parse(&options, source)
-        .unwrap();
+    println!("{:?}", cargo_dir);
 
-    // BLOCKS のバリデーションに失敗するがシェーダーに問題はないのでスキップ
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::EXPRESSIONS
-            // | naga::valid::ValidationFlags::BLOCKS
-            | naga::valid::ValidationFlags::CONTROL_FLOW_UNIFORMITY
-            | naga::valid::ValidationFlags::STRUCT_LAYOUTS
-            | naga::valid::ValidationFlags::CONSTANTS
-            | naga::valid::ValidationFlags::BINDINGS,
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&vertex_module)
-    .unwrap();
-
-    naga::back::wgsl::write_string(&vertex_module, &info, naga::back::wgsl::WriterFlags::all())
+    std::process::Command::new("slangc")
+        .args([
+            src.to_str().unwrap(),
+            "-target",
+            "wgsl",
+            "-o",
+            dst.to_str().unwrap(),
+        ])
+        .spawn()
         .unwrap()
+        .wait()
+        .unwrap();
 }
