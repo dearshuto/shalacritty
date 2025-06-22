@@ -1,46 +1,33 @@
+use std::time::Duration;
+
 use tracing::instrument;
 
-use crate::app::WindowSizeChangedEventArgs;
+use crate::{app::WindowSizeChangedEventArgs, detail::CancellationToken};
 
 pub struct WindowSizeSendService {
     window_size_receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-
-    polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     window_size_sender: Vec<tokio::sync::mpsc::Sender<WindowSizeChangedEventArgs>>,
 }
 
 impl WindowSizeSendService {
-    pub fn new(
-        receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
-        polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
-    ) -> Self {
+    pub fn new(receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>) -> Self {
         Self {
             window_size_receiver: receiver,
-            polling_event_receiver,
             window_size_sender: Vec::default(),
         }
     }
 
     #[instrument]
-    pub async fn serve(mut self) {
-        // TODO: デッドロックする
-        // ウィンドウサイズの変更をポーリングで監視
-        while let Some(_) = self.polling_event_receiver.recv().await {
-            match self.window_size_receiver.try_recv() {
-                Ok(args) => {
-                    // 変更通知が来ていたので再通知
-                    let fugures = self
-                        .window_size_sender
-                        .iter()
-                        .map(|sender| sender.send(args.clone()));
-                    futures::future::join_all(fugures).await;
-                    continue;
-                }
-                Err(error) => match error {
-                    std::sync::mpsc::TryRecvError::Empty => continue,
-                    std::sync::mpsc::TryRecvError::Disconnected => break,
+    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(20)) => {
+                    if !self.try_apply_window_size().await {
+                        break;
+                    }
                 },
+                _ = &mut cancellation_token => break
             }
         }
     }
@@ -51,6 +38,24 @@ impl WindowSizeSendService {
         self.window_size_sender.push(sender);
 
         receiver
+    }
+
+    async fn try_apply_window_size(&mut self) -> bool {
+        match self.window_size_receiver.try_recv() {
+            Ok(args) => {
+                // 変更通知が来ていたので再通知
+                let fugures = self
+                    .window_size_sender
+                    .iter()
+                    .map(|sender| sender.send(args.clone()));
+                futures::future::join_all(fugures).await;
+                return true;
+            }
+            Err(error) => match error {
+                std::sync::mpsc::TryRecvError::Empty => return true,
+                std::sync::mpsc::TryRecvError::Disconnected => return false,
+            },
+        }
     }
 }
 

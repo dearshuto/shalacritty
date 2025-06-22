@@ -19,6 +19,7 @@ use winit::{
 
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowSizeChangedEventArgs},
+    detail::CancellationToken,
     gfx::{ContentPlotter, GlyphTexturePatch, Renderer, RendererUpdateParams},
     Config,
 };
@@ -34,7 +35,6 @@ pub trait IWorkspaceCallback {
 
 pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
     instance: wgpu::Instance,
-    polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
     window_size_changed_receiver: Option<ReceiverStream<WindowSizeChangedEventArgs>>,
     config_receiver: tokio::sync::mpsc::Receiver<Config>,
@@ -76,7 +76,6 @@ pub struct Workspace<'a, TCallback: IWorkspaceCallback> {
 impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
     pub fn new_with_callback(
         runtime: Arc<Runtime>,
-        polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
         input_receiver: tokio::sync::mpsc::Receiver<KeyboadInputEventArgs>,
         window_size_changed_receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         mut config_receiver: tokio::sync::mpsc::Receiver<Config>,
@@ -116,7 +115,6 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         let image_alpha = { config.image_alpha };
         Self {
             instance,
-            polling_event_receiver,
             input_receiver,
             window_size_changed_receiver: Some(tokio_stream::wrappers::ReceiverStream::new(
                 window_size_changed_receiver,
@@ -153,7 +151,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         }
     }
 
-    pub async fn serve(mut self) {
+    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
         let s = self
             .window_size_changed_receiver
             .take()
@@ -166,10 +164,10 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.input_receiver.recv() => self.apply_input(args),
-            Some(_) = self.polling_event_receiver.recv() => self.update_impl().await,
+            _ = tokio::time::sleep(Duration::from_millis(20)) => self.update_impl().await,
             Some(args) = s.next() => self.apply_window_size_changed(args),
             Some(id) = self.redraw_requested_receiver.recv() => self.render(id),
-            else => {},
+            _ = &mut cancellation_token => break,
             );
         }
     }
