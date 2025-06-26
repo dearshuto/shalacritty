@@ -43,7 +43,8 @@ tracing-subscriber = "0.3"
 tracing-chrome = "0.7.2"
 
 [build-dependencies]
-naga = { version = "0.20.0", features = ["glsl-in", "spv-out", "wgsl-out"] }
+bytemuck = { version = "*", features = ["derive"] }
+naga = { version = "0.20.0", features = ["spv-in", "wgsl-out"] }
 
 [dev-dependencies]
 bmp = "*"

@@ -63,7 +63,7 @@ impl<'a> TextRenderer<'a> {
             label: None,
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0,
+                    binding: 4,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -73,7 +73,7 @@ impl<'a> TextRenderer<'a> {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -107,21 +107,17 @@ impl<'a> TextRenderer<'a> {
             }],
         }];
 
-        let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("char_rect.vs.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("terminal.wgsl"))),
         });
 
-        let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("char_rect.fs.wgsl"))),
-        });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vertex_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "character_vs",
                 buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
@@ -129,8 +125,8 @@ impl<'a> TextRenderer<'a> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &pixel_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "character_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState {
@@ -209,11 +205,11 @@ impl<'a> TextRenderer<'a> {
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding: 0,
+                    binding: 4,
                     resource: character_storage_block.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 1,
+                    binding: 5,
                     resource: wgpu::BindingResource::TextureView(&texture.create_view(
                         &wgpu::TextureViewDescriptor {
                             label: None,

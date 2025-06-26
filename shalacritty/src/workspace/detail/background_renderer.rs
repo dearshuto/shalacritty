@@ -93,17 +93,10 @@ impl<T> BackgroundRenderer<T> {
     }
 
     fn create_instance(device: &wgpu::Device, swapchain_format: wgpu::TextureFormat) -> Instance {
-        let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "../../gfx/detail/background.vs.wgsl"
-            ))),
-        });
-
-        let pixel_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "../../gfx/detail/background.fs.wgsl"
+                "../../gfx/detail/terminal.wgsl"
             ))),
         });
 
@@ -128,8 +121,8 @@ impl<T> BackgroundRenderer<T> {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vertex_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "background_vs",
                 buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
@@ -137,8 +130,8 @@ impl<T> BackgroundRenderer<T> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &pixel_shader_module,
-                entry_point: "main",
+                module: &shader_module,
+                entry_point: "background_fs",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: swapchain_format,
                     blend: Some(wgpu::BlendState {
