@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use tracing::instrument;
 use winit::{
@@ -7,6 +7,7 @@ use winit::{
 
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
+    detail::cancelation_token::CancellationToken,
     workspace::Action,
     Config,
 };
@@ -20,7 +21,6 @@ pub struct ShellService {
     window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
     receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
     input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
-    polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
 
     string_senders: Vec<tokio::sync::mpsc::Sender<String>>,
     content_senders: Vec<tokio::sync::mpsc::Sender<Vec<asura::Content>>>,
@@ -41,7 +41,6 @@ impl ShellService {
         window_created_receiver: std::sync::mpsc::Receiver<WindowCreatedEventArgs>,
         receiver: tokio::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
         input_receiver: std::sync::mpsc::Receiver<KeyboadInputEventArgs>,
-        polling_event_receiver: tokio::sync::mpsc::Receiver<()>,
     ) -> (
         Self,
         tokio::sync::mpsc::Receiver<(asura::ShellId, asura::Diff)>,
@@ -58,7 +57,6 @@ impl ShellService {
                 config_receiver,
                 receiver,
                 input_receiver,
-                polling_event_receiver,
                 string_senders: Vec::default(),
                 content_senders: Vec::default(),
                 contents_senders: contents_sender,
@@ -73,13 +71,15 @@ impl ShellService {
     }
 
     #[instrument]
-    pub async fn serve(mut self) {
+    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
         loop {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),
             Some(args) = self.receiver.recv() => self.apply_window_size(args),
-            Some(_) = self.polling_event_receiver.recv() => self.try_estimate_teletype_events().await,
-            else => break,
+            _ = tokio::time::sleep(Duration::from_millis(20)) => {
+                    self.try_estimate_teletype_events().await;
+                }
+            _ = &mut cancellation_token => break,
             );
         }
     }

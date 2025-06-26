@@ -20,8 +20,8 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        self, ContentPlotService, GlyphExtractService, ImageCacheEx, PollingEventService,
-        RenderingService, ShellService, WindowSizeSendService,
+        self, ContentPlotService, GlyphExtractService, ImageCacheEx, RenderingService,
+        ShellService, WindowSizeSendService,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -40,7 +40,7 @@ struct Instance {
     redraw_requested_sender: Option<tokio::sync::mpsc::Sender<WindowId>>,
     redraw_requested_sender_for_workspace: Option<tokio::sync::mpsc::Sender<WindowId>>,
 
-    polling_close_sender: Option<tokio::sync::oneshot::Sender<()>>,
+    cance_requests: Vec<detail::CancelRequest>,
 }
 
 /// WindowSizeChangeEvent ─┬─────────────────────────────────┐
@@ -113,9 +113,9 @@ impl Drop for Instance {
         self.redraw_requested_sender = None;
 
         // ポーリングの終了要求
-        let mut sender = None;
-        std::mem::swap(&mut sender, &mut self.polling_close_sender);
-        sender.unwrap().send(()).unwrap();
+        while let Some(cancel_request) = self.cance_requests.pop() {
+            cancel_request.send().unwrap_or_default();
+        }
 
         // プロファイルサーバーが起動していたら終了する
         // MEMO: サービスの終了処理と統一したい
@@ -231,10 +231,6 @@ where
 
         let window = Arc::new(window);
 
-        // ポーリングサービス
-        let (polling_close_sender, polling_close_receiver) = tokio::sync::oneshot::channel();
-        let mut polling_event_service = PollingEventService::new(polling_close_receiver);
-
         // 設定ファイル監視サービス
         let (config_watch_instance, config_receiver) = super::config::watch();
         let mut config_service = ConfigServiceEx::new(config_receiver.clone());
@@ -243,8 +239,7 @@ where
         let (window_size_sender, window_size_receiver) = std::sync::mpsc::channel();
 
         // ウィンドウサイズサービス
-        let mut window_size_send_service =
-            WindowSizeSendService::new(window_size_receiver, polling_event_service.listen());
+        let mut window_size_send_service = WindowSizeSendService::new(window_size_receiver);
 
         // シェル管理サービス
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
@@ -254,7 +249,6 @@ where
             window_created_receiver,
             window_size_send_service.listen(),
             input_receiver,
-            polling_event_service.listen(),
         );
 
         // グリフ抽出サービス
@@ -358,7 +352,6 @@ where
             tokio::sync::mpsc::channel(1);
         let mut workspace = Workspace::new_with_callback(
             self.runtime.clone(),
-            polling_event_service.listen(),
             input_receiver_for_workspace,
             window_size_send_service.listen(),
             config_service.listen(),
@@ -372,11 +365,12 @@ where
             server_backend,
         );
 
+        let (window_service_cancel_request, cancellation_token) = detail::CancellationToken::new();
         let _ = tokio::task::Builder::new()
             .name("WindowSizeSendService")
             .spawn_on(
                 async move {
-                    window_size_send_service.serve().await;
+                    window_size_send_service.serve(cancellation_token).await;
                 },
                 self.runtime.handle(),
             )
@@ -394,22 +388,13 @@ where
             )
             .unwrap();
 
-        let _ = tokio::task::Builder::new()
-            .name("PollintEventService")
-            .spawn_on(
-                async move {
-                    polling_event_service.serve().await;
-                },
-                self.runtime.handle(),
-            )
-            .unwrap();
-
         // シェル管理サービスタスク
+        let (cancel_request, cancellation_token) = detail::CancellationToken::new();
         let _ = tokio::task::Builder::new()
             .name("ShellService")
             .spawn_on(
                 async move {
-                    shell_service.serve().await;
+                    shell_service.serve(cancellation_token).await;
                 },
                 self.runtime.handle(),
             )
@@ -430,11 +415,13 @@ where
         });
 
         // Workspace の更新処理を非同期に実行するサービス
+        let (workspace_service_cancel_request, cancellation_token) =
+            detail::CancellationToken::new();
         let _ = tokio::task::Builder::new()
             .name("WorkspaceUpdateService")
             .spawn_on(
                 async move {
-                    workspace.serve().await;
+                    workspace.serve(cancellation_token).await;
                 },
                 self.runtime.handle(),
             )
@@ -473,10 +460,14 @@ where
             input_sender_for_workspace: Some(input_sender_for_workspace),
             window_created_sender: Some(window_created_sender),
             window_size_sender: Some(window_size_sender),
-            polling_close_sender: Some(polling_close_sender),
             redraw_requested_sender: Some(redraw_requested_sender),
             redraw_requested_sender_for_workspace: Some(redraw_requsted_sender_for_workspace),
             profiler_kill_sender: Some(tx),
+            cance_requests: vec![
+                cancel_request,
+                window_service_cancel_request,
+                workspace_service_cancel_request,
+            ],
         };
         self.instance = Some(instance);
     }
