@@ -14,15 +14,8 @@ struct PositionCoordOutput
 };
 
 [shader("vertex")]
-float4 main_vs(int vertexId : SV_VertexID) : SV_Position {
-  if (vertexId == 0)
-  {
-    return float4(0.0, 1.0, 0.0, 1.0);
-  } else if (vertexId == 1) {
-    return float4(-1.0, -1.0, 0.0, 1.0);
-  } else {
-    return float4(1.0, -1.0, 0.0, 1.0);
-  }
+float4 main_vs(float2 position) : SV_Position {
+  return float4(position, 0.0, 1.0);
 }
 
 [shader("vertex")]
