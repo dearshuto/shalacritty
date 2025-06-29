@@ -6,6 +6,7 @@ fn main() {
 
     let src = cargo_dir.join("res/terminal.slang");
     let dst = cargo_dir.join("src/gfx/detail/terminal.wgsl");
+    let sprv_dst = cargo_dir.join("src/detail/terminal.spv");
 
     println!("{:?}", cargo_dir);
 
@@ -16,6 +17,19 @@ fn main() {
             "wgsl",
             "-o",
             dst.to_str().unwrap(),
+        ])
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    std::process::Command::new("slangc")
+        .args([
+            src.to_str().unwrap(),
+            "-target",
+            "spirv",
+            "-o",
+            sprv_dst.to_str().unwrap(),
         ])
         .spawn()
         .unwrap()

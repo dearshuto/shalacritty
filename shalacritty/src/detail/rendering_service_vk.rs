@@ -2,7 +2,9 @@ use std::{borrow::Cow, io::Cursor};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use ash::{ext::color_write_enable, qcom::render_pass_transform, *};
+use ash::{
+    ext::color_write_enable, qcom::render_pass_transform, vk::VertexInputBindingDescription, *,
+};
 use tracing::instrument::WithSubscriber;
 
 pub struct RenderingServiceVk {
@@ -26,6 +28,9 @@ pub struct RenderingServiceVk {
     command_fence: vk::Fence,
     display_semaphore: vk::Semaphore,
     command_completed_semaphore: vk::Semaphore,
+
+    // Resources
+    buffer: vk::Buffer,
 }
 
 impl RenderingServiceVk {
@@ -153,10 +158,13 @@ impl RenderingServiceVk {
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
+            let mut vulkan_features =
+                vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
-                .enabled_features(&features);
+                .enabled_features(&features)
+                .push_next(&mut vulkan_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -270,7 +278,7 @@ impl RenderingServiceVk {
         .collect();
 
         let shader_module = {
-            let mut cursor = Cursor::new(include_bytes!("./debug.spv"));
+            let mut cursor = Cursor::new(include_bytes!("terminal.spv"));
             let code = ash::util::read_spv(&mut cursor).unwrap();
             let create_info = vk::ShaderModuleCreateInfo::default().code(&code);
             unsafe { device.create_shader_module(&create_info, None) }.unwrap()
@@ -293,7 +301,18 @@ impl RenderingServiceVk {
                     .name(c"main_fs"),
             ];
 
-            let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default();
+            let vertex_binding_descriptions = [vk::VertexInputBindingDescription::default()
+                .binding(0)
+                .stride(std::mem::size_of::<f32>() as u32 * 2)
+                .input_rate(vk::VertexInputRate::VERTEX)];
+            let vertex_attribute_descriptions = [vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(0)
+                .format(vk::Format::R32G32_SFLOAT)
+                .offset(0)];
+            let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
+                .vertex_binding_descriptions(&vertex_binding_descriptions)
+                .vertex_attribute_descriptions(&vertex_attribute_descriptions);
             let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::default()
                 .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
             let viewpors = [vk::Viewport::default().width(640.0).height(480.0)];
@@ -333,6 +352,76 @@ impl RenderingServiceVk {
             }
             .unwrap()[0]
         };
+
+        const BUFFER_SIZE: vk::DeviceSize = 16 * 1024;
+        let buffer = {
+            let queue_family_indices = [queue_family_index as u32];
+            let create_info = vk::BufferCreateInfo::default()
+                .queue_family_indices(&queue_family_indices)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .size(BUFFER_SIZE)
+                .usage(
+                    vk::BufferUsageFlags::VERTEX_BUFFER
+                        | vk::BufferUsageFlags::INDEX_BUFFER
+                        | vk::BufferUsageFlags::STORAGE_BUFFER,
+                );
+            unsafe { device.create_buffer(&create_info, None) }.unwrap()
+        };
+
+        let device_memory = {
+            let memory_index = {
+                let memory_requirement = unsafe { device.get_buffer_memory_requirements(buffer) };
+                unsafe { instance.get_physical_device_memory_properties(physical_device) }
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | vk::MemoryPropertyFlags::HOST_COHERENT;
+                        (1 << index) & memory_requirement.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
+            };
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(BUFFER_SIZE)
+                .memory_type_index(memory_index);
+            unsafe { device.allocate_memory(&allocate_info, None) }.unwrap()
+        };
+
+        unsafe { device.bind_buffer_memory(buffer, device_memory, 0) }.unwrap();
+
+        let (vertex_buffer, index_buffer) = {
+            let vertrex_ptr = unsafe {
+                device.map_memory(
+                    device_memory,
+                    0, /*offset*/
+                    1024,
+                    vk::MemoryMapFlags::empty(),
+                )
+            }
+            .unwrap() as *mut f32;
+            let index_ptr = unsafe { vertrex_ptr.add(16) } as *mut u16;
+
+            (
+                unsafe { std::slice::from_raw_parts_mut(vertrex_ptr, 16) },
+                unsafe { std::slice::from_raw_parts_mut(index_ptr, 16) },
+            )
+        };
+
+        const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5];
+        const INDEX_DATA: [u16; 6] = [0, 1, 2, 0, 2, 3];
+        vertex_buffer[0..VERTEX_DATA.len()].copy_from_slice(&VERTEX_DATA);
+        index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
+
+        unsafe {
+            device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
+                .memory(device_memory)
+                .offset(0)
+                .size(64)])
+        }
+        .unwrap();
 
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
@@ -380,6 +469,9 @@ impl RenderingServiceVk {
             swapchain_images,
             present_image_views,
             framebuffers,
+
+            // Resources
+            buffer,
         }
     }
 
@@ -438,12 +530,32 @@ impl RenderingServiceVk {
                 self.pipeline,
             )
         };
+
         unsafe {
-            device.cmd_draw(
+            device.cmd_bind_vertex_buffers(
                 self.command_buffer,
-                3, /*vertex_count*/
+                0, /*first_binding*/
+                &[self.buffer],
+                &[0], /*offsets*/
+            )
+        };
+
+        unsafe {
+            device.cmd_bind_index_buffer(
+                self.command_buffer,
+                self.buffer,
+                (std::mem::size_of::<f32>() * 16) as u64, /*offset*/
+                vk::IndexType::UINT16,
+            )
+        };
+
+        unsafe {
+            device.cmd_draw_indexed(
+                self.command_buffer,
+                6, /*index_count*/
                 1, /*instance_count*/
-                0, /*first_vertex*/
+                0, /*first_index*/
+                0, /*fertex_offset*/
                 0, /*first_instance*/
             )
         };
