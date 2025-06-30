@@ -7,7 +7,7 @@ use profiler_core::IServerBackend;
 use term_gfx::IBackend;
 use tokio::sync::oneshot;
 
-use tracing::instrument;
+use tracing::{instrument, Instrument};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -20,8 +20,8 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        self, ContentPlotService, GlyphExtractService, ImageCacheEx, RenderingService,
-        ShellService, WindowSizeSendService,
+        self, CancellationToken, ContentPlotService, GlyphExtractService, ImageCacheEx,
+        RenderingService, ShellService, WindowSizeSendService,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -41,6 +41,9 @@ struct Instance {
     redraw_requested_sender_for_workspace: Option<tokio::sync::mpsc::Sender<WindowId>>,
 
     cance_requests: Vec<detail::CancelRequest>,
+
+    #[cfg(debug_assertions)]
+    rendering_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
 }
 
 /// WindowSizeChangeEvent ─┬─────────────────────────────────┐
@@ -445,20 +448,22 @@ where
 
         self.window_table.insert(id, window);
 
-        #[cfg(debug_assertions)]
-        {
+        let mut rendering_request_sender = None;
+        let (rendering_cancel_request, token) = CancellationToken::new();
+        if cfg!(debug_assertions) {
             let window_attributes = winit::window::WindowAttributes::default()
                 .with_inner_size(PhysicalSize::new(640, 480))
                 .with_resizable(false);
             let window = event_loop.create_window(window_attributes).unwrap();
-            let rendering_service = detail::RenderingServiceVk::new(&window);
+            let (request_sender, rendering_service) = detail::RenderingServiceVk::new(&window);
             tokio::task::Builder::new()
                 .name("WorkspaceUpdateService")
                 .spawn_on(
-                    async move { rendering_service.serve().await },
+                    async move { rendering_service.serve(token).await },
                     self.runtime.handle(),
                 )
                 .unwrap();
+            rendering_request_sender = Some(request_sender);
             self.debug_window = Some(DebugWindow { window });
         }
 
@@ -475,7 +480,9 @@ where
                 cancel_request,
                 window_service_cancel_request,
                 workspace_service_cancel_request,
+                rendering_cancel_request,
             ],
+            rendering_request_sender,
         };
         self.instance = Some(instance);
     }
@@ -560,6 +567,10 @@ where
                         .unwrap()
                         .blocking_send(window_id)
                         .unwrap_or_default();
+
+                    if let Some(sender) = &instance.rendering_request_sender {
+                        sender.blocking_send(()).unwrap_or_default();
+                    }
                 }
                 // 将来的にこっちに乗り換える
                 // instance

@@ -1,8 +1,11 @@
 use std::{borrow::Cow, io::Cursor};
 
+use futures::stream::TryBuffered;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use ash::*;
+
+use crate::detail::CancellationToken;
 
 pub struct RenderingServiceVk {
     instance: ash::Instance,
@@ -22,18 +25,21 @@ pub struct RenderingServiceVk {
     swapchain_images: Vec<vk::Image>,
     present_image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
-    command_fence: vk::Fence,
-    display_semaphore: vk::Semaphore,
-    command_completed_semaphore: vk::Semaphore,
+    command_fences: Vec<vk::Fence>,
+    display_semaphores: Vec<vk::Semaphore>,
+    command_completed_semaphores: Vec<vk::Semaphore>,
 
     // Resources
     buffer: vk::Buffer,
 
     subpass_info_table: Vec<SubpassInfo>,
+
+    // 再描画
+    redraw_requested_receiver: tokio::sync::mpsc::Receiver<()>,
 }
 
 impl RenderingServiceVk {
-    pub fn new<T>(window: T) -> Self
+    pub fn new<T>(window: T) -> (tokio::sync::mpsc::Sender<()>, Self)
     where
         T: HasWindowHandle + HasDisplayHandle,
     {
@@ -437,53 +443,101 @@ impl RenderingServiceVk {
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
-        let command_fence = {
+        let command_fences = {
             let create_info = vk::FenceCreateInfo::default();
-            unsafe { device.create_fence(&create_info, None) }.unwrap()
+            let fence0 = unsafe { device.create_fence(&create_info, None) }.unwrap();
+            let fence1 = unsafe { device.create_fence(&create_info, None) }.unwrap();
+            vec![fence0, fence1]
         };
 
-        let (display_semaphore, command_completed_semaphore) = {
+        let (display_semaphores, command_completed_semaphores) = {
             let create_info = vk::SemaphoreCreateInfo::default();
-            let display_semaphore = unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-            let command_completed_semaphore =
+            let display_semaphore0 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-            (display_semaphore, command_completed_semaphore)
+            let display_semaphore1 =
+                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+
+            let command_completed_semaphore0 =
+                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+            let command_completed_semaphore1 =
+                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+            (
+                vec![display_semaphore0, display_semaphore1],
+                vec![command_completed_semaphore0, command_completed_semaphore1],
+            )
         };
 
-        Self {
-            instance,
-            device,
-            queue,
-            render_pass,
-            pipelines,
-            command_fence,
-            display_semaphore,
-            command_completed_semaphore,
-            surface,
-            command_pool,
-            command_buffer: command_buffers[0],
-            surface_loader,
-            swapchain_loader,
-            swapchain,
-            swapchain_images,
-            present_image_views,
-            framebuffers,
+        let (redraw_requested_sender, redraw_requested_receiver) = tokio::sync::mpsc::channel(1);
 
-            // Resources
-            buffer,
+        (
+            redraw_requested_sender,
+            Self {
+                instance,
+                device,
+                queue,
+                render_pass,
+                pipelines,
+                command_fences,
+                display_semaphores,
+                command_completed_semaphores,
+                surface,
+                command_pool,
+                command_buffer: command_buffers[0],
+                surface_loader,
+                swapchain_loader,
+                swapchain,
+                swapchain_images,
+                present_image_views,
+                framebuffers,
+                redraw_requested_receiver,
+                // Resources
+                buffer,
 
-            subpass_info_table: vec![SubpassInfo { pipeline_index: 0 }],
+                subpass_info_table: vec![SubpassInfo { pipeline_index: 0 }],
+            },
+        )
+    }
+
+    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+        let mut draw_context = DrawContext { frame: 0 };
+        loop {
+            tokio::select! {
+                Some(_) = self.redraw_requested_receiver.recv() => self.draw(&mut draw_context).await,
+                _ = &mut cancellation_token => {
+                    unsafe { self.device.queue_wait_idle(self.queue) }.unwrap();
+                    break;
+                },
+                else => {}
+            }
         }
     }
 
-    pub async fn serve(self) {
+    async fn draw(&self, context: &mut DrawContext) {
+        // スコープを抜けるときにフレーム数を増やす
+        struct Exit<'a> {
+            context: &'a mut DrawContext,
+        }
+        impl<'a> Drop for Exit<'a> {
+            fn drop(&mut self) {
+                self.context.frame += 1;
+            }
+        }
+        let frame = context.frame;
+        let current_frame = (frame % 2) as usize;
+        #[allow(unused)]
+        let exit = Exit { context };
+
         let device = &self.device;
+        let display_semaphore = self.display_semaphores[current_frame];
+        let command_completed_semaphore = self.command_completed_semaphores[current_frame];
+        let previous_command_fence = self.command_fences[(current_frame + 1) % 2];
+        let next_command_fence = self.command_fences[current_frame];
 
         let (next_frame_index, _) = unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
                 u64::MAX,
-                self.display_semaphore,
+                display_semaphore,
                 vk::Fence::null(),
             )
         }
@@ -501,6 +555,11 @@ impl RenderingServiceVk {
                     float32: [0.1, 0.2, 0.3, 1.0],
                 },
             }]);
+
+        if frame > 0 {
+            unsafe { device.wait_for_fences(&[previous_command_fence], true, u64::MAX) }.unwrap();
+        }
+        unsafe { device.reset_fences(&[next_command_fence]) }.unwrap();
 
         unsafe {
             device.reset_command_buffer(
@@ -570,18 +629,18 @@ impl RenderingServiceVk {
         {
             let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [self.command_buffer];
-            let wait_semaphores = [self.display_semaphore];
-            let signal_semaphores = [self.command_completed_semaphore];
+            let wait_semaphores = [display_semaphore];
+            let signal_semaphores = [command_completed_semaphore];
             let submit_info = [vk::SubmitInfo::default()
                 .wait_dst_stage_mask(&wait_mask)
                 .command_buffers(&command_buffers)
                 .wait_semaphores(&wait_semaphores)
                 .signal_semaphores(&signal_semaphores)];
-            unsafe { device.queue_submit(self.queue, &submit_info, vk::Fence::null()) }.unwrap();
+            unsafe { device.queue_submit(self.queue, &submit_info, next_command_fence) }.unwrap();
         }
 
         {
-            let wait_semaphores = [self.command_completed_semaphore];
+            let wait_semaphores = [command_completed_semaphore];
             let swapchain = [self.swapchain];
             let image_indices = [next_frame_index];
             let present_info = vk::PresentInfoKHR::default()
@@ -623,6 +682,10 @@ impl RenderingServiceVk {
 
         vk::FALSE
     }
+}
+
+struct DrawContext {
+    frame: u64,
 }
 
 struct SubpassInfo {
