@@ -509,3 +509,44 @@ impl RenderingServiceVk {
         vk::FALSE
     }
 }
+
+impl Drop for RenderingServiceVk {
+    fn drop(&mut self) {
+        let device = &self.device;
+
+        unsafe { device.queue_wait_idle(self.queue) }.unwrap();
+
+        unsafe { device.free_command_buffers(self.command_pool, &[self.command_buffer]) };
+        unsafe { device.destroy_command_pool(self.command_pool, None) };
+        unsafe { device.destroy_pipeline(self.pipeline, None) };
+        unsafe { device.destroy_render_pass(self.render_pass, None) };
+
+        // Graphics Framework
+        for present_image_views in &self.present_image_views {
+            unsafe { device.destroy_image_view(*present_image_views, None) };
+        }
+
+        for swapchain_image in &self.swapchain_images {
+            unsafe { device.destroy_image(*swapchain_image, None) };
+        }
+
+        for framebuffer in &self.framebuffers {
+            unsafe { device.destroy_framebuffer(*framebuffer, None) };
+        }
+
+        unsafe { device.destroy_fence(self.command_fence, None) };
+        unsafe { device.destroy_semaphore(self.display_semaphore, None) };
+        unsafe {
+            device.destroy_semaphore(self.command_completed_semaphore, None);
+        }
+
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
+        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+
+        unsafe { device.destroy_device(None) };
+        unsafe { self.instance.destroy_instance(None) };
+    }
+}
