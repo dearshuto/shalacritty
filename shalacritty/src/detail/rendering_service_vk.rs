@@ -423,6 +423,96 @@ impl RenderingServiceVk {
         }
         .unwrap();
 
+        let descriptor_pool = {
+            let pool_sizes = [
+                // 背景画像と文字描画で使うサンプラー
+                // どっちもリニアでいいと思うので 1 つあればよい
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1),
+                // 背景画像
+                // グリフテクスチャー
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(2),
+                // 適当な要素数を用意しておく
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(8),
+                // 文字の描画で 1 つ使う
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1),
+            ];
+            let create_info = vk::DescriptorPoolCreateInfo::default()
+                .max_sets(1)
+                .pool_sizes(&pool_sizes);
+            unsafe { device.create_descriptor_pool(&create_info, None) }.unwrap()
+        };
+
+        // 背景描画リソース
+        let background_descriptor_set_layout = {
+            let bindings = [
+                // 頂点シェーダー
+                // 画像の UV 合わせ
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+                // ピクセルシェーダー
+                // 背景画像
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
+        // 文字描画リソース
+        let character_descriptor_set_layout = {
+            let bindings = [
+                // 文字の配置
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+                // グリフテクスチャー
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
+        let descriptor_sets = {
+            let set_layouts = [
+                background_descriptor_set_layout,
+                character_descriptor_set_layout,
+            ];
+            let allocate_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&set_layouts);
+            unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()
+        };
+
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
