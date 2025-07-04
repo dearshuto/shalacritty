@@ -64,6 +64,8 @@ where
 
     is_profile_server_enabled: bool,
 
+    is_verbose: bool,
+
     proxy: EventLoopProxy<UserEvent>,
 
     window_table: HashMap<winit::window::WindowId, Arc<winit::window::Window>>,
@@ -77,7 +79,11 @@ impl<'a, TBackend> App<'a, TBackend>
 where
     TBackend: term_gfx::IBackend,
 {
-    pub fn run(_renderer: term_gfx::Renderer<TBackend>, is_profile_server_enabled: bool) {
+    pub fn run(
+        _renderer: term_gfx::Renderer<TBackend>,
+        is_profile_server_enabled: bool,
+        is_verbose: bool,
+    ) {
         // 任意のタイミングで終了したいので Proxy 経由でイベントを発行したい
         let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
         let runtime = Arc::new(
@@ -92,6 +98,7 @@ where
             modifiers_state: Default::default(),
             instance: None,
             is_profile_server_enabled,
+            is_verbose,
             proxy: event_loop.create_proxy(),
             window_table: HashMap::default(),
             _marker: std::marker::PhantomData,
@@ -329,11 +336,12 @@ where
 
         // 差分を Debug 出力
         let mut string_receiver = shell_service.listen_string();
+        let is_verbose = self.is_verbose;
         let _ = tokio::task::Builder::new()
             .name("DebugPrintTask")
             .spawn_on(
                 async move {
-                    if cfg!(debug_assertions) {
+                    if cfg!(debug_assertions) && is_verbose {
                         while let Some(str) = string_receiver.recv().await {
                             println!("==================");
                             println!("{:?}", str);

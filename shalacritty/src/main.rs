@@ -8,6 +8,9 @@ struct Args {
     /// プロファイル機能の有効性
     #[arg(long("enable-profile-server"), default_value_t = false)]
     is_profile_server_enabled: bool,
+
+    #[arg(long("verbose"), default_value_t = false)]
+    is_verbose: bool,
 }
 
 fn main() {
@@ -29,5 +32,5 @@ fn main() {
         None
     };
 
-    App::run(renderer, args.is_profile_server_enabled);
+    App::run(renderer, args.is_profile_server_enabled, args.is_verbose);
 }
