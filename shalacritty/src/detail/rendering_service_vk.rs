@@ -15,6 +15,7 @@ pub struct RenderingServiceVk {
 
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
+    pipeline_layout: vk::PipelineLayout,
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
 
@@ -30,7 +31,9 @@ pub struct RenderingServiceVk {
     command_completed_semaphore: vk::Semaphore,
 
     // Resources
+    layout: vk::PipelineLayout,
     buffer: vk::Buffer,
+    descriptor_sets: Vec<vk::DescriptorSet>,
 }
 
 impl RenderingServiceVk {
@@ -513,6 +516,20 @@ impl RenderingServiceVk {
             unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()
         };
 
+        {
+            let buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(buffer)
+                .offset(0)
+                .range(128)];
+            let descriptor_writes = [vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_sets[0])
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .buffer_info(&buffer_info)];
+            let descriptor_copies = [];
+            unsafe { device.update_descriptor_sets(&descriptor_writes, &descriptor_copies) };
+        }
+
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
                 .queue_family_index(queue_family_index as u32)
@@ -618,6 +635,17 @@ impl RenderingServiceVk {
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
+            )
+        };
+
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.layout,
+                0, /*first_set*/
+                &self.descriptor_sets,
+                &[],
             )
         };
 
