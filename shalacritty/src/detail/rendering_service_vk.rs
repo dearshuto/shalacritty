@@ -11,7 +11,7 @@ pub struct RenderingServiceVk {
     queue: vk::Queue,
 
     render_pass: vk::RenderPass,
-    pipeline: vk::Pipeline,
+    pipelines: Vec<vk::Pipeline>,
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
 
@@ -28,6 +28,8 @@ pub struct RenderingServiceVk {
 
     // Resources
     buffer: vk::Buffer,
+
+    subpass_info_table: Vec<SubpassInfo>,
 }
 
 impl RenderingServiceVk {
@@ -286,7 +288,7 @@ impl RenderingServiceVk {
             unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
         };
 
-        let pipeline = {
+        let pipelines = {
             let shader_stage_create_info = [
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::VERTEX)
@@ -347,7 +349,7 @@ impl RenderingServiceVk {
             unsafe {
                 device.create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
             }
-            .unwrap()[0]
+            .unwrap()
         };
 
         const BUFFER_SIZE: vk::DeviceSize = 16 * 1024;
@@ -453,7 +455,7 @@ impl RenderingServiceVk {
             device,
             queue,
             render_pass,
-            pipeline,
+            pipelines,
             command_fence,
             display_semaphore,
             command_completed_semaphore,
@@ -469,6 +471,8 @@ impl RenderingServiceVk {
 
             // Resources
             buffer,
+
+            subpass_info_table: vec![SubpassInfo { pipeline_index: 0 }],
         }
     }
 
@@ -520,42 +524,44 @@ impl RenderingServiceVk {
             )
         };
 
-        unsafe {
-            device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            )
-        };
+        for subpass_info in &self.subpass_info_table {
+            unsafe {
+                device.cmd_bind_pipeline(
+                    self.command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.pipelines[subpass_info.pipeline_index],
+                )
+            };
 
-        unsafe {
-            device.cmd_bind_vertex_buffers(
-                self.command_buffer,
-                0, /*first_binding*/
-                &[self.buffer],
-                &[0], /*offsets*/
-            )
-        };
+            unsafe {
+                device.cmd_bind_vertex_buffers(
+                    self.command_buffer,
+                    0, /*first_binding*/
+                    &[self.buffer],
+                    &[0], /*offsets*/
+                )
+            };
 
-        unsafe {
-            device.cmd_bind_index_buffer(
-                self.command_buffer,
-                self.buffer,
-                (std::mem::size_of::<f32>() * 16) as u64, /*offset*/
-                vk::IndexType::UINT16,
-            )
-        };
+            unsafe {
+                device.cmd_bind_index_buffer(
+                    self.command_buffer,
+                    self.buffer,
+                    (std::mem::size_of::<f32>() * 16) as u64, /*offset*/
+                    vk::IndexType::UINT16,
+                )
+            };
 
-        unsafe {
-            device.cmd_draw_indexed(
-                self.command_buffer,
-                6, /*index_count*/
-                1, /*instance_count*/
-                0, /*first_index*/
-                0, /*fertex_offset*/
-                0, /*first_instance*/
-            )
-        };
+            unsafe {
+                device.cmd_draw_indexed(
+                    self.command_buffer,
+                    6, /*index_count*/
+                    1, /*instance_count*/
+                    0, /*first_index*/
+                    0, /*fertex_offset*/
+                    0, /*first_instance*/
+                )
+            };
+        }
 
         unsafe { device.cmd_end_render_pass(self.command_buffer) };
 
@@ -617,4 +623,8 @@ impl RenderingServiceVk {
 
         vk::FALSE
     }
+}
+
+struct SubpassInfo {
+    pipeline_index: usize,
 }
