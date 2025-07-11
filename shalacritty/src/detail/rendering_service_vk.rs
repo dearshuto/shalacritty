@@ -685,6 +685,55 @@ impl RenderingServiceVk {
     }
 }
 
+impl Drop for RenderingServiceVk {
+    fn drop(&mut self) {
+        let device = &self.device;
+
+        unsafe { device.destroy_buffer(self.buffer, None) };
+
+        for semaphore in &self.command_completed_semaphores {
+            unsafe { device.destroy_semaphore(*semaphore, None) };
+        }
+
+        for semaphore in &self.display_semaphores {
+            unsafe { device.destroy_semaphore(*semaphore, None) };
+        }
+
+        for fence in &self.command_fences {
+            unsafe { device.destroy_fence(*fence, None) };
+        }
+
+        unsafe { device.free_command_buffers(self.command_pool, &self.command_buffers) };
+        unsafe { device.destroy_command_pool(self.command_pool, None) };
+
+        for pipeline in &self.pipelines {
+            unsafe { device.destroy_pipeline(*pipeline, None) };
+        }
+
+        for framebuffer in &self.framebuffers {
+            unsafe { device.destroy_framebuffer(*framebuffer, None) };
+        }
+
+        for image in &self.swapchain_images {
+            unsafe { device.destroy_image(*image, None) };
+        }
+
+        for image_voew in &self.present_image_views {
+            unsafe { device.destroy_image_view(*image_voew, None) };
+        }
+
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
+
+        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+
+        unsafe { device.destroy_device(None) };
+        unsafe { self.instance.destroy_instance(None) };
+    }
+}
+
 struct DrawContext {
     frame: u64,
 }
