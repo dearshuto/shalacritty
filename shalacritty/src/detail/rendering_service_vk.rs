@@ -16,7 +16,7 @@ pub struct RenderingServiceVk {
     render_pass: vk::RenderPass,
     pipelines: Vec<vk::Pipeline>,
     command_pool: vk::CommandPool,
-    command_buffer: vk::CommandBuffer,
+    command_buffers: Vec<vk::CommandBuffer>,
 
     // Graphics Framework
     surface_loader: khr::surface::Instance,
@@ -439,7 +439,7 @@ impl RenderingServiceVk {
             let allocate_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(1);
+                .command_buffer_count(2);
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
@@ -482,7 +482,7 @@ impl RenderingServiceVk {
                 command_completed_semaphores,
                 surface,
                 command_pool,
-                command_buffer: command_buffers[0],
+                command_buffers,
                 surface_loader,
                 swapchain_loader,
                 swapchain,
@@ -523,15 +523,16 @@ impl RenderingServiceVk {
             }
         }
         let frame = context.frame;
-        let current_frame = (frame % 2) as usize;
+        let next_frame = (frame % 2) as usize;
         #[allow(unused)]
         let exit = Exit { context };
 
         let device = &self.device;
-        let display_semaphore = self.display_semaphores[current_frame];
-        let command_completed_semaphore = self.command_completed_semaphores[current_frame];
-        let previous_command_fence = self.command_fences[(current_frame + 1) % 2];
-        let next_command_fence = self.command_fences[current_frame];
+        let display_semaphore = self.display_semaphores[next_frame];
+        let command_completed_semaphore = self.command_completed_semaphores[next_frame];
+        let command_buffer = self.command_buffers[next_frame];
+        let previous_command_fence = self.command_fences[(next_frame + 1) % 2];
+        let next_command_fence = self.command_fences[next_frame];
 
         let (next_frame_index, _) = unsafe {
             self.swapchain_loader.acquire_next_image(
@@ -563,7 +564,7 @@ impl RenderingServiceVk {
 
         unsafe {
             device.reset_command_buffer(
-                self.command_buffer,
+                command_buffer,
                 vk::CommandBufferResetFlags::RELEASE_RESOURCES,
             )
         }
@@ -572,12 +573,12 @@ impl RenderingServiceVk {
         {
             let begin_info = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            unsafe { device.begin_command_buffer(self.command_buffer, &begin_info) }.unwrap();
+            unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
         }
 
         unsafe {
             device.cmd_begin_render_pass(
-                self.command_buffer,
+                command_buffer,
                 &render_pass_begin_info,
                 vk::SubpassContents::default(),
             )
@@ -586,7 +587,7 @@ impl RenderingServiceVk {
         for subpass_info in &self.subpass_info_table {
             unsafe {
                 device.cmd_bind_pipeline(
-                    self.command_buffer,
+                    command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     self.pipelines[subpass_info.pipeline_index],
                 )
@@ -594,7 +595,7 @@ impl RenderingServiceVk {
 
             unsafe {
                 device.cmd_bind_vertex_buffers(
-                    self.command_buffer,
+                    command_buffer,
                     0, /*first_binding*/
                     &[self.buffer],
                     &[0], /*offsets*/
@@ -603,7 +604,7 @@ impl RenderingServiceVk {
 
             unsafe {
                 device.cmd_bind_index_buffer(
-                    self.command_buffer,
+                    command_buffer,
                     self.buffer,
                     (std::mem::size_of::<f32>() * 16) as u64, /*offset*/
                     vk::IndexType::UINT16,
@@ -612,7 +613,7 @@ impl RenderingServiceVk {
 
             unsafe {
                 device.cmd_draw_indexed(
-                    self.command_buffer,
+                    command_buffer,
                     6, /*index_count*/
                     1, /*instance_count*/
                     0, /*first_index*/
@@ -622,13 +623,13 @@ impl RenderingServiceVk {
             };
         }
 
-        unsafe { device.cmd_end_render_pass(self.command_buffer) };
+        unsafe { device.cmd_end_render_pass(command_buffer) };
 
-        unsafe { device.end_command_buffer(self.command_buffer) }.unwrap();
+        unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         {
             let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffer];
+            let command_buffers = [command_buffer];
             let wait_semaphores = [display_semaphore];
             let signal_semaphores = [command_completed_semaphore];
             let submit_info = [vk::SubmitInfo::default()
