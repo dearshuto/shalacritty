@@ -154,7 +154,8 @@ impl ShellService {
                 .acquire_cursor_position_tentative(*id)
             {
                 for sender in &self.cursor_position_senders {
-                    sender.send(position.clone()).await.unwrap();
+                    // 破棄順によっては相手が先に閉じる可能性があるので unwrap_or_default() にする
+                    sender.send(position.clone()).await.unwrap_or_default();
                 }
             }
         }
