@@ -1,6 +1,5 @@
 use std::{borrow::Cow, io::Cursor};
 
-use futures::stream::TryBuffered;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use ash::*;
