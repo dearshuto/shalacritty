@@ -12,6 +12,14 @@ struct BackgroundView {
     transform1: [f32; 4],
 }
 
+#[repr(C)]
+struct CharacterData {
+    transform0: [f32; 4],
+    transform1: [f32; 4],
+    fg_color: [f32; 4],
+    uv01: [f32; 4],
+}
+
 pub struct RenderingServiceVk {
     instance: ash::Instance,
     device: ash::Device,
@@ -358,18 +366,18 @@ impl RenderingServiceVk {
             let bindings = [
                 // 文字の配置
                 vk::DescriptorSetLayoutBinding::default()
-                    .binding(0)
+                    .binding(4)
                     .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::VERTEX),
                 // グリフテクスチャー
                 vk::DescriptorSetLayoutBinding::default()
-                    .binding(1)
+                    .binding(2)
                     .descriptor_type(vk::DescriptorType::SAMPLER)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
                 vk::DescriptorSetLayoutBinding::default()
-                    .binding(2)
+                    .binding(5)
                     .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
@@ -398,13 +406,19 @@ impl RenderingServiceVk {
             let create_info = vk::PipelineLayoutCreateInfo::default();
             unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
         };
+        let character_layout = {
+            let set_layoutes = [character_descriptor_set_layout];
+            let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layoutes);
+            unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
+        };
 
         let pipelines = {
-            let layout_table = [background_layout, layout];
-            let stage_table: [_; 2] = std::array::from_fn(|index| {
+            let layout_table = [background_layout, layout, character_layout];
+            let stage_table: [_; 3] = std::array::from_fn(|index| {
                 let module_name_table = [
                     (c"background_vs", c"background_fs"),
                     (c"main_vs", c"main_fs"),
+                    (c"character_vs", c"character_fs"),
                 ];
                 let (vs_name, fs_name) = module_name_table[index];
                 [
@@ -452,7 +466,7 @@ impl RenderingServiceVk {
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&blend_attachment_states);
             let dynamic_state = vk::PipelineDynamicStateCreateInfo::default();
-            let create_infos: [_; 2] = std::array::from_fn(|index| {
+            let create_infos: [_; 3] = std::array::from_fn(|index| {
                 vk::GraphicsPipelineCreateInfo::default()
                     .stages(&stage_table[index])
                     .vertex_input_state(&vertex_input_state)
@@ -513,23 +527,27 @@ impl RenderingServiceVk {
 
         unsafe { device.bind_buffer_memory(buffer, device_memory, 0) }.unwrap();
 
-        let (vertex_buffer, index_buffer, background_view) = {
+        let (vertex_buffer, index_buffer, background_view, character_data) = {
             let vertrex_ptr = unsafe {
                 device.map_memory(
                     device_memory,
                     0, /*offset*/
-                    1024,
+                    16 * 1024,
                     vk::MemoryMapFlags::empty(),
                 )
             }
             .unwrap() as *mut f32;
             let index_ptr = unsafe { vertrex_ptr.add(16) } as *mut u16;
             let background_view_ptr = unsafe { index_ptr.add(16) } as *mut BackgroundView;
+            let character_data_ptr =
+                unsafe { background_view_ptr.byte_add(std::mem::size_of::<BackgroundView>()) }
+                    as *mut CharacterData;
 
             (
                 unsafe { std::slice::from_raw_parts_mut(vertrex_ptr, 16) },
                 unsafe { std::slice::from_raw_parts_mut(index_ptr, 16) },
                 unsafe { background_view_ptr.as_mut().unwrap() },
+                unsafe { std::slice::from_raw_parts_mut(character_data_ptr, 1024) },
             )
         };
 
@@ -539,12 +557,16 @@ impl RenderingServiceVk {
         index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
         background_view.transform0 = [1.0, 0.0, 0.0, 1.0];
         background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
+        character_data[0].transform0 = [0.2, 0.0, -0.5, 0.0];
+        character_data[0].transform1 = [0.0, 0.2, -0.5, 0.0];
+        character_data[1].transform0 = [0.2, 0.0, 0.5, 0.0];
+        character_data[1].transform1 = [0.0, 0.2, 0.5, 0.0];
 
         unsafe {
             device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
                 .memory(device_memory)
                 .offset(0)
-                .size(64)])
+                .size(1024)])
         }
         .unwrap();
 
@@ -618,13 +640,18 @@ impl RenderingServiceVk {
         {
             let buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer)
-                .offset(32)
+                .offset(4 * 16 + 2 * 16)
+                .range(std::mem::size_of::<BackgroundView>() as u64)];
+            let character_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(buffer)
+                .offset(4 * 16 + 2 * 16 + std::mem::size_of::<BackgroundView>() as u64)
                 .range(std::mem::size_of::<BackgroundView>() as u64)];
             let image_info = [vk::DescriptorImageInfo::default()
                 .sampler(sampler)
                 .image_view(image_view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
             let descriptor_writes = [
+                // 背景描画用
                 vk::WriteDescriptorSet::default()
                     .dst_set(descriptor_sets[0])
                     .dst_binding(0)
@@ -639,6 +666,22 @@ impl RenderingServiceVk {
                     .dst_set(descriptor_sets[0])
                     .dst_binding(2)
                     .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .image_info(&image_info),
+                // 文字描画用
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[1])
+                    .dst_binding(4)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&character_buffer_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[1])
+                    .dst_binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .image_info(&image_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[1])
+                    .dst_binding(5)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                     .image_info(&image_info),
             ];
             unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
@@ -709,22 +752,33 @@ impl RenderingServiceVk {
                 // Resources
                 image_memory,
                 buffer,
-                pipeline_layouts: vec![background_layout, layout],
+                pipeline_layouts: vec![background_layout, layout, character_layout],
                 descriptor_sets,
                 sampler,
                 background_image: image,
                 background_image_view: image_view,
 
                 subpass_info_table: vec![
+                    // 背景
                     SubpassInfo {
                         pipeline_index: 0,
+                        instance_count: 1,
                         descriptor_set_index: Some(0),
                         pipeline_layout_index: Some(0),
                     },
+                    // デバッグ
                     SubpassInfo {
                         pipeline_index: 1,
+                        instance_count: 1,
                         descriptor_set_index: None,
                         pipeline_layout_index: None,
+                    },
+                    // 文字
+                    SubpassInfo {
+                        pipeline_index: 2,
+                        instance_count: 2, // TODO
+                        descriptor_set_index: Some(1),
+                        pipeline_layout_index: Some(2),
                     },
                 ],
             },
@@ -902,11 +956,11 @@ impl RenderingServiceVk {
             unsafe {
                 device.cmd_draw_indexed(
                     command_buffer,
-                    6, /*index_count*/
-                    1, /*instance_count*/
-                    0, /*first_index*/
-                    0, /*fertex_offset*/
-                    0, /*first_instance*/
+                    6,                           /*index_count*/
+                    subpass_info.instance_count, /*instance_count*/
+                    0,                           /*first_index*/
+                    0,                           /*fertex_offset*/
+                    0,                           /*first_instance*/
                 )
             };
         }
@@ -1034,6 +1088,8 @@ struct DrawContext {
 
 struct SubpassInfo {
     pipeline_index: usize,
+
+    instance_count: u32,
 
     descriptor_set_index: Option<usize>,
 
