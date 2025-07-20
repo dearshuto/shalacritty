@@ -36,6 +36,7 @@ pub struct RenderingServiceVk {
 
     // Resources
     image_memory: vk::DeviceMemory,
+    buffer_memory: vk::DeviceMemory,
     buffer: vk::Buffer,
     pipeline_layouts: Vec<vk::PipelineLayout>,
     descriptor_sets: Vec<vk::DescriptorSet>,
@@ -707,6 +708,7 @@ impl RenderingServiceVk {
                 framebuffers,
                 redraw_requested_receiver,
                 // Resources
+                buffer_memory: device_memory,
                 image_memory,
                 buffer,
                 pipeline_layouts: vec![background_layout, layout],
@@ -983,6 +985,7 @@ impl Drop for RenderingServiceVk {
         unsafe { device.destroy_sampler(self.sampler, None) };
 
         unsafe { device.destroy_buffer(self.buffer, None) };
+        unsafe { device.free_memory(self.buffer_memory, None) };
 
         for semaphore in &self.command_completed_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
