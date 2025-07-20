@@ -6,6 +6,12 @@ use ash::*;
 
 use crate::detail::CancellationToken;
 
+#[repr(C)]
+struct BackgroundView {
+    transform0: [f32; 4],
+    transform1: [f32; 4],
+}
+
 pub struct RenderingServiceVk {
     instance: ash::Instance,
     device: ash::Device,
@@ -29,7 +35,13 @@ pub struct RenderingServiceVk {
     command_completed_semaphores: Vec<vk::Semaphore>,
 
     // Resources
+    image_memory: vk::DeviceMemory,
     buffer: vk::Buffer,
+    pipeline_layouts: Vec<vk::PipelineLayout>,
+    descriptor_sets: Vec<vk::DescriptorSet>,
+    sampler: vk::Sampler,
+    background_image: vk::Image,
+    background_image_view: vk::ImageView,
 
     subpass_info_table: Vec<SubpassInfo>,
 
@@ -288,22 +300,124 @@ impl RenderingServiceVk {
             unsafe { device.create_shader_module(&create_info, None) }.unwrap()
         };
 
+        let descriptor_pool = {
+            // 要素数は適当に余裕を持たせておく
+            let pool_sizes = [
+                // 背景画像と文字描画で使うサンプラー
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(4),
+                // 背景画像
+                // グリフテクスチャー
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(4),
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(8),
+                // 文字の描画で使う
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(4),
+            ];
+            let create_info = vk::DescriptorPoolCreateInfo::default()
+                .max_sets(2)
+                .pool_sizes(&pool_sizes);
+            unsafe { device.create_descriptor_pool(&create_info, None) }.unwrap()
+        };
+
+        // 背景描画リソース
+        let background_descriptor_set_layout = {
+            let bindings = [
+                // 頂点シェーダー
+                // 画像の UV 合わせ
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+                // ピクセルシェーダー
+                // 背景画像
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
+        // 文字描画リソース
+        let character_descriptor_set_layout = {
+            let bindings = [
+                // 文字の配置
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+                // グリフテクスチャー
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
+        let descriptor_sets = {
+            let set_layouts = [
+                background_descriptor_set_layout,
+                character_descriptor_set_layout,
+            ];
+            let allocate_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&set_layouts);
+            unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()
+        };
+
+        let background_layout = {
+            let set_layouts = [background_descriptor_set_layout];
+            let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+            unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
+        };
         let layout = {
             let create_info = vk::PipelineLayoutCreateInfo::default();
             unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
         };
 
         let pipelines = {
-            let shader_stage_create_info = [
-                vk::PipelineShaderStageCreateInfo::default()
-                    .stage(vk::ShaderStageFlags::VERTEX)
-                    .module(shader_module)
-                    .name(c"main_vs"),
-                vk::PipelineShaderStageCreateInfo::default()
-                    .stage(vk::ShaderStageFlags::FRAGMENT)
-                    .module(shader_module)
-                    .name(c"main_fs"),
-            ];
+            let layout_table = [background_layout, layout];
+            let stage_table: [_; 2] = std::array::from_fn(|index| {
+                let module_name_table = [
+                    (c"background_vs", c"background_fs"),
+                    (c"main_vs", c"main_fs"),
+                ];
+                let (vs_name, fs_name) = module_name_table[index];
+                [
+                    vk::PipelineShaderStageCreateInfo::default()
+                        .stage(vk::ShaderStageFlags::VERTEX)
+                        .module(shader_module)
+                        .name(vs_name),
+                    vk::PipelineShaderStageCreateInfo::default()
+                        .stage(vk::ShaderStageFlags::FRAGMENT)
+                        .module(shader_module)
+                        .name(fs_name),
+                ]
+            });
 
             let vertex_binding_descriptions = [vk::VertexInputBindingDescription::default()
                 .binding(0)
@@ -338,21 +452,23 @@ impl RenderingServiceVk {
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&blend_attachment_states);
             let dynamic_state = vk::PipelineDynamicStateCreateInfo::default();
-            let create_info = vk::GraphicsPipelineCreateInfo::default()
-                .stages(&shader_stage_create_info)
-                .vertex_input_state(&vertex_input_state)
-                .input_assembly_state(&input_assembly_state)
-                .viewport_state(&viewport_state)
-                .rasterization_state(&rasterization_state)
-                .multisample_state(&multisample_state)
-                .depth_stencil_state(&depth_stencil_state)
-                .color_blend_state(&color_blend_state)
-                .dynamic_state(&dynamic_state)
-                .render_pass(render_pass)
-                .layout(layout);
+            let create_infos: [_; 2] = std::array::from_fn(|index| {
+                vk::GraphicsPipelineCreateInfo::default()
+                    .stages(&stage_table[index])
+                    .vertex_input_state(&vertex_input_state)
+                    .input_assembly_state(&input_assembly_state)
+                    .viewport_state(&viewport_state)
+                    .rasterization_state(&rasterization_state)
+                    .multisample_state(&multisample_state)
+                    .depth_stencil_state(&depth_stencil_state)
+                    .color_blend_state(&color_blend_state)
+                    .dynamic_state(&dynamic_state)
+                    .render_pass(render_pass)
+                    .layout(layout_table[index])
+            });
 
             unsafe {
-                device.create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+                device.create_graphics_pipelines(vk::PipelineCache::null(), &create_infos, None)
             }
             .unwrap()
         };
@@ -367,7 +483,8 @@ impl RenderingServiceVk {
                 .usage(
                     vk::BufferUsageFlags::VERTEX_BUFFER
                         | vk::BufferUsageFlags::INDEX_BUFFER
-                        | vk::BufferUsageFlags::STORAGE_BUFFER,
+                        | vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::UNIFORM_BUFFER,
                 );
             unsafe { device.create_buffer(&create_info, None) }.unwrap()
         };
@@ -396,7 +513,7 @@ impl RenderingServiceVk {
 
         unsafe { device.bind_buffer_memory(buffer, device_memory, 0) }.unwrap();
 
-        let (vertex_buffer, index_buffer) = {
+        let (vertex_buffer, index_buffer, background_view) = {
             let vertrex_ptr = unsafe {
                 device.map_memory(
                     device_memory,
@@ -407,10 +524,12 @@ impl RenderingServiceVk {
             }
             .unwrap() as *mut f32;
             let index_ptr = unsafe { vertrex_ptr.add(16) } as *mut u16;
+            let background_view_ptr = unsafe { index_ptr.add(16) } as *mut BackgroundView;
 
             (
                 unsafe { std::slice::from_raw_parts_mut(vertrex_ptr, 16) },
                 unsafe { std::slice::from_raw_parts_mut(index_ptr, 16) },
+                unsafe { background_view_ptr.as_mut().unwrap() },
             )
         };
 
@@ -418,6 +537,8 @@ impl RenderingServiceVk {
         const INDEX_DATA: [u16; 6] = [0, 1, 2, 0, 2, 3];
         vertex_buffer[0..VERTEX_DATA.len()].copy_from_slice(&VERTEX_DATA);
         index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
+        background_view.transform0 = [1.0, 0.0, 0.0, 1.0];
+        background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
 
         unsafe {
             device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
@@ -426,6 +547,102 @@ impl RenderingServiceVk {
                 .size(64)])
         }
         .unwrap();
+
+        let image = {
+            let create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8G8B8A8_UNORM)
+                .extent(vk::Extent3D::default().width(128).height(128).depth(1))
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(vk::ImageUsageFlags::SAMPLED)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .queue_family_indices(&[0])
+                .initial_layout(vk::ImageLayout::UNDEFINED);
+            unsafe { device.create_image(&create_info, None) }.unwrap()
+        };
+
+        let image_memory = {
+            let memory_index = {
+                let memory_requirement = unsafe { device.get_image_memory_requirements(image) };
+                unsafe { instance.get_physical_device_memory_properties(physical_device) }
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+                        (1 << index) & memory_requirement.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
+            };
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(16 * 512 * 512)
+                .memory_type_index(memory_index);
+            let device_memory = unsafe { device.allocate_memory(&allocate_info, None) }.unwrap();
+            unsafe { device.bind_image_memory(image, device_memory, 0) }.unwrap();
+            device_memory
+        };
+
+        let image_view = {
+            let create_info = vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::R8G8B8A8_UNORM)
+                .components(
+                    vk::ComponentMapping::default()
+                        .r(vk::ComponentSwizzle::R)
+                        .g(vk::ComponentSwizzle::G)
+                        .b(vk::ComponentSwizzle::B)
+                        .a(vk::ComponentSwizzle::A),
+                )
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .layer_count(1)
+                        .base_array_layer(0)
+                        .aspect_mask(vk::ImageAspectFlags::COLOR),
+                );
+            unsafe { device.create_image_view(&create_info, None) }.unwrap()
+        };
+
+        let sampler = {
+            let create_info = vk::SamplerCreateInfo::default();
+            unsafe { device.create_sampler(&create_info, None) }.unwrap()
+        };
+
+        {
+            let buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(buffer)
+                .offset(32)
+                .range(std::mem::size_of::<BackgroundView>() as u64)];
+            let image_info = [vk::DescriptorImageInfo::default()
+                .sampler(sampler)
+                .image_view(image_view)
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+            let descriptor_writes = [
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[0])
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buffer_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[0])
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .image_info(&image_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_sets[0])
+                    .dst_binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .image_info(&image_info),
+            ];
+            unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
+        }
 
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
@@ -490,15 +707,35 @@ impl RenderingServiceVk {
                 framebuffers,
                 redraw_requested_receiver,
                 // Resources
+                image_memory,
                 buffer,
+                pipeline_layouts: vec![background_layout, layout],
+                descriptor_sets,
+                sampler,
+                background_image: image,
+                background_image_view: image_view,
 
-                subpass_info_table: vec![SubpassInfo { pipeline_index: 0 }],
+                subpass_info_table: vec![
+                    SubpassInfo {
+                        pipeline_index: 0,
+                        descriptor_set_index: Some(0),
+                        pipeline_layout_index: Some(0),
+                    },
+                    SubpassInfo {
+                        pipeline_index: 1,
+                        descriptor_set_index: None,
+                        pipeline_layout_index: None,
+                    },
+                ],
             },
         )
     }
 
     pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
-        let mut draw_context = DrawContext { frame: 0 };
+        let mut draw_context = DrawContext {
+            frame: 0,
+            is_background_updated: false,
+        };
         loop {
             tokio::select! {
                 Some(_) = self.redraw_requested_receiver.recv() => self.draw(&mut draw_context).await,
@@ -519,8 +756,10 @@ impl RenderingServiceVk {
         impl<'a> Drop for Exit<'a> {
             fn drop(&mut self) {
                 self.context.frame += 1;
+                self.context.is_background_updated = true;
             }
         }
+        let is_background_updated = true;
         let frame = context.frame;
         let next_frame = (frame % 2) as usize;
         #[allow(unused)]
@@ -575,6 +814,32 @@ impl RenderingServiceVk {
             unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
         }
 
+        if is_background_updated {
+            let texture_barrier = vk::ImageMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image(self.background_image)
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .level_count(1)
+                        .layer_count(1),
+                );
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[texture_barrier],
+                )
+            };
+        }
+
         unsafe {
             device.cmd_begin_render_pass(
                 command_buffer,
@@ -600,6 +865,30 @@ impl RenderingServiceVk {
                     &[0], /*offsets*/
                 )
             };
+
+            if let Some((layout_index, set_index)) = match (
+                subpass_info.pipeline_layout_index,
+                subpass_info.descriptor_set_index,
+            ) {
+                (Some(layout_index), Some(descriptor_set_index)) => {
+                    Some((layout_index, descriptor_set_index))
+                }
+                _ => None,
+            } {
+                let layout = self.pipeline_layouts[layout_index];
+                let descriptor_set = self.descriptor_sets[set_index];
+
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        layout,
+                        0, /*first_set*/
+                        &[descriptor_set],
+                        &[],
+                    )
+                }
+            }
 
             unsafe {
                 device.cmd_bind_index_buffer(
@@ -688,6 +977,11 @@ impl Drop for RenderingServiceVk {
     fn drop(&mut self) {
         let device = &self.device;
 
+        unsafe { device.destroy_image(self.background_image, None) };
+        unsafe { device.destroy_image_view(self.background_image_view, None) };
+        unsafe { device.free_memory(self.image_memory, None) };
+        unsafe { device.destroy_sampler(self.sampler, None) };
+
         unsafe { device.destroy_buffer(self.buffer, None) };
 
         for semaphore in &self.command_completed_semaphores {
@@ -735,8 +1029,13 @@ impl Drop for RenderingServiceVk {
 
 struct DrawContext {
     frame: u64,
+    is_background_updated: bool,
 }
 
 struct SubpassInfo {
     pipeline_index: usize,
+
+    descriptor_set_index: Option<usize>,
+
+    pipeline_layout_index: Option<usize>,
 }
