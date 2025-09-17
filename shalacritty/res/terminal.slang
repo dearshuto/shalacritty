@@ -80,8 +80,7 @@ struct CharacterData
 {
   float4 transform[2];
   float4 foreGroundColor;
-  float2 uv0;
-  float2 uv1;
+  float4 uv01;
 }
 
 StructuredBuffer<CharacterData> g_CharacterDataBuffer;
@@ -113,21 +112,21 @@ CharacterVertexOutput character_vs(int vertexId : SV_VertexID,  int instanceId :
   // 1 - 2
   if (vertexId == 1)
   {
-    output.uv = data.uv0;
+    output.uv = data.uv01.xy;
   }
   else if (vertexId == 0)
   {
-    output.uv.x = data.uv0.x;
-    output.uv.y = data.uv1.y;
+    output.uv.x = data.uv01.x;
+    output.uv.y = data.uv01.w;
   }
   else if (vertexId == 3)
   {
-    output.uv = data.uv1;
+    output.uv = data.uv01.zw;
   }
   else if (vertexId == 2)
   {
-    output.uv.x = data.uv1.x;
-    output.uv.y = data.uv0.y;
+    output.uv.x = data.uv01.z;
+    output.uv.y = data.uv01.y;
   }
   
   return output;
