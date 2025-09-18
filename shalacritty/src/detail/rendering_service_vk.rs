@@ -25,6 +25,8 @@ pub struct RenderingServiceVk {
     device: ash::Device,
     surface: vk::SurfaceKHR,
     queue: vk::Queue,
+    debug_utils_loader: ext::debug_utils::Instance,
+    debug_utils_messanger: vk::DebugUtilsMessengerEXT,
 
     pipelines: Vec<vk::Pipeline>,
     command_pool: vk::CommandPool,
@@ -706,6 +708,8 @@ impl RenderingServiceVk {
                 instance,
                 device,
                 queue,
+                debug_utils_loader,
+                debug_utils_messanger: debug_utils,
                 pipelines,
                 command_fences,
                 display_semaphores,
@@ -1090,6 +1094,10 @@ impl Drop for RenderingServiceVk {
 
         unsafe { self.surface_loader.destroy_surface(self.surface, None) };
 
+        unsafe {
+            self.debug_utils_loader
+                .destroy_debug_utils_messenger(self.debug_utils_messanger, None);
+        }
         unsafe { device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
     }
