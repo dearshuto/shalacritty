@@ -1,4 +1,4 @@
-use std::{borrow::Cow, io::Cursor};
+use std::{borrow::Cow, ffi::c_void, io::Cursor};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
@@ -26,7 +26,6 @@ pub struct RenderingServiceVk {
     surface: vk::SurfaceKHR,
     queue: vk::Queue,
 
-    render_pass: vk::RenderPass,
     pipelines: Vec<vk::Pipeline>,
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
@@ -37,7 +36,6 @@ pub struct RenderingServiceVk {
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     present_image_views: Vec<vk::ImageView>,
-    framebuffers: Vec<vk::Framebuffer>,
     command_fences: Vec<vk::Fence>,
     display_semaphores: Vec<vk::Semaphore>,
     command_completed_semaphores: Vec<vk::Semaphore>,
@@ -180,16 +178,24 @@ impl RenderingServiceVk {
             let device_extension_names_raw = [
                 ash::khr::swapchain::NAME.as_ptr(),
                 ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
+                ash::khr::dynamic_rendering::NAME.as_ptr(),
+                ash::khr::synchronization2::NAME.as_ptr(),
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
             let mut vulkan_features =
                 vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
+            let mut dynamic_rendering_features =
+                ash::vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
+            let mut sync_features =
+                ash::vk::PhysicalDeviceSynchronization2Features::default().synchronization2(true);
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
-                .push_next(&mut vulkan_features);
+                .push_next(&mut vulkan_features)
+                .push_next(&mut dynamic_rendering_features)
+                .push_next(&mut sync_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -259,48 +265,6 @@ impl RenderingServiceVk {
                 unsafe { device.create_image_view(&create_view_info, None) }.unwrap()
             })
             .collect();
-        let render_pass = {
-            let attachment_descriptions = [vk::AttachmentDescription::default()
-                .format(surface_format.format)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                // .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
-            let color_attachments = [vk::AttachmentReference::default()
-                .attachment(0)
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-            let subpass_descriptions = [vk::SubpassDescription::default()
-                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                .color_attachments(&color_attachments)];
-            let subpass_dependencies = [vk::SubpassDependency::default()
-                .src_subpass(vk::SUBPASS_EXTERNAL)
-                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .dst_access_mask(
-                    vk::AccessFlags::COLOR_ATTACHMENT_READ
-                        | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                )
-                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)];
-            let create_info = vk::RenderPassCreateInfo::default()
-                .attachments(&attachment_descriptions)
-                .subpasses(&subpass_descriptions)
-                .dependencies(&subpass_dependencies);
-            unsafe { device.create_render_pass(&create_info, None) }.unwrap()
-        };
-
-        let framebuffers = {
-            present_image_views.iter().map(|image_view| {
-                let attachments = [*image_view];
-                let create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(render_pass)
-                    .attachments(&attachments)
-                    .width(640)
-                    .height(480)
-                    .layers(1);
-                unsafe { device.create_framebuffer(&create_info, None) }.unwrap()
-            })
-        }
-        .collect();
 
         let shader_module = {
             let mut cursor = Cursor::new(include_bytes!("terminal.spv"));
@@ -467,8 +431,13 @@ impl RenderingServiceVk {
                 .logic_op(vk::LogicOp::CLEAR)
                 .attachments(&blend_attachment_states);
             let dynamic_state = vk::PipelineDynamicStateCreateInfo::default();
+            let color_attachment_formats = [surface_format.format];
+            let create_info = ash::vk::PipelineRenderingCreateInfo::default()
+                .color_attachment_formats(&color_attachment_formats);
+            let ptr =
+                ((&create_info) as *const ash::vk::PipelineRenderingCreateInfo) as *const c_void;
             let create_infos: [_; 3] = std::array::from_fn(|index| {
-                vk::GraphicsPipelineCreateInfo::default()
+                let mut info = ash::vk::GraphicsPipelineCreateInfo::default()
                     .stages(&stage_table[index])
                     .vertex_input_state(&vertex_input_state)
                     .input_assembly_state(&input_assembly_state)
@@ -478,8 +447,9 @@ impl RenderingServiceVk {
                     .depth_stencil_state(&depth_stencil_state)
                     .color_blend_state(&color_blend_state)
                     .dynamic_state(&dynamic_state)
-                    .render_pass(render_pass)
-                    .layout(layout_table[index])
+                    .layout(layout_table[index]);
+                info.p_next = ptr;
+                info
             });
 
             unsafe {
@@ -736,7 +706,6 @@ impl RenderingServiceVk {
                 instance,
                 device,
                 queue,
-                render_pass,
                 pipelines,
                 command_fences,
                 display_semaphores,
@@ -749,7 +718,6 @@ impl RenderingServiceVk {
                 swapchain,
                 swapchain_images,
                 present_image_views,
-                framebuffers,
                 redraw_requested_receiver,
                 // Resources
                 buffer_memory: device_memory,
@@ -839,19 +807,6 @@ impl RenderingServiceVk {
         }
         .unwrap();
 
-        let framebuffer = self.framebuffers[next_frame_index as usize];
-        let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(self.render_pass)
-            .framebuffer(framebuffer)
-            .render_area(
-                vk::Rect2D::default().extent(vk::Extent2D::default().width(640).height(480)),
-            )
-            .clear_values(&[vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0.1, 0.2, 0.3, 1.0],
-                },
-            }]);
-
         if frame > 0 {
             unsafe { device.wait_for_fences(&[previous_command_fence], true, u64::MAX) }.unwrap();
         }
@@ -898,12 +853,46 @@ impl RenderingServiceVk {
         }
 
         unsafe {
-            device.cmd_begin_render_pass(
+            device.cmd_pipeline_barrier(
                 command_buffer,
-                &render_pass_begin_info,
-                vk::SubpassContents::default(),
+                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .new_layout(ash::vk::ImageLayout::ATTACHMENT_OPTIMAL)
+                    .image(self.swapchain_images[next_frame_index as usize])
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)],
             )
         };
+
+        let color_attachments = [ash::vk::RenderingAttachmentInfo::default()
+            .image_view(self.present_image_views[next_frame_index as usize])
+            .image_layout(ash::vk::ImageLayout::ATTACHMENT_OPTIMAL)
+            .load_op(ash::vk::AttachmentLoadOp::CLEAR)
+            .clear_value(ash::vk::ClearValue {
+                color: ash::vk::ClearColorValue {
+                    float32: [0.1, 0.2, 0.3, 1.0],
+                },
+            })];
+        let begin_info = ash::vk::RenderingInfo::default()
+            .render_area(
+                ash::vk::Rect2D::default()
+                    .extent(ash::vk::Extent2D::default().width(640).height(480)),
+            )
+            .layer_count(1)
+            .color_attachments(&color_attachments);
+        unsafe { device.cmd_begin_rendering(command_buffer, &begin_info) };
 
         for subpass_info in &self.subpass_info_table {
             unsafe {
@@ -968,7 +957,32 @@ impl RenderingServiceVk {
             };
         }
 
-        unsafe { device.cmd_end_render_pass(command_buffer) };
+        unsafe { device.cmd_end_rendering(command_buffer) };
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
+                    .image(self.swapchain_images[next_frame_index as usize])
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .src_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                    .dst_access_mask(ash::vk::AccessFlags::MEMORY_READ)],
+            )
+        };
 
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
@@ -1059,10 +1073,6 @@ impl Drop for RenderingServiceVk {
 
         for pipeline in &self.pipelines {
             unsafe { device.destroy_pipeline(*pipeline, None) };
-        }
-
-        for framebuffer in &self.framebuffers {
-            unsafe { device.destroy_framebuffer(*framebuffer, None) };
         }
 
         for image in &self.swapchain_images {
