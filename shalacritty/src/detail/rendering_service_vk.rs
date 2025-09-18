@@ -541,8 +541,7 @@ impl RenderingServiceVk {
             let index_ptr = unsafe { vertrex_ptr.add(16) } as *mut u16;
             let background_view_ptr = unsafe { index_ptr.add(16) } as *mut BackgroundView;
             let character_data_ptr =
-                unsafe { background_view_ptr.byte_add(std::mem::size_of::<BackgroundView>()) }
-                    as *mut CharacterData;
+                unsafe { background_view_ptr.byte_add(64) } as *mut CharacterData;
 
             (
                 unsafe { std::slice::from_raw_parts_mut(vertrex_ptr, 16) },
@@ -639,14 +638,16 @@ impl RenderingServiceVk {
         };
 
         {
+            // 64 byte 分なアラインメント調節
+            // TODO: アラインメントはデバイスに問い合わせた値を利用する
             let buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer)
-                .offset(4 * 16 + 2 * 16)
+                .offset(4 * 16 + 64)
                 .range(std::mem::size_of::<BackgroundView>() as u64)];
             let character_buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer)
-                .offset(4 * 16 + 2 * 16 + std::mem::size_of::<BackgroundView>() as u64)
-                .range(std::mem::size_of::<BackgroundView>() as u64)];
+                .offset(4 * 16 + 64 + std::mem::size_of::<BackgroundView>() as u64)
+                .range(2 * std::mem::size_of::<CharacterData>() as u64)];
             let image_info = [vk::DescriptorImageInfo::default()
                 .sampler(sampler)
                 .image_view(image_view)
