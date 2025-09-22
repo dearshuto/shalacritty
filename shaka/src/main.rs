@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use shaka::RenderingService;
+use shaka::{ConfigService, RenderingService};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -28,12 +28,19 @@ impl App {
     }
 }
 
+//           resize ->
+// config -> shell -> diff  -> binarize -> Render
+//        -> Image    |
+//        -> glyph  <-            ↑
+//             └ -> -> -> -> -> ->
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = WindowAttributes::default()
             .with_inner_size(PhysicalSize::new(640, 480))
             .with_visible(false);
         let window = event_loop.create_window(window_attributes).unwrap();
+
+        let config_service = ConfigService::new();
 
         let (_, rendering_service) = RenderingService::new(&window);
         tokio::spawn(rendering_service.serve());

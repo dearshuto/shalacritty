@@ -14,4 +14,5 @@ crossfont = { workspace = true }
 raw-window-handle = "0.6.0"
 serde = { version = "1.0.104", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+toml = { version = "0.8.6" }
 winit = "0.30"
