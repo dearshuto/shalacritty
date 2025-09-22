@@ -6,7 +6,9 @@ use loader::ConfigProxy;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Config {}
+pub struct Config {
+    pub font_size: f32,
+}
 
 pub struct ConfigService {
     config_sender: tokio::sync::watch::Sender<Config>,
