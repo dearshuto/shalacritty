@@ -12,4 +12,6 @@ ash = { workspace = true }
 ash-window = { workspace = true }
 crossfont = { workspace = true }
 raw-window-handle = "0.6.0"
+serde = { version = "1.0.104", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+winit = "0.30"

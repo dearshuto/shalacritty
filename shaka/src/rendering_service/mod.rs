@@ -1,5 +1,25 @@
+use std::{borrow::Cow, ffi::c_void, io::Cursor};
+
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+pub struct Patch {
+    pub clear: Option<[f32; 4]>,
+}
+
+#[repr(C)]
+struct BackgroundView {
+    transform0: [f32; 4],
+    transform1: [f32; 4],
+}
+
+#[repr(C)]
+struct CharacterData {
+    transform0: [f32; 4],
+    transform1: [f32; 4],
+    fg_color: [f32; 4],
+    uv01: [f32; 4],
+}
 
 pub struct RenderingService {
     instance: ash::Instance,
@@ -33,7 +53,7 @@ pub struct RenderingService {
     background_image: vk::Image,
     background_image_view: vk::ImageView,
 
-    // subpass_info_table: Vec<SubpassInfo>,
+    subpass_info_table: Vec<SubpassInfo>,
 
     // 再描画
     redraw_requested_receiver: tokio::sync::mpsc::Receiver<()>,
@@ -740,4 +760,44 @@ impl RenderingService {
             },
         )
     }
+
+    pub async fn serve(self) {}
+
+    unsafe extern "system" fn vulkan_debug_callback(
+        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+        message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+        p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
+        _user_data: *mut std::os::raw::c_void,
+    ) -> vk::Bool32 {
+        let callback_data = *p_callback_data;
+        let message_id_number = callback_data.message_id_number;
+
+        let message_id_name = if callback_data.p_message_id_name.is_null() {
+            Cow::from("")
+        } else {
+            std::ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy()
+        };
+
+        let message = if callback_data.p_message.is_null() {
+            Cow::from("")
+        } else {
+            std::ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
+        };
+
+        println!(
+            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
+        );
+
+        vk::FALSE
+    }
+}
+
+struct SubpassInfo {
+    pipeline_index: usize,
+
+    instance_count: u32,
+
+    descriptor_set_index: Option<usize>,
+
+    pipeline_layout_index: Option<usize>,
 }
