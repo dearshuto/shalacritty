@@ -1,5 +1,19 @@
+pub struct Patch {}
+
+pub struct PatchReceiver {
+    receiver: tokio::sync::mpsc::Receiver<Patch>,
+}
+
+impl PatchReceiver {
+    pub async fn recv(&mut self) -> Option<Patch> {
+        self.receiver.recv().await
+    }
+}
+
 pub struct PatchService {}
 
 impl PatchService {
-    pub fn new() -> Self {}
+    pub fn new() -> (PatchReceiver, Self) {
+        todo!()
+    }
 }
