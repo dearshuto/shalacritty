@@ -1,7 +1,5 @@
 mod loader;
 
-use std::path::PathBuf;
-
 use loader::ConfigProxy;
 use serde::{Deserialize, Serialize};
 

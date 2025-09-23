@@ -9,7 +9,7 @@ pub struct ExtractionInfo {
 }
 
 pub struct GlyphExtractService {
-    config_receiver: tokio::sync::mpsc::Receiver<Config>,
+    config_receiver: tokio::sync::watch::Receiver<Config>,
     chars_receiver: tokio::sync::mpsc::Receiver<String>,
     rasterizer: crossfont::Rasterizer,
 
@@ -27,7 +27,7 @@ pub struct GlyphExtractService {
 
 impl GlyphExtractService {
     pub fn new(
-        config_receiver: tokio::sync::mpsc::Receiver<Config>,
+        config_receiver: tokio::sync::watch::Receiver<Config>,
         chars_receiver: tokio::sync::mpsc::Receiver<String>,
     ) -> (Self, tokio::sync::mpsc::Receiver<ExtractionInfo>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
@@ -49,7 +49,10 @@ impl GlyphExtractService {
     pub async fn serve(mut self) {
         loop {
             tokio::select!(
-            Some(config) = self.config_receiver.recv() => self.apply_config(config).await,
+            Ok(()) = self.config_receiver.changed() => {
+                let config = self.config_receiver.borrow_and_update().clone();
+                self.apply_config(config).await;
+            },
             Some(string) = self.chars_receiver.recv() => self.extract(&string).await,
             else => break,
             )

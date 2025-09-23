@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use shaka::{ConfigService, RenderingService};
+use shaka::{BinarizeService, ConfigService, GlyphExtractService, RenderingService};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -44,6 +44,11 @@ impl ApplicationHandler for App {
 
         let (_, rendering_service) = RenderingService::new(&window);
         tokio::spawn(rendering_service.serve());
+
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        let glyph_serrvice = GlyphExtractService::new(config_service.listen(), receiver);
+
+        let binarize_service = BinarizeService::new(glyph_receiver);
 
         self.window = Some(window);
         event_loop.set_control_flow(ControlFlow::WaitUntil(
