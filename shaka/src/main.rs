@@ -3,7 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use shaka::{BinarizeService, ConfigService, GlyphExtractService, PatchService, RenderingService};
+use shaka::{
+    BinarizeService, ConfigService, GlyphExtractService, PatchService, RenderingService,
+    ShellService,
+};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -30,9 +33,9 @@ impl App {
 
 //           resize ->
 // config -> shell -> diff  -> binarize -> Render
-//        -> Image    |
-//        -> glyph  <-            ↑
-//             └ -> -> -> -> -> ->
+//        -> Image    ↑
+//        -> glyph  --
+//
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = WindowAttributes::default()
@@ -40,17 +43,18 @@ impl ApplicationHandler for App {
             .with_visible(false);
         let window = event_loop.create_window(window_attributes).unwrap();
 
-        let config_service = ConfigService::new();
+        let mut config_service = ConfigService::new();
+        let mut shell_service = ShellService::new();
 
         let (_, rendering_service) = RenderingService::new(&window);
         tokio::spawn(rendering_service.serve());
 
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-        let glyph_serrvice = GlyphExtractService::new(config_service.listen(), receiver);
+        let (glyph_serrvice, glyph_receiver) =
+            GlyphExtractService::new(config_service.listen(), shell_service.listen_str_diff());
 
-        let patch_service = PatchService::new();
+        let patch_service = PatchService::new(glyph_receiver);
 
-        let binarize_service = BinarizeService::new(glyph_receiver);
+        let binarize_service = BinarizeService::new();
 
         self.window = Some(window);
         event_loop.set_control_flow(ControlFlow::WaitUntil(

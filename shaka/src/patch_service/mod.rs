@@ -1,3 +1,5 @@
+use crate::glyph_extract_service::ExtractionInfo;
+
 pub struct Patch {}
 
 pub struct PatchReceiver {
@@ -13,7 +15,9 @@ impl PatchReceiver {
 pub struct PatchService {}
 
 impl PatchService {
-    pub fn new() -> (PatchReceiver, Self) {
+    pub fn new(
+        glyph_receiver: tokio::sync::mpsc::Receiver<ExtractionInfo>,
+    ) -> (PatchReceiver, Self) {
         todo!()
     }
 }
