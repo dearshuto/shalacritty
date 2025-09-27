@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tracing::instrument;
 
-use crate::{app::WindowSizeChangedEventArgs, detail::CancellationToken};
+use crate::app::WindowSizeChangedEventArgs;
 
 pub struct WindowSizeSendService {
     window_size_receiver: std::sync::mpsc::Receiver<WindowSizeChangedEventArgs>,
@@ -19,7 +19,7 @@ impl WindowSizeSendService {
     }
 
     #[instrument]
-    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+    pub async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(20)) => {
@@ -63,5 +63,14 @@ impl std::fmt::Debug for WindowSizeSendService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("WindowSizeSendService")?;
         std::fmt::Result::Ok(())
+    }
+}
+
+impl renge::Service for WindowSizeSendService {
+    fn serve(
+        self,
+        cancellation_token: renge::CancellationToken,
+    ) -> impl std::prelude::rust_2024::Future<Output = ()> + Send {
+        self.serve(cancellation_token)
     }
 }

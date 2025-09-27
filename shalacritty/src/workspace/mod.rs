@@ -19,7 +19,6 @@ use winit::{
 
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowSizeChangedEventArgs},
-    detail::CancellationToken,
     gfx::{ContentPlotter, GlyphTexturePatch, Renderer, RendererUpdateParams},
     Config,
 };
@@ -151,7 +150,7 @@ impl<'a, TCallback: IWorkspaceCallback> Workspace<'a, TCallback> {
         }
     }
 
-    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+    pub async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let s = self
             .window_size_changed_receiver
             .take()

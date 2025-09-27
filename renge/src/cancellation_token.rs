@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use pin_project::pin_project;
 
 pub struct CancelRequest {

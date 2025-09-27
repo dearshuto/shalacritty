@@ -9,6 +9,7 @@ rust-version = "1.73"
 [dependencies]
 asura = { path = "../asura" }
 profiler_core = { path = "../profiler_core" }
+renge = { path = "../renge" }
 term-gfx = { path = "../term-gfx" }
 
 # 2025 年 1 月 15 日のリビジョン
