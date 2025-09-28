@@ -801,3 +801,14 @@ struct SubpassInfo {
 
     pipeline_layout_index: Option<usize>,
 }
+
+impl renge::Service for RenderingService {
+    async fn serve(self, mut cancellation_token: renge::CancellationToken) {
+        loop {
+            tokio::select! {
+                _ = &mut cancellation_token => break,
+                else => {}
+            }
+        }
+    }
+}

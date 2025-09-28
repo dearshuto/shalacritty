@@ -8,6 +8,8 @@ edition = "2024"
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "5e78d20" }
 
 asura = { path = "../asura" }
+renge = { path = "../renge" }
+
 ash = { workspace = true }
 ash-window = { workspace = true }
 crossfont = { workspace = true }

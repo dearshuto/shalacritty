@@ -7,6 +7,7 @@ use shaka::{
     BinarizeService, ConfigService, GlyphExtractService, PatchService, RenderingService,
     ShellService,
 };
+use tokio::runtime::Runtime;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -15,19 +16,31 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let event_loop = EventLoop::builder().build().unwrap();
-    event_loop.run_app(&mut App::new()).unwrap();
+    event_loop
+        .run_app(&mut App::new(Arc::new(runtime)))
+        .unwrap();
 }
 
 struct App {
+    runtime: Arc<Runtime>,
     window: Option<Window>,
+
+    service_runner: Option<renge::ServiceRunner>,
 }
 
 impl App {
-    pub fn new() -> Self {
-        Self { window: None }
+    pub fn new(runtime: Arc<Runtime>) -> Self {
+        Self {
+            runtime,
+            window: None,
+            service_runner: None,
+        }
     }
 }
 
@@ -47,14 +60,19 @@ impl ApplicationHandler for App {
         let mut shell_service = ShellService::new();
 
         let (_, rendering_service) = RenderingService::new(&window);
-        tokio::spawn(rendering_service.serve());
 
         let (glyph_serrvice, glyph_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_str_diff());
 
-        let patch_service = PatchService::new(glyph_receiver);
+        // let (receiver, patch_service) = PatchService::new(glyph_receiver);
 
         let binarize_service = BinarizeService::new();
+
+        let mut service_runner = renge::ServiceRunner::new(self.runtime.clone());
+        service_runner.push(rendering_service);
+        // service_runner.push(patch_service);
+        service_runner.push(binarize_service);
+        self.service_runner = Some(service_runner);
 
         self.window = Some(window);
         event_loop.set_control_flow(ControlFlow::WaitUntil(

@@ -21,3 +21,14 @@ impl PatchService {
         todo!()
     }
 }
+
+impl renge::Service for PatchService {
+    async fn serve(self, mut cancellation_token: renge::CancellationToken) {
+        loop {
+            tokio::select! {
+                _ = &mut cancellation_token => {},
+                else => {}
+            }
+        }
+    }
+}

@@ -5,11 +5,21 @@ impl BinarizeService {
         Self {}
     }
 
-    pub async fn serve(mut self) {
+    pub async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         loop {
             tokio::select!(
-            else => break,
+                _ = &mut cancellation_token => {
+                    break;
+                },
+                else => {
+                },
             )
         }
+    }
+}
+
+impl renge::Service for BinarizeService {
+    async fn serve(self, cancellation_token: renge::CancellationToken) {
+        self.serve(cancellation_token).await;
     }
 }
