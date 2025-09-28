@@ -28,6 +28,8 @@ pub struct RenderingServiceVk {
     debug_utils_loader: ext::debug_utils::Instance,
     debug_utils_messanger: vk::DebugUtilsMessengerEXT,
 
+    dynamic_rendering_device: khr::dynamic_rendering::Device,
+
     pipelines: Vec<vk::Pipeline>,
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
@@ -203,6 +205,8 @@ impl RenderingServiceVk {
             instance.create_device(physical_device, &device_create_info, None)
         }
         .unwrap();
+
+        let dynamic_rendering_device = khr::dynamic_rendering::Device::new(&instance, &device);
 
         let queue = unsafe { device.get_device_queue(queue_family_index as u32, 0) };
         let surface_format =
@@ -710,6 +714,7 @@ impl RenderingServiceVk {
                 queue,
                 debug_utils_loader,
                 debug_utils_messanger: debug_utils,
+                dynamic_rendering_device,
                 pipelines,
                 command_fences,
                 display_semaphores,
@@ -896,7 +901,10 @@ impl RenderingServiceVk {
             )
             .layer_count(1)
             .color_attachments(&color_attachments);
-        unsafe { device.cmd_begin_rendering(command_buffer, &begin_info) };
+        unsafe {
+            self.dynamic_rendering_device
+                .cmd_begin_rendering(command_buffer, &begin_info)
+        };
 
         for subpass_info in &self.subpass_info_table {
             unsafe {
@@ -961,7 +969,10 @@ impl RenderingServiceVk {
             };
         }
 
-        unsafe { device.cmd_end_rendering(command_buffer) };
+        unsafe {
+            self.dynamic_rendering_device
+                .cmd_end_rendering(command_buffer)
+        };
 
         unsafe {
             device.cmd_pipeline_barrier(
