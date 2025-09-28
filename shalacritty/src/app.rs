@@ -20,8 +20,8 @@ use winit::{
 use crate::{
     config::ConfigServiceEx,
     detail::{
-        self, CancellationToken, ContentPlotService, GlyphExtractService, ImageCacheEx,
-        RenderingService, ShellService, WindowSizeSendService,
+        self, ContentPlotService, GlyphExtractService, ImageCacheEx, RenderingService,
+        ShellService, WindowSizeSendService,
     },
     workspace::{Action, IWorkspaceCallback, Workspace},
 };
@@ -40,7 +40,9 @@ struct Instance {
     redraw_requested_sender: Option<tokio::sync::mpsc::Sender<WindowId>>,
     redraw_requested_sender_for_workspace: Option<tokio::sync::mpsc::Sender<WindowId>>,
 
-    cance_requests: Vec<detail::CancelRequest>,
+    cance_requests: Vec<renge::CancelRequest>,
+
+    service_runner: Option<renge::ServiceRunner>,
 
     #[cfg(debug_assertions)]
     rendering_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
@@ -121,6 +123,7 @@ impl Drop for Instance {
         self.instance = None;
         self.input_sender = None;
         self.redraw_requested_sender = None;
+        self.service_runner = None;
 
         // ポーリングの終了要求
         while let Some(cancel_request) = self.cance_requests.pop() {
@@ -240,6 +243,9 @@ where
         window.set_ime_allowed(true);
 
         let window = Arc::new(window);
+
+        // ランナー
+        let mut runner = renge::ServiceRunner::new(self.runtime.clone());
 
         // 設定ファイル監視サービス
         let (config_watch_instance, config_receiver) = super::config::watch();
@@ -376,16 +382,17 @@ where
             server_backend,
         );
 
-        let (window_service_cancel_request, cancellation_token) = detail::CancellationToken::new();
-        let _ = tokio::task::Builder::new()
-            .name("WindowSizeSendService")
-            .spawn_on(
-                async move {
-                    window_size_send_service.serve(cancellation_token).await;
-                },
-                self.runtime.handle(),
-            )
-            .unwrap();
+        runner.push(window_size_send_service);
+        // let (window_service_cancel_request, cancellation_token) = renge::CancellationToken::new();
+        // let _ = tokio::task::Builder::new()
+        //     .name("WindowSizeSendService")
+        //     .spawn_on(
+        //         async move {
+        //             window_size_send_service.serve(cancellation_token).await;
+        //         },
+        //         self.runtime.handle(),
+        //     )
+        //     .unwrap();
 
         // 設定ファイルサービスタスク
         // タスク化と同時にムーブするので他のサービスたちが購読を開始してから記述している
@@ -400,7 +407,7 @@ where
             .unwrap();
 
         // シェル管理サービスタスク
-        let (cancel_request, cancellation_token) = detail::CancellationToken::new();
+        let (cancel_request, cancellation_token) = renge::CancellationToken::new();
         let _ = tokio::task::Builder::new()
             .name("ShellService")
             .spawn_on(
@@ -427,7 +434,7 @@ where
 
         // Workspace の更新処理を非同期に実行するサービス
         let (workspace_service_cancel_request, cancellation_token) =
-            detail::CancellationToken::new();
+            renge::CancellationToken::new();
         let _ = tokio::task::Builder::new()
             .name("WorkspaceUpdateService")
             .spawn_on(
@@ -449,7 +456,7 @@ where
         self.window_table.insert(id, window);
 
         let mut rendering_request_sender = None;
-        let (rendering_cancel_request, token) = CancellationToken::new();
+        let (rendering_cancel_request, token) = renge::CancellationToken::new();
         if cfg!(debug_assertions) {
             let window_attributes = winit::window::WindowAttributes::default()
                 .with_inner_size(PhysicalSize::new(640, 480))
@@ -478,10 +485,10 @@ where
             profiler_kill_sender: Some(tx),
             cance_requests: vec![
                 cancel_request,
-                window_service_cancel_request,
                 workspace_service_cancel_request,
                 rendering_cancel_request,
             ],
+            service_runner: Some(runner),
             rendering_request_sender,
         };
         self.instance = Some(instance);

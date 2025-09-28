@@ -7,7 +7,6 @@ use winit::{
 
 use crate::{
     app::{KeyboadInputEventArgs, UserEvent, WindowCreatedEventArgs, WindowSizeChangedEventArgs},
-    detail::cancelation_token::CancellationToken,
     workspace::Action,
     Config,
 };
@@ -71,7 +70,7 @@ impl ShellService {
     }
 
     #[instrument]
-    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+    pub async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         loop {
             tokio::select!(
             Some(config) = self.config_receiver.recv() => self.apply_config(config),

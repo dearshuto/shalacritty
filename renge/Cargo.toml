@@ -1,0 +1,8 @@
+[package]
+name = "renge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pin-project = "1"
+tokio = { workspace = true }

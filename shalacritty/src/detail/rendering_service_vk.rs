@@ -4,8 +4,6 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use ash::*;
 
-use crate::detail::CancellationToken;
-
 #[repr(C)]
 struct BackgroundView {
     transform0: [f32; 4],
@@ -765,7 +763,7 @@ impl RenderingServiceVk {
         )
     }
 
-    pub async fn serve(mut self, mut cancellation_token: CancellationToken) {
+    pub async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let mut draw_context = DrawContext {
             frame: 0,
             is_background_updated: false,
@@ -1111,6 +1109,15 @@ impl Drop for RenderingServiceVk {
         }
         unsafe { device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
+    }
+}
+
+impl renge::Service for RenderingServiceVk {
+    fn serve(
+        self,
+        cancellation_token: renge::CancellationToken,
+    ) -> impl std::prelude::rust_2024::Future<Output = ()> + Send {
+        self.serve(cancellation_token)
     }
 }
 
