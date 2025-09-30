@@ -3,15 +3,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ash::vk::ConditionalRenderingFlagsEXT;
 use shaka::{
-    BinarizeService, ConfigService, GlyphExtractService, PatchService, RenderingService,
-    ShellService,
+    BinarizeService, ConfigService, GlyphExtractService, InputHandlingService, PatchService,
+    RenderingService, ShellService,
 };
 use tokio::runtime::Runtime;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::WindowEvent,
+    event::{KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowAttributes},
 };
@@ -32,6 +33,7 @@ struct App {
     window: Option<Window>,
 
     service_runner: Option<renge::ServiceRunner>,
+    input_sender: Option<tokio::sync::mpsc::Sender<KeyEvent>>,
 }
 
 impl App {
@@ -40,6 +42,7 @@ impl App {
             runtime,
             window: None,
             service_runner: None,
+            input_sender: None,
         }
     }
 }
@@ -57,24 +60,34 @@ impl ApplicationHandler for App {
         let window = event_loop.create_window(window_attributes).unwrap();
 
         let mut config_service = ConfigService::new();
-        let mut shell_service = ShellService::new();
+
+        let (input_sender, input_receiver) = tokio::sync::mpsc::channel(10);
+        let (input_handling_service, spawn_request_receiver, input_receiver) =
+            InputHandlingService::new(input_receiver);
+
+        let mut shell_service = ShellService::new(spawn_request_receiver);
 
         let (_, rendering_service) = RenderingService::new(&window);
 
-        let (glyph_serrvice, glyph_receiver) =
+        let (glyph_service, glyph_receiver) =
             GlyphExtractService::new(config_service.listen(), shell_service.listen_str_diff());
 
-        // let (receiver, patch_service) = PatchService::new(glyph_receiver);
+        let (receiver, patch_service) = PatchService::new(glyph_receiver);
 
         let binarize_service = BinarizeService::new();
 
         let mut service_runner = renge::ServiceRunner::new(self.runtime.clone());
+        service_runner.push(config_service);
+        service_runner.push(input_handling_service);
+        service_runner.push(shell_service);
         service_runner.push(rendering_service);
-        // service_runner.push(patch_service);
+        service_runner.push(glyph_service);
+        service_runner.push(patch_service);
         service_runner.push(binarize_service);
         self.service_runner = Some(service_runner);
 
         self.window = Some(window);
+        self.input_sender = Some(input_sender);
         event_loop.set_control_flow(ControlFlow::WaitUntil(
             Instant::now() + Duration::from_secs(1),
         ));
@@ -96,6 +109,19 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::RedrawRequested => {}
+            WindowEvent::KeyboardInput {
+                #[allow(unused)]
+                device_id,
+                event,
+                #[allow(unused)]
+                is_synthetic,
+            } => {
+                let Some(sender) = &self.input_sender else {
+                    return;
+                };
+                let sender = sender.clone();
+                self.runtime.spawn(async move { sender.send(event).await });
+            }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
         }

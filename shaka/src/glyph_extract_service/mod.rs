@@ -46,7 +46,7 @@ impl GlyphExtractService {
         )
     }
 
-    pub async fn serve(mut self) {
+    pub async fn serve(mut self, mut token: renge::CancellationToken) {
         loop {
             tokio::select!(
             Ok(()) = self.config_receiver.changed() => {
@@ -54,6 +54,7 @@ impl GlyphExtractService {
                 self.apply_config(config).await;
             },
             Some(string) = self.chars_receiver.recv() => self.extract(&string).await,
+            _ = &mut token => break,
             else => break,
             )
         }
@@ -152,6 +153,12 @@ impl std::fmt::Debug for GlyphExtractService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("GlyphExtractService")?;
         std::fmt::Result::Ok(())
+    }
+}
+
+impl renge::Service for GlyphExtractService {
+    async fn serve(self, cancellation_token: renge::CancellationToken) {
+        self.serve(cancellation_token).await;
     }
 }
 
