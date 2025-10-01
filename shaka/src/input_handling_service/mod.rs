@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use tokio::time::Instant;
 use winit::event::KeyEvent;
 
 use crate::shell_service::SpawnRequest;
@@ -7,7 +10,7 @@ pub struct Input {
 }
 
 pub struct InputHandlingService {
-    input_receiver: tokio::sync::mpsc::Receiver<KeyEvent>,
+    input_receiver: std::sync::mpsc::Receiver<KeyEvent>,
     swawn_request_sender: tokio::sync::mpsc::Sender<SpawnRequest>,
     input_sender: tokio::sync::mpsc::Sender<Input>,
     id: Option<asura::ShellId>,
@@ -15,7 +18,7 @@ pub struct InputHandlingService {
 
 impl InputHandlingService {
     pub fn new(
-        input_receiver: tokio::sync::mpsc::Receiver<KeyEvent>,
+        input_receiver: std::sync::mpsc::Receiver<KeyEvent>,
     ) -> (
         Self,
         tokio::sync::mpsc::Receiver<SpawnRequest>,
@@ -37,17 +40,24 @@ impl InputHandlingService {
     }
 
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
+        self.request_spawn().await;
+
         loop {
             tokio::select! {
-                Some(input) = self.input_receiver.recv() => self.apply_input(input).await,
-                _ = &mut cancellation_token => break,
-                else => {},
+            _ = tokio::time::sleep(Duration::from_millis(10)) => self.poll_input().await,
+            _ = &mut cancellation_token => break,
+            else => {},
             }
         }
     }
 
-    async fn apply_input(&mut self, input: KeyEvent) {
-        println!("{:?}", input);
+    async fn poll_input(&mut self) {
+        match self.input_receiver.try_recv() {
+            Ok(key_event) => {
+                //
+            }
+            Err(_) => return,
+        }
     }
 
     async fn request_spawn(&mut self) {

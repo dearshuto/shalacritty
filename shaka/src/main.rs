@@ -33,7 +33,7 @@ struct App {
     window: Option<Window>,
 
     service_runner: Option<renge::ServiceRunner>,
-    input_sender: Option<tokio::sync::mpsc::Sender<KeyEvent>>,
+    input_sender: Option<std::sync::mpsc::Sender<KeyEvent>>,
 }
 
 impl App {
@@ -44,6 +44,14 @@ impl App {
             service_runner: None,
             input_sender: None,
         }
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.input_sender = None;
+        self.service_runner = None;
+        self.window = None;
     }
 }
 
@@ -61,7 +69,7 @@ impl ApplicationHandler for App {
 
         let mut config_service = ConfigService::new();
 
-        let (input_sender, input_receiver) = tokio::sync::mpsc::channel(10);
+        let (input_sender, input_receiver) = std::sync::mpsc::channel();
         let (input_handling_service, spawn_request_receiver, input_receiver) =
             InputHandlingService::new(input_receiver);
 
@@ -119,8 +127,8 @@ impl ApplicationHandler for App {
                 let Some(sender) = &self.input_sender else {
                     return;
                 };
-                let sender = sender.clone();
-                self.runtime.spawn(async move { sender.send(event).await });
+
+                sender.send(event).unwrap();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
