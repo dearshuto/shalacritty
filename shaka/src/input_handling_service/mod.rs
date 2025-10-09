@@ -10,7 +10,7 @@ pub struct Input {
 }
 
 pub struct InputHandlingService {
-    input_receiver: std::sync::mpsc::Receiver<KeyEvent>,
+    input_receiver: tokio::sync::mpsc::Receiver<KeyEvent>,
     swawn_request_sender: tokio::sync::mpsc::Sender<SpawnRequest>,
     input_sender: tokio::sync::mpsc::Sender<Input>,
     id: Option<asura::ShellId>,
@@ -18,7 +18,7 @@ pub struct InputHandlingService {
 
 impl InputHandlingService {
     pub fn new(
-        input_receiver: std::sync::mpsc::Receiver<KeyEvent>,
+        input_receiver: tokio::sync::mpsc::Receiver<KeyEvent>,
     ) -> (
         Self,
         tokio::sync::mpsc::Receiver<SpawnRequest>,
@@ -44,19 +44,10 @@ impl InputHandlingService {
 
         loop {
             tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(10)) => self.poll_input().await,
+            Some(key_event) = self.input_receiver.recv() => {},
             _ = &mut cancellation_token => break,
             else => {},
             }
-        }
-    }
-
-    async fn poll_input(&mut self) {
-        match self.input_receiver.try_recv() {
-            Ok(key_event) => {
-                //
-            }
-            Err(_) => return,
         }
     }
 

@@ -54,7 +54,7 @@ impl ShellService {
                         }
                     }
                     asura::Event::Exit => todo!(),
-                    asura::Event::Others => todo!(),
+                    asura::Event::Others => {}
                 },
                 Err(_) => {}
             }

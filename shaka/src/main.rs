@@ -5,8 +5,8 @@ use std::{
 
 use ash::vk::ConditionalRenderingFlagsEXT;
 use shaka::{
-    BinarizeService, ConfigService, GlyphExtractService, InputHandlingService, PatchService,
-    RenderingService, ShellService,
+    BinarizeService, ConfigService, GlyphExtractService, InputAsynchronyzer, InputHandlingService,
+    PatchService, RenderingService, ShellService,
 };
 use tokio::runtime::Runtime;
 use winit::{
@@ -70,8 +70,10 @@ impl ApplicationHandler for App {
         let mut config_service = ConfigService::new();
 
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
+        let mut input_asynchronyzer = InputAsynchronyzer::new(input_receiver);
+
         let (input_handling_service, spawn_request_receiver, input_receiver) =
-            InputHandlingService::new(input_receiver);
+            InputHandlingService::new(input_asynchronyzer.listen());
 
         let mut shell_service = ShellService::new(spawn_request_receiver);
 
@@ -86,6 +88,7 @@ impl ApplicationHandler for App {
 
         let mut service_runner = renge::ServiceRunner::new(self.runtime.clone());
         service_runner.push(config_service);
+        service_runner.push(input_asynchronyzer);
         service_runner.push(input_handling_service);
         service_runner.push(shell_service);
         service_runner.push(rendering_service);
