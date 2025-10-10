@@ -6,7 +6,10 @@ pub struct SpawnRequest {
 }
 
 pub struct ShellService {
-    multiplexer: asura::Multiplexer,
+    terminal_emulator: asura::TerminalEmulator,
+    tab_id: Vec<asura::TabId>,
+    shell_ids: HashMap<asura::ShellId, asura::DiffContext>,
+
     spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>,
     str_diff_senders: Vec<tokio::sync::mpsc::Sender<String>>,
     controller_table: HashMap<asura::ShellId, asura::ShellController>,
@@ -14,8 +17,12 @@ pub struct ShellService {
 
 impl ShellService {
     pub fn new(spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>) -> Self {
+        let (tab_id, shell_id, terminal_emulator) = asura::TerminalEmulator::new();
+
         Self {
-            multiplexer: asura::Multiplexer::new(),
+            terminal_emulator,
+            tab_id: vec![tab_id],
+            shell_ids: HashMap::default(),
             spawn_request_receiver,
             str_diff_senders: Vec::default(),
             controller_table: HashMap::default(),
@@ -32,7 +39,7 @@ impl ShellService {
         loop {
             tokio::select! {
                 Some(request) = self.spawn_request_receiver.recv() => self.apply_spawn_request(request).await,
-                _ = tokio::time::sleep(Duration::from_millis(500)) => self.poll_content().await,
+                _ = tokio::time::sleep(Duration::from_millis(20)) => self.poll_content().await,
                 _ = &mut cancellation_token => break,
             }
         }
@@ -45,19 +52,19 @@ impl ShellService {
     }
 
     async fn poll_content(&mut self) {
-        for controller in self.controller_table.values() {
-            match controller.try_recv_event() {
-                Ok(event) => match event {
-                    asura::Event::Updated => {
-                        for content in controller.read_contents().acquire_contents() {
-                            print!("{}", content.code);
-                        }
-                    }
-                    asura::Event::Exit => todo!(),
-                    asura::Event::Others => {}
-                },
-                Err(_) => {}
+        // まずは更新をかける
+        self.terminal_emulator.update();
+
+        for (shell_id, context) in &mut self.shell_ids {
+            let Some(is_dirty) = self.terminal_emulator.is_dirty(*shell_id) else {
+                continue;
+            };
+
+            if !is_dirty {
+                continue;
             }
+
+            let diff = self.terminal_emulator.diff(*shell_id, context);
         }
     }
 }
