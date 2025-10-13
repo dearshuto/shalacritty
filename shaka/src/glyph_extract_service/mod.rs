@@ -10,7 +10,7 @@ pub struct ExtractionInfo {
 
 pub struct GlyphExtractService {
     config_receiver: tokio::sync::watch::Receiver<Config>,
-    chars_receiver: tokio::sync::mpsc::Receiver<String>,
+    chars_receiver: tokio::sync::mpsc::Receiver<HashSet<char>>,
     rasterizer: crossfont::Rasterizer,
 
     font_key: Option<crossfont::FontKey>,
@@ -28,7 +28,7 @@ pub struct GlyphExtractService {
 impl GlyphExtractService {
     pub fn new(
         config_receiver: tokio::sync::watch::Receiver<Config>,
-        chars_receiver: tokio::sync::mpsc::Receiver<String>,
+        chars_receiver: tokio::sync::mpsc::Receiver<HashSet<char>>,
     ) -> (Self, tokio::sync::mpsc::Receiver<ExtractionInfo>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
         (
@@ -60,29 +60,29 @@ impl GlyphExtractService {
         }
     }
 
-    async fn extract(&mut self, str: &str) {
+    async fn extract(&mut self, str: &HashSet<char>) {
         // フォントサイズが不明な状態だとなにもしない
         let Some(font_size) = self.current_font_size else {
-            self.lazy_string = Some(str.to_string());
+            self.lazy_string = Some(str.iter().collect());
             return;
         };
 
         // FontKey がなければグリフが決まらないのでなにもしない
         let Some(font_key) = self.font_key else {
-            self.lazy_string = Some(str.to_string());
+            self.lazy_string = Some(str.iter().collect());
             return;
         };
 
         // ラスタライズ
         let mut rasterized_glyph = HashMap::default();
-        for c in str.chars() {
+        for c in str {
             // ラスタライズ済みなら何もしない
             if self.glyph_cache.contains(&c) {
                 continue;
             }
 
             let Ok(glyph) = self.rasterizer.get_glyph(crossfont::GlyphKey {
-                character: c,
+                character: *c,
                 font_key,
                 size: crossfont::Size::new(font_size),
             }) else {
@@ -90,8 +90,8 @@ impl GlyphExtractService {
                 continue;
             };
 
-            rasterized_glyph.insert(c, glyph);
-            self.glyph_cache.insert(c);
+            rasterized_glyph.insert(*c, glyph);
+            self.glyph_cache.insert(*c);
         }
 
         // 更新した文字を通知
@@ -121,7 +121,7 @@ impl GlyphExtractService {
 
         // 遅延初期化分
         if let Some(lazy_str) = self.lazy_string.take() {
-            self.extract(&lazy_str).await;
+            self.extract(&lazy_str.chars().collect()).await;
         }
     }
 

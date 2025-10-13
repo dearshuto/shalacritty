@@ -75,7 +75,7 @@ impl ApplicationHandler for App {
         let (input_handling_service, spawn_request_receiver, input_receiver) =
             InputHandlingService::new(input_asynchronyzer.listen());
 
-        let mut shell_service = ShellService::new(spawn_request_receiver);
+        let (mut shell_service, diff_receiver) = ShellService::new(spawn_request_receiver);
 
         let (_, rendering_service) = RenderingService::new(&window);
 

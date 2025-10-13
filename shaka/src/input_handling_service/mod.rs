@@ -40,8 +40,6 @@ impl InputHandlingService {
     }
 
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
-        self.request_spawn().await;
-
         loop {
             tokio::select! {
             Some(key_event) = self.input_receiver.recv() => {},

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 pub struct SpawnRequest {
     pub config: asura::Config,
@@ -11,25 +14,33 @@ pub struct ShellService {
     shell_ids: HashMap<asura::ShellId, asura::DiffContext>,
 
     spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>,
-    str_diff_senders: Vec<tokio::sync::mpsc::Sender<String>>,
+    diff_sender: tokio::sync::mpsc::Sender<asura::Diff>,
+    str_diff_senders: Vec<tokio::sync::mpsc::Sender<HashSet<char>>>,
     controller_table: HashMap<asura::ShellId, asura::ShellController>,
 }
 
 impl ShellService {
-    pub fn new(spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>) -> Self {
+    pub fn new(
+        spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>,
+    ) -> (Self, tokio::sync::mpsc::Receiver<asura::Diff>) {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
         let (tab_id, shell_id, terminal_emulator) = asura::TerminalEmulator::new();
 
-        Self {
-            terminal_emulator,
-            tab_id: vec![tab_id],
-            shell_ids: HashMap::default(),
-            spawn_request_receiver,
-            str_diff_senders: Vec::default(),
-            controller_table: HashMap::default(),
-        }
+        (
+            Self {
+                terminal_emulator,
+                tab_id: vec![tab_id],
+                shell_ids: HashMap::from([(shell_id, asura::DiffContext::new())]),
+                spawn_request_receiver,
+                diff_sender: sender,
+                str_diff_senders: Vec::default(),
+                controller_table: HashMap::default(),
+            },
+            receiver,
+        )
     }
 
-    pub fn listen_str_diff(&mut self) -> tokio::sync::mpsc::Receiver<String> {
+    pub fn listen_str_diff(&mut self) -> tokio::sync::mpsc::Receiver<HashSet<char>> {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
         self.str_diff_senders.push(sender);
         receiver
@@ -45,16 +56,15 @@ impl ShellService {
         }
     }
 
-    async fn apply_spawn_request(&mut self, spawn_request: SpawnRequest) {
-        let (id, controller) = self.multiplexer.spawn(&spawn_request.config);
-        spawn_request.ack.send(id).unwrap();
-        self.controller_table.insert(id, controller);
+    async fn apply_spawn_request(&mut self, _spawn_request: SpawnRequest) {
+        //
     }
 
     async fn poll_content(&mut self) {
         // まずは更新をかける
         self.terminal_emulator.update();
 
+        let mut str: HashSet<char, _> = HashSet::new();
         for (shell_id, context) in &mut self.shell_ids {
             let Some(is_dirty) = self.terminal_emulator.is_dirty(*shell_id) else {
                 continue;
@@ -65,6 +75,23 @@ impl ShellService {
             }
 
             let diff = self.terminal_emulator.diff(*shell_id, context);
+            for diff in &diff.content_diff {
+                match diff {
+                    asura::DiffType::Add(diff_content) => {
+                        str.insert(diff_content.content.code);
+                    }
+                    asura::DiffType::Update(_diff_content) => {}
+                    asura::DiffType::Remove(_) => {}
+                }
+            }
+        }
+
+        if str.is_empty() {
+            return;
+        }
+
+        for sender in &self.str_diff_senders {
+            sender.send(str.clone()).await.unwrap();
         }
     }
 }
