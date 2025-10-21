@@ -14,4 +14,4 @@ pub use input_asynchronyzer::InputAsynchronyzer;
 pub use input_handling_service::InputHandlingService;
 pub use patch_service::PatchService;
 pub use rendering_service::RenderingService;
-pub use shell_service::ShellService;
+pub use shell_service::{ShellService, ShellServiceEvent};

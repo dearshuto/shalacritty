@@ -3,10 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ash::vk::ConditionalRenderingFlagsEXT;
 use shaka::{
     BinarizeService, ConfigService, GlyphExtractService, InputAsynchronyzer, InputHandlingService,
-    PatchService, RenderingService, ShellService,
+    PatchService, RenderingService, ShellService, ShellServiceEvent,
 };
 use tokio::runtime::Runtime;
 use winit::{
@@ -22,14 +21,20 @@ fn main() {
         .enable_all()
         .build()
         .unwrap();
-    let event_loop = EventLoop::builder().build().unwrap();
+    let event_loop = EventLoop::<ShellServiceEvent>::with_user_event()
+        .build()
+        .unwrap();
+
+    let proxy = event_loop.create_proxy();
+
     event_loop
-        .run_app(&mut App::new(Arc::new(runtime)))
+        .run_app(&mut App::new(proxy, Arc::new(runtime)))
         .unwrap();
 }
 
 struct App {
     runtime: Arc<Runtime>,
+    event_loop_proxy: winit::event_loop::EventLoopProxy<ShellServiceEvent>,
     window: Option<Window>,
 
     service_runner: Option<renge::ServiceRunner>,
@@ -37,9 +42,13 @@ struct App {
 }
 
 impl App {
-    pub fn new(runtime: Arc<Runtime>) -> Self {
+    pub fn new(
+        event_loop_proxy: winit::event_loop::EventLoopProxy<ShellServiceEvent>,
+        runtime: Arc<Runtime>,
+    ) -> Self {
         Self {
             runtime,
+            event_loop_proxy,
             window: None,
             service_runner: None,
             input_sender: None,
@@ -60,7 +69,7 @@ impl Drop for App {
 //        -> Image    ↑
 //        -> glyph  --
 //
-impl ApplicationHandler for App {
+impl ApplicationHandler<ShellServiceEvent> for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = WindowAttributes::default()
             .with_inner_size(PhysicalSize::new(640, 480))
@@ -72,10 +81,12 @@ impl ApplicationHandler for App {
         let (input_sender, input_receiver) = std::sync::mpsc::channel();
         let mut input_asynchronyzer = InputAsynchronyzer::new(input_receiver);
 
-        let (input_handling_service, spawn_request_receiver, input_receiver) =
-            InputHandlingService::new(input_asynchronyzer.listen());
+        let mut input_handling_service = InputHandlingService::new(input_asynchronyzer.listen());
 
-        let (mut shell_service, diff_receiver) = ShellService::new(spawn_request_receiver);
+        let (mut shell_service, diff_receiver) = ShellService::new(
+            self.event_loop_proxy.clone(),
+            input_handling_service.listen(),
+        );
 
         let (_, rendering_service) = RenderingService::new(&window);
 
@@ -136,5 +147,13 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
         }
+    }
+
+    fn user_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: ShellServiceEvent,
+    ) {
+        let _ = (event_loop, event);
     }
 }

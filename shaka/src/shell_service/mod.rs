@@ -3,6 +3,10 @@ use std::{
     time::Duration,
 };
 
+use crate::input_handling_service::Action;
+
+pub struct ShellServiceEvent {}
+
 pub struct SpawnRequest {
     pub config: asura::Config,
     pub ack: tokio::sync::oneshot::Sender<asura::ShellId>,
@@ -13,7 +17,8 @@ pub struct ShellService {
     tab_id: Vec<asura::TabId>,
     shell_ids: HashMap<asura::ShellId, asura::DiffContext>,
 
-    spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>,
+    event_loop_proxy: winit::event_loop::EventLoopProxy<ShellServiceEvent>,
+    action_receiver: tokio::sync::mpsc::Receiver<Action>,
     diff_sender: tokio::sync::mpsc::Sender<asura::Diff>,
     str_diff_senders: Vec<tokio::sync::mpsc::Sender<HashSet<char>>>,
     controller_table: HashMap<asura::ShellId, asura::ShellController>,
@@ -21,17 +26,19 @@ pub struct ShellService {
 
 impl ShellService {
     pub fn new(
-        spawn_request_receiver: tokio::sync::mpsc::Receiver<SpawnRequest>,
+        event_loop_proxy: winit::event_loop::EventLoopProxy<ShellServiceEvent>,
+        action_receiver: tokio::sync::mpsc::Receiver<Action>,
     ) -> (Self, tokio::sync::mpsc::Receiver<asura::Diff>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
         let (tab_id, shell_id, terminal_emulator) = asura::TerminalEmulator::new();
 
         (
             Self {
+                event_loop_proxy,
                 terminal_emulator,
                 tab_id: vec![tab_id],
                 shell_ids: HashMap::from([(shell_id, asura::DiffContext::new())]),
-                spawn_request_receiver,
+                action_receiver,
                 diff_sender: sender,
                 str_diff_senders: Vec::default(),
                 controller_table: HashMap::default(),
@@ -49,15 +56,15 @@ impl ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         loop {
             tokio::select! {
-                Some(request) = self.spawn_request_receiver.recv() => self.apply_spawn_request(request).await,
+                Some(action) = self.action_receiver.recv() => self.handle_action(action).await,
                 _ = tokio::time::sleep(Duration::from_millis(20)) => self.poll_content().await,
                 _ = &mut cancellation_token => break,
             }
         }
     }
 
-    async fn apply_spawn_request(&mut self, _spawn_request: SpawnRequest) {
-        //
+    async fn handle_action(&mut self, action: Action) {
+        self.event_loop_proxy.send_event(ShellServiceEvent {});
     }
 
     async fn poll_content(&mut self) {
