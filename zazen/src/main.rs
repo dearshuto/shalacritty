@@ -6,6 +6,7 @@ use std::{
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
+    layout::Position,
     widgets::{Block, Borders, List, ListItem, Widget},
     DefaultTerminal,
 };
@@ -45,6 +46,11 @@ impl App {
         let duration = Duration::from_millis(16);
         loop {
             terminal.draw(|frame| {
+                let controller = self.controller_table.values().next().unwrap();
+                let (cursor_x, cursor_y) = controller.read_contents().get_cursor_point();
+
+                frame.set_cursor_position(Position::new(cursor_x as u16 + 1, cursor_y as u16 + 1));
+
                 // TODO: 描画領域をシェルに反映する
                 frame.render_widget(&self, frame.area())
             })?;
