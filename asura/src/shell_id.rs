@@ -1,6 +1,6 @@
 use crate::TeletypeId;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ShellId {
     ttyi_id: TeletypeId,
 }

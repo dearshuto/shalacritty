@@ -5,7 +5,10 @@ use std::{
 
 use crate::input_handling_service::Action;
 
-pub struct ShellServiceEvent {}
+pub enum ShellServiceEvent {
+    Create(asura::TabId, [asura::ShellId; 8]),
+    Remove(asura::TabId, [asura::ShellId; 8]),
+}
 
 pub struct SpawnRequest {
     pub config: asura::Config,
