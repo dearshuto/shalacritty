@@ -6,6 +6,7 @@ use std::{
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
+    layout::{Constraint, Layout},
     widgets::{Block, Borders, List, ListItem, Widget},
     DefaultTerminal,
 };
@@ -45,8 +46,15 @@ impl App {
         let duration = Duration::from_millis(16);
         loop {
             terminal.draw(|frame| {
+                // 描画領域を半分に
+                let area = frame.area();
+                let chunks = Layout::default()
+                    .direction(ratatui::layout::Direction::Vertical)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(area);
+
                 // TODO: 描画領域をシェルに反映する
-                frame.render_widget(&self, frame.area())
+                frame.render_widget(&self, chunks[0])
             })?;
             while event::poll(duration)? {
                 let Event::Key(key) = event::read()? else {
