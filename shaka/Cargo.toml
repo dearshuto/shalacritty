@@ -10,5 +10,6 @@ path = "src/lib.rs"
 [dependencies]
 asura = { path = "../asura" }
 
-wasmtime = "*"
 tokio = { version = "1", features = ["full"] }
+wasmtime = "*"
+winit = "0.30"
