@@ -3,6 +3,10 @@ name = "shaka"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+# name = "shaka-api"
+path = "src/lib.rs"
+
 [dependencies]
 asura = { path = "../asura" }
 
