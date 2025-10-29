@@ -1,3 +1,5 @@
+mod host_api;
+
 pub struct PluginSystem {
     instance: wasmtime::Instance,
     store: wasmtime::Store<u32>,
@@ -19,19 +21,9 @@ impl PluginSystem {
 
         let mut linker = wasmtime::Linker::new(&engine);
         linker
-            .func_wrap(
-                "host",
-                "host_func",
-                |caller: wasmtime::Caller<'_, u32>, param: i32| {
-                    println!("Got {} from WebAssembly", param);
-                    println!("my host state is: {}", caller.data());
-                },
-            )
+            .func_wrap("host", "host_func", host_api::func)
             .unwrap();
 
-        // All wasm objects operate within the context of a "store". Each
-        // `Store` has a type parameter to store host-specific data, which in
-        // this case we're using `4` for.
         let mut store = wasmtime::Store::new(&engine, 4);
         let instance = linker.instantiate(&mut store, &module).unwrap();
 
@@ -44,7 +36,6 @@ impl PluginSystem {
             .get_typed_func::<(), ()>(&mut self.store, "hello")
             .unwrap();
 
-        // And finally we can call the wasm!
         hello.call(&mut self.store, ()).unwrap();
     }
 }
