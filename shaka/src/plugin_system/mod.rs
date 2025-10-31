@@ -1,3 +1,5 @@
+use std::path::Path;
+
 mod host_api;
 
 pub struct PluginSystem {
@@ -40,5 +42,21 @@ impl PluginSystem {
             .unwrap();
 
         hello.call(&mut self.store, ()).unwrap();
+    }
+
+    fn load_plugin<T>(path: T) -> Result<i32, ()>
+    where
+        T: AsRef<Path>,
+    {
+        let Ok(is_exist) = std::fs::exists(path) else {
+            return Err(());
+        };
+
+        if !is_exist {
+            return Err(());
+        }
+
+        let str = libloading::library_filename(path.as_ref());
+        let lib = unsafe { libloading::Library::new(str).unwrap() };
     }
 }
