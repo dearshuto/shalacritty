@@ -8,6 +8,7 @@ asura = { path = "../asura" }
 
 ash = { workspace = true }
 ash-window = { workspace = true }
+libloading = "*"
 wasmtime = "*"
 raw-window-handle = "0.6.0"
 tokio = { version = "1", features = ["full"] }

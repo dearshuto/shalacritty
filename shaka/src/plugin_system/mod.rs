@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub struct PluginSystem {
     instance: wasmtime::Instance,
     store: wasmtime::Store<u32>,
@@ -46,5 +48,25 @@ impl PluginSystem {
 
         // And finally we can call the wasm!
         hello.call(&mut self.store, ()).unwrap();
+    }
+
+    fn load_plugin<T>(path: T) -> Result<i32, ()>
+    where
+        T: AsRef<Path>,
+    {
+        let _ = std::env::current_exe();
+        let _ = std::fs::read_dir(path.as_ref());
+
+        let Ok(is_exist) = std::fs::exists(path.as_ref()) else {
+            return Err(());
+        };
+
+        if !is_exist {
+            return Err(());
+        }
+
+        let str = libloading::library_filename(path.as_ref());
+        let lib = unsafe { libloading::Library::new(str).unwrap() };
+        todo!()
     }
 }
