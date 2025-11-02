@@ -8,5 +8,5 @@ async fn main() {
     PluginSystem::new().execute();
 
     let event_loop = EventLoop::builder().build().unwrap();
-    event_loop.run_app(&mut App::new());
+    event_loop.run_app(&mut App::new()).unwrap();
 }
