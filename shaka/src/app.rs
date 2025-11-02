@@ -4,6 +4,8 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+use crate::services::RenderingService;
+
 pub struct App {
     window: Option<Window>,
 }
@@ -18,13 +20,17 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_attributes = WindowAttributes::default();
         let window = event_loop.create_window(window_attributes).unwrap();
+
+        let rendering_service = RenderingService::new(&window);
+        tokio::spawn(rendering_service.serve());
+
         self.window = Some(window);
     }
 
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         match event {
