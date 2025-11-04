@@ -330,7 +330,19 @@ impl RenderingService {
         }
     }
 
-    pub async fn serve(self, _receiver: tokio::sync::mpsc::Receiver<()>) {}
+    async fn serve(
+        self,
+        mut receiver: tokio::sync::mpsc::Receiver<()>,
+        mut cancellation_token: renge::CancellationToken,
+    ) {
+        loop {
+            tokio::select! {
+                Some(()) = receiver.recv() => {},
+                _ = &mut cancellation_token => break,
+                else => {},
+            }
+        }
+    }
 
     extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -382,5 +394,13 @@ impl Drop for RenderingService {
         unsafe { self.surface_loader.destroy_surface(self.surface, None) };
         unsafe { self.device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
+    }
+}
+
+impl renge::ParametricService for RenderingService {
+    type Params = tokio::sync::mpsc::Receiver<()>;
+
+    async fn serve(self, params: Self::Params, cancellation_token: renge::CancellationToken) {
+        self.serve(params, cancellation_token).await;
     }
 }

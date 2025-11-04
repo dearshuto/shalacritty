@@ -42,7 +42,7 @@ struct Instance {
 
     cance_requests: Vec<renge::CancelRequest>,
 
-    service_runner: Option<renge::ServiceRunner>,
+    service_runner: Option<renge::ServiceRunner<Arc<tokio::runtime::Runtime>>>,
 
     #[cfg(debug_assertions)]
     rendering_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
