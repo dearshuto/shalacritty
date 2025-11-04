@@ -1,3 +1,4 @@
+use renge::ServiceRunner;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -11,6 +12,7 @@ pub struct UserEvent {}
 
 pub struct App {
     window: Option<Window>,
+    service_runner: renge::DefaultServiceRunner,
     #[allow(unused)]
     event_loop_proxy: EventLoopProxy<UserEvent>,
     redraw_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
@@ -20,6 +22,7 @@ impl App {
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
         Self {
             window: None,
+            service_runner: ServiceRunner::default(),
             event_loop_proxy: proxy,
             redraw_request_sender: None,
         }
@@ -34,7 +37,8 @@ impl ApplicationHandler<UserEvent> for App {
         let rendering_service = RenderingService::new(&window);
 
         let (redraw_request_sender, redraw_request_receiver) = tokio::sync::mpsc::channel(1);
-        tokio::spawn(rendering_service.serve(redraw_request_receiver));
+        self.service_runner
+            .push_with_params(rendering_service, redraw_request_receiver);
 
         self.window = Some(window);
         self.redraw_request_sender = Some(redraw_request_sender);

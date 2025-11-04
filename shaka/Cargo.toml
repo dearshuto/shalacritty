@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 asura = { path = "../asura" }
+renge = { path = "../renge" }
 
 ash = { workspace = true }
 ash-window = { workspace = true }
