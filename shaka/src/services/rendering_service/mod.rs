@@ -330,7 +330,7 @@ impl RenderingService {
         }
     }
 
-    pub async fn serve(self) {}
+    pub async fn serve(self, _receiver: tokio::sync::mpsc::Receiver<()>) {}
 
     extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
