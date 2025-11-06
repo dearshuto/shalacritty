@@ -27,7 +27,7 @@ impl BufferView {
     }
 
     pub fn character_data(&mut self) -> &mut [CharacterData] {
-        let ptr = unsafe { self.ptr.byte_add(64) } as *mut CharacterData;
+        let ptr = unsafe { self.ptr.byte_add(64 + 256) } as *mut CharacterData;
         unsafe { std::slice::from_raw_parts_mut(ptr, 1024) }
     }
 }
