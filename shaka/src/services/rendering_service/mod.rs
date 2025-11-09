@@ -1,4 +1,7 @@
 mod buffer_view;
+mod glyph_texture;
+use glyph_texture::GlyphTexture;
+
 use std::{borrow::Cow, io::Cursor, mem::offset_of};
 
 use buffer_view::BufferView;
@@ -6,16 +9,13 @@ use buffer_view::BufferView;
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::services::rendering_service::buffer_view::CharacterData;
+use crate::services::{
+    glyph_extract_service::GlyphRequest, rendering_service::buffer_view::CharacterData,
+};
 
-pub struct RenderingPatch {
-    character_patch: [CharacterData; 8],
-}
-
-impl RenderingPatch {
-    pub fn characters(&self) -> &[CharacterData] {
-        &[]
-    }
+pub struct RenderingServiceParams {
+    pub receiver: tokio::sync::mpsc::Receiver<()>,
+    pub glyph_request_sender: tokio::sync::mpsc::Sender<GlyphRequest>,
 }
 
 struct DrawParams {
@@ -24,6 +24,8 @@ struct DrawParams {
 }
 
 pub struct RenderingService {
+    glyph_texture: GlyphTexture,
+
     instance: ash::Instance,
     device: ash::Device,
     #[allow(unused)]
@@ -537,6 +539,7 @@ impl RenderingService {
         };
 
         Self {
+            glyph_texture: GlyphTexture::new(device.clone()),
             instance,
             device,
             debug_utils_loader,
@@ -569,11 +572,14 @@ impl RenderingService {
 
     async fn serve(
         self,
-        mut receiver: tokio::sync::mpsc::Receiver<()>,
+        mut params: RenderingServiceParams,
         mut cancellation_token: renge::CancellationToken,
     ) {
+        let mut receiver = params.receiver;
+
         // 本来は変更を受信したら呼び出す
-        self.apply_patch("ABCDEFG");
+        self.apply_patch("ABCDEFG", &mut params.glyph_request_sender)
+            .await;
 
         let mut draw_params = DrawParams {
             char_count: 7,
@@ -591,7 +597,16 @@ impl RenderingService {
         }
     }
 
-    fn apply_patch(&self, str: &str) {
+    async fn apply_patch(&self, str: &str, sender: &tokio::sync::mpsc::Sender<GlyphRequest>) {
+        let (s, receiver) = tokio::sync::oneshot::channel();
+        sender
+            .send(GlyphRequest::new(&['A', 'B', 'C', 'D', 'E', 'F', 'G'], s).unwrap())
+            .await
+            .unwrap();
+
+        let response = receiver.await.unwrap();
+        self.glyph_texture.write(response.glyphs());
+
         let device = &self.device;
 
         unsafe {
@@ -616,6 +631,14 @@ impl RenderingService {
                 copy_src[index].transform0 = [0.1, 0.0, x, 0.0];
                 copy_src[index].transform1 = [0.0, 0.2, -0.5, 0.0];
                 copy_src[index].fg_color = [0.0, 0.8, 0.0, 1.0];
+
+                let range = self.glyph_texture.range('A');
+                copy_src[index].uv01 = [
+                    range.upper_right()[0],
+                    range.upper_right()[1],
+                    range.lower_left()[0],
+                    range.lower_left()[1],
+                ];
             }
 
             let ranges = [vk::MappedMemoryRange::default()
@@ -916,7 +939,7 @@ impl Drop for RenderingService {
 }
 
 impl renge::ParametricService for RenderingService {
-    type Params = tokio::sync::mpsc::Receiver<()>;
+    type Params = RenderingServiceParams;
 
     async fn serve(self, params: Self::Params, cancellation_token: renge::CancellationToken) {
         self.serve(params, cancellation_token).await;

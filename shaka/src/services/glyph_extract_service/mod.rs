@@ -1,66 +1,97 @@
-use std::collections::{HashMap, HashSet};
+use crossfont::{FontDesc, Rasterize, Slant, Style, Weight};
 
-use crossfont::{FontDesc, Rasterize, RasterizedGlyph, Slant, Style, Weight};
+#[derive(Debug)]
+pub struct GlyphRequest {
+    string: [char; 64],
+    response: tokio::sync::oneshot::Sender<GlyphResponse>,
+}
 
-use crate::config_service::Config;
+impl GlyphRequest {
+    pub fn new(
+        str: &[char],
+        response: tokio::sync::oneshot::Sender<GlyphResponse>,
+    ) -> Result<Self, ()> {
+        if str.len() >= 64 {
+            return Err(());
+        }
 
-pub struct ExtractionInfo {
-    pub glyphs: HashMap<char, RasterizedGlyph>,
+        let mut me = Self {
+            string: [char::default(); 64],
+            response,
+        };
+        me.string[0..str.len()].copy_from_slice(str);
+
+        Ok(me)
+    }
+}
+
+#[derive(Debug)]
+pub struct GlyphResponse {
+    glyphs: [u8; std::mem::size_of::<crossfont::RasterizedGlyph>() * 64],
+    size: usize,
+}
+
+impl GlyphResponse {
+    pub fn glyphs(&self) -> &[crossfont::RasterizedGlyph] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self.glyphs.as_ptr() as *const crossfont::RasterizedGlyph,
+                self.size,
+            )
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Config {
+    font_size: f32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { font_size: 11.0 }
+    }
 }
 
 pub struct GlyphExtractService {
-    config_receiver: tokio::sync::watch::Receiver<Config>,
-    chars_receiver: tokio::sync::mpsc::Receiver<HashSet<char>>,
+    request_receiver: tokio::sync::mpsc::Receiver<GlyphRequest>,
+
     rasterizer: crossfont::Rasterizer,
 
     font_key: Option<crossfont::FontKey>,
     current_font_size: Option<f32>,
-
-    sender: tokio::sync::mpsc::Sender<ExtractionInfo>,
-
-    // 過去にラスタライズした文字
-    glyph_cache: HashSet<char>,
 
     // 遅延ラスタライズ
     lazy_string: Option<String>,
 }
 
 impl GlyphExtractService {
-    pub fn new(
-        config_receiver: tokio::sync::watch::Receiver<Config>,
-        chars_receiver: tokio::sync::mpsc::Receiver<HashSet<char>>,
-    ) -> (Self, tokio::sync::mpsc::Receiver<ExtractionInfo>) {
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-        (
-            Self {
-                config_receiver,
-                chars_receiver,
-                rasterizer: crossfont::Rasterizer::new().unwrap(),
-                font_key: None,
-                current_font_size: None,
-                glyph_cache: Default::default(),
-                sender,
-                lazy_string: None,
-            },
-            receiver,
-        )
+    pub fn new(request_receiver: tokio::sync::mpsc::Receiver<GlyphRequest>) -> Self {
+        Self {
+            request_receiver,
+            rasterizer: crossfont::Rasterizer::new().unwrap(),
+            font_key: None,
+            current_font_size: None,
+            lazy_string: None,
+        }
     }
 
-    pub async fn serve(mut self, mut token: renge::CancellationToken) {
+    async fn serve(mut self, mut token: renge::CancellationToken) {
+        // TODO: 設定のリアルタイム更新対応
+        self.apply_config(Config::default()).await;
+
         loop {
             tokio::select!(
-            Ok(()) = self.config_receiver.changed() => {
-                let config = self.config_receiver.borrow_and_update().clone();
-                self.apply_config(config).await;
-            },
-            Some(string) = self.chars_receiver.recv() => self.extract(&string).await,
+            Some(request) = self.request_receiver.recv() => self.handle_request(request).await,
             _ = &mut token => break,
             else => break,
             )
         }
     }
 
-    async fn extract(&mut self, str: &HashSet<char>) {
+    async fn handle_request(&mut self, request: GlyphRequest) {
+        let str = &request.string;
+
         // フォントサイズが不明な状態だとなにもしない
         let Some(font_size) = self.current_font_size else {
             self.lazy_string = Some(str.iter().collect());
@@ -73,14 +104,15 @@ impl GlyphExtractService {
             return;
         };
 
+        let mut glyph_response = GlyphResponse {
+            glyphs: [0; _],
+            size: 0,
+        };
+
         // ラスタライズ
-        let mut rasterized_glyph = HashMap::default();
+        let mut rasterized_count = 0;
         for c in str {
             // ラスタライズ済みなら何もしない
-            if self.glyph_cache.contains(&c) {
-                continue;
-            }
-
             let Ok(glyph) = self.rasterizer.get_glyph(crossfont::GlyphKey {
                 character: *c,
                 font_key,
@@ -90,17 +122,18 @@ impl GlyphExtractService {
                 continue;
             };
 
-            rasterized_glyph.insert(*c, glyph);
-            self.glyph_cache.insert(*c);
+            let ptr = unsafe {
+                glyph_response.glyphs.as_ptr().byte_offset(
+                    (rasterized_count * std::mem::size_of::<crossfont::RasterizedGlyph>()) as isize,
+                )
+            } as *mut crossfont::RasterizedGlyph;
+            unsafe { *ptr = glyph };
+            rasterized_count += 1;
         }
 
-        // 更新した文字を通知
-        self.sender
-            .send(ExtractionInfo {
-                glyphs: rasterized_glyph,
-            })
-            .await
-            .unwrap_or_default();
+        glyph_response.size = rasterized_count;
+
+        request.response.send(glyph_response).unwrap();
     }
 
     async fn apply_config(&mut self, config: Config) {
@@ -119,10 +152,10 @@ impl GlyphExtractService {
 
         self.current_font_size = Some(config.font_size);
 
-        // 遅延初期化分
-        if let Some(lazy_str) = self.lazy_string.take() {
-            self.extract(&lazy_str.chars().collect()).await;
-        }
+        // // 遅延初期化分
+        // if let Some(lazy_str) = self.lazy_string.take() {
+        //     self.extract(&lazy_str.chars().collect()).await;
+        // }
     }
 
     fn create_font_key(
