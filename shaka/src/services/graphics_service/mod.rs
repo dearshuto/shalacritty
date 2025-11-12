@@ -337,7 +337,28 @@ impl GraphicsService {
     }
 }
 
-pub struct GraphicsServiceProxy {}
+pub struct GraphicsServiceFacade<T, O> {
+    sender: tokio::sync::mpsc::Sender<T>,
+    _phantom: std::marker::PhantomData<O>,
+}
+
+impl<T, O> GraphicsServiceFacade<T, O> {
+    pub fn new() -> Self {
+        todo!()
+    }
+
+    pub async fn request(self, request: T) -> O {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let request_arapter = ShaderModuleRequestAdapter { sender };
+        self.sender.send(request).await;
+        receiver.await.unwrap()
+    }
+}
+
+pub struct GraphicsServiceProxy {
+    shader_module_request_sender:
+        tokio::sync::mpsc::Sender<ShaderModuleRequestAdapter<vk::ShaderModule>>,
+}
 
 impl GraphicsServiceProxy {
     pub async fn request_image(&self, request: ImageRequest) -> ImageHandle {
@@ -345,7 +366,8 @@ impl GraphicsServiceProxy {
     }
 
     pub async fn request_shader_module(&self, request: ShaderModuleRequest) -> vk::ShaderModule {
-        todo!()
+        let facade = GraphicsServiceFacade::new();
+        facade.request(request).await
     }
 
     pub async fn request_pipeline_layout(&self) -> vk::PipelineLayout {
@@ -361,6 +383,10 @@ impl GraphicsServiceProxy {
 }
 
 pub struct ShaderModuleRequest {}
+
+pub struct ShaderModuleRequestAdapter<T> {
+    sender: tokio::sync::oneshot::Sender<T>,
+}
 
 pub struct GraphicsPipelineRequest {}
 
