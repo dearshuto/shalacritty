@@ -1,7 +1,11 @@
-use std::{borrow::Cow, collections::HashMap};
+mod facade;
+
+use std::borrow::Cow;
 
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+use facade::{GraphicsServiceFacade, GraphicsServiceRequest};
 
 pub struct GraphicsService {
     instance: ash::Instance,
@@ -334,24 +338,6 @@ impl GraphicsService {
         );
 
         vk::FALSE
-    }
-}
-
-pub struct GraphicsServiceFacade<T, O> {
-    sender: tokio::sync::mpsc::Sender<T>,
-    _phantom: std::marker::PhantomData<O>,
-}
-
-impl<T, O> GraphicsServiceFacade<T, O> {
-    pub fn new() -> Self {
-        todo!()
-    }
-
-    pub async fn request(self, request: T) -> O {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let request_arapter = ShaderModuleRequestAdapter { sender };
-        self.sender.send(request).await;
-        receiver.await.unwrap()
     }
 }
 
