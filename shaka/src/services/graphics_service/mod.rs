@@ -369,7 +369,9 @@ impl GraphicsService {
         shader_module
     }
 
-    // fn create_pipelines
+    fn create_pipelines(&mut self, request: PipelinesRequest) -> [ash::vk::Pipeline; 8] {
+        [vk::Pipeline::null(); 8]
+    }
 
     extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -495,9 +497,7 @@ pub struct ShaderModuleRequest {
     pub code: Vec<u32>,
 }
 
-pub struct ShaderModuleRequestAdapter<T> {
-    sender: tokio::sync::oneshot::Sender<T>,
-}
+pub struct PipelinesRequest {}
 
 pub struct GraphicsPipelineRequest {}
 
