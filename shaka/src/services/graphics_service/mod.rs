@@ -1,13 +1,12 @@
-mod facade;
-
 use std::borrow::Cow;
 
-use ash::*;
+use ash::{vk::Handle, *};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use facade::{GraphicsServiceFacade, GraphicsServiceRequest};
-
 pub struct GraphicsService {
+    request_receivers: [Option<tokio::sync::mpsc::Receiver<GraphicsServiceRequestAdapter>>; 4],
+    request_senders: Vec<tokio::sync::mpsc::Sender<GraphicsServiceRequestAdapter>>,
+
     instance: ash::Instance,
     device: ash::Device,
     queue: vk::Queue,
@@ -281,7 +280,25 @@ impl GraphicsService {
             )
         };
 
+        let (request_senders, request_receivers) = {
+            let (sender0, receiver0) = tokio::sync::mpsc::channel(1);
+            let (sender1, receiver1) = tokio::sync::mpsc::channel(1);
+            let (sender2, receiver2) = tokio::sync::mpsc::channel(1);
+            let (sender3, receiver3) = tokio::sync::mpsc::channel(1);
+            (
+                vec![sender0, sender1, sender2, sender3],
+                [
+                    Some(receiver0),
+                    Some(receiver1),
+                    Some(receiver2),
+                    Some(receiver3),
+                ],
+            )
+        };
+
         Self {
+            request_senders,
+            request_receivers,
             instance,
             device,
             queue,
@@ -303,14 +320,56 @@ impl GraphicsService {
     }
 
     pub fn create_proxy(&mut self) -> GraphicsServiceProxy {
-        GraphicsServiceProxy {}
+        let sender = self.request_senders.pop().unwrap();
+        GraphicsServiceProxy::new(sender)
     }
 
-    async fn serve(self) {}
+    async fn serve(mut self) {
+        let mut receiver0 = self.request_receivers[0].take().unwrap();
+        let mut receiver1 = self.request_receivers[1].take().unwrap();
+        let mut receiver2 = self.request_receivers[2].take().unwrap();
+        let mut receiver3 = self.request_receivers[3].take().unwrap();
+        loop {
+            tokio::select! {
+                Some(request) = receiver0.recv() => self.handle_request(request).await,
+                Some(request) = receiver1.recv() => self.handle_request(request).await,
+                Some(request) = receiver2.recv() => self.handle_request(request).await,
+                Some(request) = receiver3.recv() => self.handle_request(request).await,
+                else => {}
+            }
+        }
+    }
 
     fn allocate_buffer(&mut self, info: vk::BufferCreateInfo) {
         let buffer = unsafe { self.device.create_buffer(&info, None) };
     }
+
+    async fn handle_request(&mut self, request: GraphicsServiceRequestAdapter) {
+        let handle = match request.request {
+            GraphicsServiceRequest::CreateShaderModule(shader_module_request) => {
+                self.create_shader_module(shader_module_request).as_raw()
+            }
+            GraphicsServiceRequest::DestroyShaderModule(shader_module) => {
+                self.destroy_shader_module(shader_module).as_raw()
+            }
+        };
+        request.sender.send(handle).unwrap();
+    }
+
+    fn create_shader_module(&mut self, request: ShaderModuleRequest) -> ash::vk::ShaderModule {
+        let shader_module = {
+            let create_info = vk::ShaderModuleCreateInfo::default().code(&request.code);
+            unsafe { self.device.create_shader_module(&create_info, None) }.unwrap()
+        };
+        shader_module
+    }
+
+    fn destroy_shader_module(&mut self, shader_module: vk::ShaderModule) -> ash::vk::ShaderModule {
+        unsafe { self.device.destroy_shader_module(shader_module, None) };
+        shader_module
+    }
+
+    // fn create_pipelines
 
     extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -341,34 +400,100 @@ impl GraphicsService {
     }
 }
 
+impl Drop for GraphicsService {
+    fn drop(&mut self) {
+        let device = &self.device;
+        unsafe { device.device_wait_idle().unwrap() }
+
+        // for pipeline in &self.pipelines {
+        //     unsafe { device.destroy_pipeline(*pipeline, None) };
+        // }
+
+        // unsafe { device.destroy_pipeline_layout(self.pipeline_layout, None) };
+
+        // unsafe { device.destroy_shader_module(self.shader_module, None) };
+
+        for semaphore in &self.command_completed_semaphores {
+            unsafe { device.destroy_semaphore(*semaphore, None) };
+        }
+
+        for semaphore in &self.display_semaphores {
+            unsafe { device.destroy_semaphore(*semaphore, None) };
+        }
+
+        for fence in &self.command_fences {
+            unsafe { device.destroy_fence(*fence, None) };
+        }
+
+        // unsafe { self.device.free_memory(self.buffer_memory, None) };
+        // unsafe { self.device.destroy_buffer(self.buffer, None) };
+
+        unsafe {
+            self.debug_utils_loader
+                .destroy_debug_utils_messenger(self.debug_utils_messanger, None)
+        };
+
+        unsafe { device.free_command_buffers(self.command_pool, &self.command_buffers) };
+        unsafe { device.destroy_command_pool(self.command_pool, None) };
+
+        while let Some(image_view) = self.present_image_views.pop() {
+            unsafe { self.device.destroy_image_view(image_view, None) };
+        }
+
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
+        unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+        unsafe { self.device.destroy_device(None) };
+        unsafe { self.instance.destroy_instance(None) };
+    }
+}
+
+struct GraphicsServiceRequestAdapter {
+    request: GraphicsServiceRequest,
+    sender: tokio::sync::oneshot::Sender<u64>,
+}
+
 pub struct GraphicsServiceProxy {
-    shader_module_request_sender:
-        tokio::sync::mpsc::Sender<ShaderModuleRequestAdapter<vk::ShaderModule>>,
+    sender: tokio::sync::mpsc::Sender<GraphicsServiceRequestAdapter>,
 }
 
 impl GraphicsServiceProxy {
-    pub async fn request_image(&self, request: ImageRequest) -> ImageHandle {
-        todo!()
+    fn new(sender: tokio::sync::mpsc::Sender<GraphicsServiceRequestAdapter>) -> Self {
+        Self { sender }
     }
 
-    pub async fn request_shader_module(&self, request: ShaderModuleRequest) -> vk::ShaderModule {
-        let facade = GraphicsServiceFacade::new();
-        facade.request(request).await
+    pub async fn create_shader_module(&self, request: ShaderModuleRequest) -> vk::ShaderModule {
+        self.request(GraphicsServiceRequest::CreateShaderModule(request))
+            .await
     }
 
-    pub async fn request_pipeline_layout(&self) -> vk::PipelineLayout {
-        vk::PipelineLayout::null()
+    pub async fn destroy_shader_module(&self, shader_module: vk::ShaderModule) -> vk::ShaderModule {
+        self.request(GraphicsServiceRequest::DestroyShaderModule(shader_module))
+            .await
     }
 
-    pub async fn request_graphics_pipeline(
-        &self,
-        request: GraphicsPipelineRequest,
-    ) -> [vk::Pipeline; 8] {
-        [vk::Pipeline::null(); 8]
+    pub async fn request<T>(&self, request: GraphicsServiceRequest) -> T
+    where
+        T: ash::vk::Handle,
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let request_arapter = GraphicsServiceRequestAdapter { request, sender };
+        self.sender.send(request_arapter).await.unwrap();
+        let handle = receiver.await.unwrap();
+        T::from_raw(handle)
     }
 }
 
-pub struct ShaderModuleRequest {}
+enum GraphicsServiceRequest {
+    CreateShaderModule(ShaderModuleRequest),
+    DestroyShaderModule(vk::ShaderModule),
+}
+
+pub struct ShaderModuleRequest {
+    pub code: Vec<u32>,
+}
 
 pub struct ShaderModuleRequestAdapter<T> {
     sender: tokio::sync::oneshot::Sender<T>,
