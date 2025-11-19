@@ -1,10 +1,12 @@
 mod buffer_view;
-use std::{borrow::Cow, io::Cursor};
+use std::{borrow::Cow, io::Cursor, mem::offset_of};
 
 use buffer_view::BufferView;
 
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+use crate::services::rendering_service::buffer_view::CharacterData;
 
 pub struct RenderingService {
     instance: ash::Instance,
@@ -270,21 +272,52 @@ impl RenderingService {
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::VERTEX)
                     .module(shader_module)
-                    .name(c"main_vs"),
+                    .name(c"character_vs_tentative"),
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::FRAGMENT)
                     .module(shader_module)
-                    .name(c"main_fs"),
+                    .name(c"character_fs_tentative"),
             ];
-            let vertex_binding_descriptions = [vk::VertexInputBindingDescription::default()
-                .binding(0)
-                .stride(std::mem::size_of::<f32>() as u32 * 2)
-                .input_rate(vk::VertexInputRate::VERTEX)];
-            let vertex_attribute_descriptions = [vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(0)
-                .format(vk::Format::R32G32_SFLOAT)
-                .offset(0)];
+            // 頂点データは全インスタンスで共通だが、
+            // 文字ごとのデータはインスタンスごとのデータなのでそれぞれバッファーを分ける
+            let vertex_binding_descriptions = [
+                vk::VertexInputBindingDescription::default()
+                    .binding(0)
+                    .stride(std::mem::size_of::<f32>() as u32 * 2)
+                    .input_rate(vk::VertexInputRate::VERTEX),
+                vk::VertexInputBindingDescription::default()
+                    .binding(1)
+                    .stride(std::mem::size_of::<CharacterData>() as u32)
+                    .input_rate(vk::VertexInputRate::INSTANCE),
+            ];
+            let vertex_attribute_descriptions = [
+                vk::VertexInputAttributeDescription::default()
+                    .binding(0)
+                    .location(0)
+                    .format(vk::Format::R32G32_SFLOAT)
+                    .offset(0),
+                vk::VertexInputAttributeDescription::default()
+                    .binding(1)
+                    .location(1)
+                    .format(vk::Format::R32G32B32A32_SFLOAT)
+                    .offset(offset_of!(CharacterData, transform0) as u32),
+                vk::VertexInputAttributeDescription::default()
+                    .binding(1)
+                    .location(2)
+                    .format(vk::Format::R32G32B32A32_SFLOAT)
+                    .offset(offset_of!(CharacterData, transform1) as u32),
+                // 文字の描画に必要な情報なのでいったんコメントアウト
+                // vk::VertexInputAttributeDescription::default()
+                //     .binding(1)
+                //     .location(3)
+                //     .format(vk::Format::R32G32B32A32_SFLOAT)
+                //     .offset(offset_of!(CharacterData, fg_color) as u32),
+                // vk::VertexInputAttributeDescription::default()
+                //     .binding(1)
+                //     .location(4)
+                //     .format(vk::Format::R32G32B32A32_SFLOAT)
+                //     .offset(offset_of!(CharacterData, uv01) as u32),
+            ];
             let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
                 .vertex_binding_descriptions(&vertex_binding_descriptions)
                 .vertex_attribute_descriptions(&vertex_attribute_descriptions);
@@ -341,7 +374,6 @@ impl RenderingService {
                 .usage(
                     vk::BufferUsageFlags::VERTEX_BUFFER
                         | vk::BufferUsageFlags::INDEX_BUFFER
-                        | vk::BufferUsageFlags::STORAGE_BUFFER
                         | vk::BufferUsageFlags::UNIFORM_BUFFER,
                 );
             unsafe { device.create_buffer(&create_info, None) }.unwrap()
@@ -571,11 +603,16 @@ impl RenderingService {
                 self.pipelines[0],
             );
 
+            // ひとつのバッファーを分割してふたつの頂点データとして利用
+            // 矩形をシェーダー上で生成してしまえば頂点分のデータはいらなくなるかも
             device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0, /*first_binding*/
-                &[self.buffer],
-                &[0],
+                &[self.buffer, self.buffer],
+                &[
+                    BufferView::vertex_buffer_offset(),
+                    BufferView::character_data_offset(),
+                ],
             );
 
             device.cmd_bind_index_buffer(
@@ -588,7 +625,7 @@ impl RenderingService {
             device.cmd_draw_indexed(
                 command_buffer,
                 6, /*index_count*/
-                1, /*instance_count*/
+                2, /*instance_count*/
                 0, /*first_index*/
                 0, /*vertex_offset*/
                 0, /*first_instance*/
