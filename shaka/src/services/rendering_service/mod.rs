@@ -306,12 +306,12 @@ impl RenderingService {
                     .location(2)
                     .format(vk::Format::R32G32B32A32_SFLOAT)
                     .offset(offset_of!(CharacterData, transform1) as u32),
+                vk::VertexInputAttributeDescription::default()
+                    .binding(1)
+                    .location(3)
+                    .format(vk::Format::R32G32B32A32_SFLOAT)
+                    .offset(offset_of!(CharacterData, fg_color) as u32),
                 // 文字の描画に必要な情報なのでいったんコメントアウト
-                // vk::VertexInputAttributeDescription::default()
-                //     .binding(1)
-                //     .location(3)
-                //     .format(vk::Format::R32G32B32A32_SFLOAT)
-                //     .offset(offset_of!(CharacterData, fg_color) as u32),
                 // vk::VertexInputAttributeDescription::default()
                 //     .binding(1)
                 //     .location(4)
@@ -430,8 +430,10 @@ impl RenderingService {
         // background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
         character_data[0].transform0 = [0.2, 0.0, -0.5, 0.0];
         character_data[0].transform1 = [0.0, 0.2, -0.5, 0.0];
+        character_data[0].fg_color = [0.0, 0.8, 0.0, 1.0];
         character_data[1].transform0 = [0.2, 0.0, 0.5, 0.0];
         character_data[1].transform1 = [0.0, 0.2, 0.5, 0.0];
+        character_data[1].fg_color = [0.8, 0.8, 0.0, 1.0];
 
         unsafe {
             device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
