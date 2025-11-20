@@ -72,7 +72,7 @@ StructuredBuffer<CharacterData> g_CharacterDataBuffer;
 
 struct CharacterVertexOutput {
   float4 position : SV_Position;
-  float4 fgColor : COLOR0;
+  nointerpolation float4 fgColor : COLOR0;
   float2 uv : TEXCOORD1;
 }
 
@@ -118,22 +118,27 @@ float4 character_fs(float4 color: COLOR0, float2 uv: TEXCOORD1) {
 
 struct CharacterDataTentative {
   float2 position : POSITION;
-  float4 transform0 : COLOR0;
-  float4 transform1 : COLOR1;
+  float4 transform0;
+  float4 transform1;
+  float4 fgColor : COLOR0;
 }
 
 [shader("vertex")]
-float4 character_vs_tentative(CharacterDataTentative data) : SV_Position {
-  float4 outPosition =
+CharacterVertexOutput character_vs_tentative(CharacterDataTentative data) {
+  CharacterVertexOutput output;
+  output.position =
       float4(dot(data.transform0.xyz, float3(data.position, 1.0)),
              dot(data.transform1.xyz, float3(data.position, 1.0)), 0.0, 1.0);
+  output.fgColor = data.fgColor;
+  output.uv = float2(0.0, 0.0);
 
-  return outPosition;
+  return output;
 }
 
 [shader("fragment")]
-float4 character_fs_tentative() : SV_Target {
-  return float4(1.0, 1.0, 1.0, 1.0);
+float4 character_fs_tentative(float4 fgColor: COLOR0, float2 uv: TEXCOORD1)
+    : SV_Target {
+  return float4(fgColor);
 }
 
 // ============================================================================
