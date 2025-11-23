@@ -18,6 +18,11 @@ impl RenderingPatch {
     }
 }
 
+struct DrawParams {
+    char_count: u32,
+    frame: u64,
+}
+
 pub struct RenderingService {
     instance: ash::Instance,
     device: ash::Device,
@@ -379,7 +384,7 @@ impl RenderingService {
             .unwrap()
         };
 
-        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 256;
+        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 1024;
         let copy_src_buffer = {
             let queue_family_indices = [queue_family_index as u32];
             let create_info = vk::BufferCreateInfo::default()
@@ -568,19 +573,25 @@ impl RenderingService {
         mut cancellation_token: renge::CancellationToken,
     ) {
         // 本来は変更を受信したら呼び出す
-        self.apply_patch();
+        self.apply_patch("ABCDEFG");
 
-        let mut frame = 0;
+        let mut draw_params = DrawParams {
+            char_count: 7,
+            frame: 0,
+        };
         loop {
             tokio::select! {
-                Some(()) = receiver.recv() => self.draw(&mut frame),
+                Some(()) = receiver.recv() => {
+                    self.draw(&draw_params);
+                    draw_params.frame += 1;
+                },
                 _ = &mut cancellation_token => break,
                 else => {},
             }
         }
     }
 
-    fn apply_patch(&self) {
+    fn apply_patch(&self, str: &str) {
         let device = &self.device;
 
         unsafe {
@@ -594,23 +605,23 @@ impl RenderingService {
             let ptr = device
                 .map_memory(
                     self.copy_src_memory,
-                    0,                                                          /*offset*/
-                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2, /*size*/
+                    0,                                                           /*offset*/
+                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 16, /*size*/
                     vk::MemoryMapFlags::empty(),
                 )
                 .unwrap() as *mut CharacterData;
-            let copy_src = std::slice::from_raw_parts_mut(ptr, 2);
-            copy_src[0].transform0 = [0.2, 0.0, -0.5, 0.0];
-            copy_src[0].transform1 = [0.0, 0.2, -0.5, 0.0];
-            copy_src[0].fg_color = [0.0, 0.8, 0.0, 1.0];
-            copy_src[1].transform0 = [0.2, 0.0, 0.5, 0.0];
-            copy_src[1].transform1 = [0.0, 0.2, 0.5, 0.0];
-            copy_src[1].fg_color = [0.8, 0.8, 0.0, 1.0];
+            let copy_src = std::slice::from_raw_parts_mut(ptr, 16);
+            for index in 0..str.len() {
+                let x = -0.9 + index as f32 * 0.3;
+                copy_src[index].transform0 = [0.1, 0.0, x, 0.0];
+                copy_src[index].transform1 = [0.0, 0.2, -0.5, 0.0];
+                copy_src[index].fg_color = [0.0, 0.8, 0.0, 1.0];
+            }
 
             let ranges = [vk::MappedMemoryRange::default()
                 .memory(self.copy_src_memory)
                 .offset(0)
-                .size(std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2)];
+                .size((std::mem::size_of::<CharacterData>() * str.len()) as vk::DeviceSize)];
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
         };
@@ -625,14 +636,14 @@ impl RenderingService {
             let regions = [vk::BufferCopy::default()
                 .src_offset(0)
                 .dst_offset(BufferView::character_data_offset())
-                .size(std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2)];
+                .size((std::mem::size_of::<CharacterData>() * str.len()) as vk::DeviceSize)];
             device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
 
             device.end_command_buffer(command_buffer).unwrap();
         };
     }
 
-    fn draw(&self, frame: &mut u64) {
+    fn draw(&self, params: &DrawParams) {
         let device = &self.device;
         let display_semaphore = self.display_semaphores[0];
         let command_completed_semaphore = self.command_completed_semaphores[0];
@@ -733,11 +744,11 @@ impl RenderingService {
 
             device.cmd_draw_indexed(
                 command_buffer,
-                6, /*index_count*/
-                2, /*instance_count*/
-                0, /*first_index*/
-                0, /*vertex_offset*/
-                0, /*first_instance*/
+                6,                 /*index_count*/
+                params.char_count, /*instance_count*/
+                0,                 /*first_index*/
+                0,                 /*vertex_offset*/
+                0,                 /*first_instance*/
             );
 
             self.dynamic_rendering_device
@@ -816,8 +827,6 @@ impl RenderingService {
             }
             .unwrap();
         }
-
-        *frame += 1;
     }
 
     extern "system" fn vulkan_debug_callback(
