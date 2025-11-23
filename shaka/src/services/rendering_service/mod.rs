@@ -8,6 +8,16 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::rendering_service::buffer_view::CharacterData;
 
+pub struct RenderingPatch {
+    character_patch: [CharacterData; 8],
+}
+
+impl RenderingPatch {
+    pub fn characters(&self) -> &[CharacterData] {
+        &[]
+    }
+}
+
 pub struct RenderingService {
     instance: ash::Instance,
     device: ash::Device,
@@ -29,10 +39,13 @@ pub struct RenderingService {
 
     // フレーム同期
     display_semaphores: Vec<vk::Semaphore>,
+    data_copy_completed_semaphore: vk::Semaphore,
     command_completed_semaphores: Vec<vk::Semaphore>,
     command_fences: Vec<vk::Fence>,
 
     command_pool: vk::CommandPool,
+    // 0, 1 →  描画コマンドのダブルバッファリング
+    // 2 -> コピー用のコマンドバッファー
     command_buffers: Vec<vk::CommandBuffer>,
 
     // パイプライン関係
@@ -42,7 +55,9 @@ pub struct RenderingService {
 
     // リソース
     buffer_memory: vk::DeviceMemory,
+    copy_src_memory: vk::DeviceMemory,
     buffer: vk::Buffer,
+    copy_src_buffer: vk::Buffer,
 }
 
 impl RenderingService {
@@ -364,6 +379,17 @@ impl RenderingService {
             .unwrap()
         };
 
+        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 256;
+        let copy_src_buffer = {
+            let queue_family_indices = [queue_family_index as u32];
+            let create_info = vk::BufferCreateInfo::default()
+                .queue_family_indices(&queue_family_indices)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .size(COPY_SRC_BUFFER_SIZE)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC);
+            unsafe { device.create_buffer(&create_info, None) }.unwrap()
+        };
+
         const BUFFER_SIZE: vk::DeviceSize = 16 * 1024;
         let buffer = {
             let queue_family_indices = [queue_family_index as u32];
@@ -374,7 +400,8 @@ impl RenderingService {
                 .usage(
                     vk::BufferUsageFlags::VERTEX_BUFFER
                         | vk::BufferUsageFlags::INDEX_BUFFER
-                        | vk::BufferUsageFlags::UNIFORM_BUFFER,
+                        | vk::BufferUsageFlags::UNIFORM_BUFFER
+                        | vk::BufferUsageFlags::TRANSFER_DST,
                 );
             unsafe { device.create_buffer(&create_info, None) }.unwrap()
         };
@@ -403,6 +430,31 @@ impl RenderingService {
 
         unsafe { device.bind_buffer_memory(buffer, device_memory, 0) }.unwrap();
 
+        let copy_src_memory = {
+            let memory_index = {
+                let memory_requirement =
+                    unsafe { device.get_buffer_memory_requirements(copy_src_buffer) };
+                unsafe { instance.get_physical_device_memory_properties(physical_device) }
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | vk::MemoryPropertyFlags::HOST_COHERENT;
+                        (1 << index) & memory_requirement.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
+            };
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(COPY_SRC_BUFFER_SIZE)
+                .memory_type_index(memory_index);
+            unsafe { device.allocate_memory(&allocate_info, None) }.unwrap()
+        };
+
+        unsafe { device.bind_buffer_memory(copy_src_buffer, copy_src_memory, 0) }.unwrap();
+
         let ptr = unsafe {
             device.map_memory(
                 device_memory,
@@ -424,16 +476,9 @@ impl RenderingService {
             let index_buffer = buffer_view.index_buffer();
             index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
         }
-        let character_data = buffer_view.character_data();
 
         // background_view.transform0 = [1.0, 0.0, 0.0, 1.0];
         // background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
-        character_data[0].transform0 = [0.2, 0.0, -0.5, 0.0];
-        character_data[0].transform1 = [0.0, 0.2, -0.5, 0.0];
-        character_data[0].fg_color = [0.0, 0.8, 0.0, 1.0];
-        character_data[1].transform0 = [0.2, 0.0, 0.5, 0.0];
-        character_data[1].transform1 = [0.0, 0.2, 0.5, 0.0];
-        character_data[1].fg_color = [0.8, 0.8, 0.0, 1.0];
 
         unsafe {
             device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
@@ -454,7 +499,7 @@ impl RenderingService {
             let allocate_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(2);
+                .command_buffer_count(3);
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
@@ -465,7 +510,7 @@ impl RenderingService {
             vec![fence0, fence1]
         };
 
-        let (display_semaphores, command_completed_semaphores) = {
+        let (display_semaphores, command_completed_semaphores, data_copy_completed_semaphore) = {
             let create_info = vk::SemaphoreCreateInfo::default();
             let display_semaphore0 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
@@ -476,9 +521,13 @@ impl RenderingService {
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             let command_completed_semaphore1 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+
+            let data_copy_completed_semaphore =
+                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             (
                 vec![display_semaphore0, display_semaphore1],
                 vec![command_completed_semaphore0, command_completed_semaphore1],
+                data_copy_completed_semaphore,
             )
         };
 
@@ -490,6 +539,7 @@ impl RenderingService {
             dynamic_rendering_device,
             display_semaphores,
             command_completed_semaphores,
+            data_copy_completed_semaphore,
             command_fences,
             command_pool,
             command_buffers,
@@ -506,7 +556,9 @@ impl RenderingService {
             pipeline_layout: layout,
             pipelines,
             buffer_memory: device_memory,
+            copy_src_memory,
             buffer,
+            copy_src_buffer,
         }
     }
 
@@ -515,6 +567,9 @@ impl RenderingService {
         mut receiver: tokio::sync::mpsc::Receiver<()>,
         mut cancellation_token: renge::CancellationToken,
     ) {
+        // 本来は変更を受信したら呼び出す
+        self.apply_patch();
+
         let mut frame = 0;
         loop {
             tokio::select! {
@@ -523,6 +578,58 @@ impl RenderingService {
                 else => {},
             }
         }
+    }
+
+    fn apply_patch(&self) {
+        let device = &self.device;
+
+        unsafe {
+            // GPU でコピー中だとデータ破壊が起きるので待つ
+            // let semaphores = [self.data_copy_completed_semaphore];
+            // let wait_info = vk::SemaphoreWaitInfo::default()
+            //     .semaphores(&semaphores)
+            //     .values(&[0]);
+            // device.wait_semaphores(&wait_info, u64::MAX).unwrap();
+
+            let ptr = device
+                .map_memory(
+                    self.copy_src_memory,
+                    0,                                                          /*offset*/
+                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2, /*size*/
+                    vk::MemoryMapFlags::empty(),
+                )
+                .unwrap() as *mut CharacterData;
+            let copy_src = std::slice::from_raw_parts_mut(ptr, 2);
+            copy_src[0].transform0 = [0.2, 0.0, -0.5, 0.0];
+            copy_src[0].transform1 = [0.0, 0.2, -0.5, 0.0];
+            copy_src[0].fg_color = [0.0, 0.8, 0.0, 1.0];
+            copy_src[1].transform0 = [0.2, 0.0, 0.5, 0.0];
+            copy_src[1].transform1 = [0.0, 0.2, 0.5, 0.0];
+            copy_src[1].fg_color = [0.8, 0.8, 0.0, 1.0];
+
+            let ranges = [vk::MappedMemoryRange::default()
+                .memory(self.copy_src_memory)
+                .offset(0)
+                .size(std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2)];
+            device.flush_mapped_memory_ranges(&ranges).unwrap();
+            device.unmap_memory(self.copy_src_memory);
+        };
+
+        let command_buffer = self.command_buffers[2];
+        unsafe {
+            let begin_info = vk::CommandBufferBeginInfo::default();
+            device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .unwrap();
+
+            let regions = [vk::BufferCopy::default()
+                .src_offset(0)
+                .dst_offset(BufferView::character_data_offset())
+                .size(std::mem::size_of::<CharacterData>() as vk::DeviceSize * 2)];
+            device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
+
+            device.end_command_buffer(command_buffer).unwrap();
+        };
     }
 
     fn draw(&self, frame: &mut u64) {
@@ -664,10 +771,28 @@ impl RenderingService {
 
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
+        // データ更新のパッチ適用コマンド
+        let is_data_copy_required = true;
+        if is_data_copy_required {
+            // コピーだけなので StageMask はなくてよい？
+            let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let command_buffers = [self.command_buffers[2]];
+            // TODO: 本当は前回の描画コマンドの終了を待つ
+            let wait_semaphores = [display_semaphore];
+            let signal_semaphores = [self.data_copy_completed_semaphore];
+            let submit_info = [vk::SubmitInfo::default()
+                .wait_dst_stage_mask(&wait_mask)
+                .command_buffers(&command_buffers)
+                .wait_semaphores(&wait_semaphores)
+                .signal_semaphores(&signal_semaphores)];
+            unsafe { device.queue_submit(self.queue, &submit_info, vk::Fence::null()) }.unwrap();
+        }
+
         {
             let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [command_buffer];
-            let wait_semaphores = [display_semaphore];
+            // データコピーのコマンドを待つ
+            let wait_semaphores = [self.data_copy_completed_semaphore];
             let signal_semaphores = [command_completed_semaphore];
             let submit_info = [vk::SubmitInfo::default()
                 .wait_dst_stage_mask(&wait_mask)
@@ -741,6 +866,9 @@ impl Drop for RenderingService {
             unsafe { device.destroy_semaphore(*semaphore, None) };
         }
 
+        unsafe {
+            device.destroy_semaphore(self.data_copy_completed_semaphore, None);
+        }
         for semaphore in &self.display_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
         }
@@ -749,6 +877,10 @@ impl Drop for RenderingService {
             unsafe { device.destroy_fence(*fence, None) };
         }
 
+        unsafe { self.device.free_memory(self.copy_src_memory, None) };
+        unsafe {
+            self.device.destroy_buffer(self.copy_src_buffer, None);
+        }
         unsafe { self.device.free_memory(self.buffer_memory, None) };
         unsafe { self.device.destroy_buffer(self.buffer, None) };
 
