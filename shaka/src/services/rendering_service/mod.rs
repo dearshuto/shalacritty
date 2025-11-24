@@ -24,7 +24,7 @@ struct DrawParams {
 }
 
 pub struct RenderingService {
-    glyph_texture: GlyphTexture,
+    glyph_texture: Option<GlyphTexture>,
 
     instance: ash::Instance,
     device: ash::Device,
@@ -539,7 +539,7 @@ impl RenderingService {
         };
 
         Self {
-            glyph_texture: GlyphTexture::new(device.clone()),
+            glyph_texture: Some(GlyphTexture::new(device.clone())),
             instance,
             device,
             debug_utils_loader,
@@ -605,7 +605,10 @@ impl RenderingService {
             .unwrap();
 
         let response = receiver.await.unwrap();
-        self.glyph_texture.write(response.glyphs());
+        self.glyph_texture
+            .as_ref()
+            .unwrap()
+            .write(response.glyphs());
 
         let device = &self.device;
 
@@ -632,7 +635,7 @@ impl RenderingService {
                 copy_src[index].transform1 = [0.0, 0.2, -0.5, 0.0];
                 copy_src[index].fg_color = [0.0, 0.8, 0.0, 1.0];
 
-                let range = self.glyph_texture.range('A');
+                let range = self.glyph_texture.as_ref().unwrap().range('A');
                 copy_src[index].uv01 = [
                     range.upper_right()[0],
                     range.upper_right()[1],
@@ -933,6 +936,10 @@ impl Drop for RenderingService {
                 .destroy_swapchain(self.swapchain, None)
         };
         unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+
+        // Device よりも先に破棄するべし
+        self.glyph_texture = None;
+
         unsafe { self.device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
     }
