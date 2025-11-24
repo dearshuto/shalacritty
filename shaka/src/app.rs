@@ -7,7 +7,7 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-use crate::services::RenderingService;
+use crate::services::{GlyphExtractService, RenderingService, RenderingServiceParams};
 
 pub struct UserEvent {}
 
@@ -37,11 +37,21 @@ impl ApplicationHandler<UserEvent> for App {
             .with_resizable(false);
         let window = event_loop.create_window(window_attributes).unwrap();
 
+        // グリフ抽出サービス
+        // とりあえず適当なアルファベットをラスタライズしておく
+        let (chars_sender, chars_receiver) = tokio::sync::mpsc::channel(1);
+        let glyph_extract_service = GlyphExtractService::new(chars_receiver);
+        self.service_runner.push(glyph_extract_service);
+
         let rendering_service = RenderingService::new(&window);
 
         let (redraw_request_sender, redraw_request_receiver) = tokio::sync::mpsc::channel(1);
+        let params = RenderingServiceParams {
+            receiver: redraw_request_receiver,
+            glyph_request_sender: chars_sender,
+        };
         self.service_runner
-            .push_with_params(rendering_service, redraw_request_receiver);
+            .push_with_params(rendering_service, params);
 
         window.request_redraw();
         self.window = Some(window);
