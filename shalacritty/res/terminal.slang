@@ -108,7 +108,11 @@ CharacterVertexOutput character_vs(int vertexId: SV_VertexID,
   return output;
 }
 
-Texture2D<float> g_GlyphTexture;
+[[vk::binding(0)]]
+SamplerState g_GlyphSamplerState : register(s0);
+
+[[vk::binding(1)]]
+Texture2D<float> g_GlyphTexture : register(t0);
 
 [shader("fragment")]
 float4 character_fs(float4 color: COLOR0, float2 uv: TEXCOORD1) {
@@ -117,10 +121,24 @@ float4 character_fs(float4 color: COLOR0, float2 uv: TEXCOORD1) {
 }
 
 struct CharacterDataTentative {
-  float2 position : POSITION;
+  // 0 - 2
+  // |   |
+  // 1 - 3
+  int vertexId : SV_VertexID;
+
+  // 頂点ごとに割り当たる値
+  [[vk::location(0)]]
+  float2 position;
+
+  // インスタンスごとに割り当たる値
+  [[vk::location(1)]]
   float4 transform0;
+  [[vk::location(2)]]
   float4 transform1;
-  float4 fgColor : COLOR0;
+  [[vk::location(3)]]
+  float4 fgColor;
+  [[vk::location(4)]]
+  float4 uv01;
 }
 
 [shader("vertex")]
@@ -130,7 +148,10 @@ CharacterVertexOutput character_vs_tentative(CharacterDataTentative data) {
       float4(dot(data.transform0.xyz, float3(data.position, 1.0)),
              dot(data.transform1.xyz, float3(data.position, 1.0)), 0.0, 1.0);
   output.fgColor = data.fgColor;
-  output.uv = float2(0.0, 0.0);
+  float x[2] = { data.uv01.x, data.uv01.z };
+  float y[2] = { data.uv01.y, data.uv01.w };
+  output.uv.x = x[data.vertexId / 2];
+  output.uv.y = y[data.vertexId % 2];
 
   return output;
 }
@@ -138,7 +159,8 @@ CharacterVertexOutput character_vs_tentative(CharacterDataTentative data) {
 [shader("fragment")]
 float4 character_fs_tentative(float4 fgColor: COLOR0, float2 uv: TEXCOORD1)
     : SV_Target {
-  return float4(fgColor);
+  float alpha = g_GlyphTexture.Sample(g_GlyphSamplerState, uv);
+  return float4(uv.x, uv.y, alpha, 1.0);
 }
 
 // ============================================================================

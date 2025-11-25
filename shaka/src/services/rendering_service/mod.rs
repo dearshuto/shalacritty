@@ -1,6 +1,9 @@
 mod buffer_view;
-mod glyph_texture;
-use glyph_texture::GlyphTexture;
+mod glyph_table;
+mod range_allocator;
+mod text_writer;
+use glyph_table::GlyphTable;
+use range_allocator::RangeAllocator;
 
 use std::{borrow::Cow, io::Cursor, mem::offset_of};
 
@@ -11,7 +14,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
-    rendering_service::buffer_view::CharacterData,
+    rendering_service::{buffer_view::CharacterData, text_writer::TextWriter},
 };
 
 pub struct RenderingServiceParams {
@@ -25,7 +28,9 @@ struct DrawParams {
 }
 
 pub struct RenderingService {
-    glyph_texture: Option<GlyphTexture>,
+    glyph_table: GlyphTable,
+    text_writer: TextWriter,
+    range_allocator: RangeAllocator,
 
     instance: ash::Instance,
     device: ash::Device,
@@ -60,12 +65,20 @@ pub struct RenderingService {
     shader_module: vk::ShaderModule,
     pipeline_layout: vk::PipelineLayout,
     pipelines: Vec<vk::Pipeline>,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_sets: Vec<vk::DescriptorSet>,
+    descriptor_set_layout: vk::DescriptorSetLayout,
 
     // リソース
     buffer_memory: vk::DeviceMemory,
     copy_src_memory: vk::DeviceMemory,
     buffer: vk::Buffer,
     copy_src_buffer: vk::Buffer,
+    // グリフ
+    glyph_image: vk::Image,
+    glyph_image_view: vk::ImageView,
+    glyph_memory: vk::DeviceMemory,
+    glyph_sampler: vk::Sampler,
 }
 
 impl RenderingService {
@@ -285,8 +298,49 @@ impl RenderingService {
             unsafe { device.create_shader_module(&create_info, None) }.unwrap()
         };
 
+        let descriptor_pool = {
+            let pool_sizes = [
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(8),
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(8),
+            ];
+            let create_info = vk::DescriptorPoolCreateInfo::default()
+                .max_sets(1)
+                .pool_sizes(&pool_sizes);
+            unsafe { device.create_descriptor_pool(&create_info, None) }.unwrap()
+        };
+
+        let descriptor_set_layout = {
+            let bindings = [
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
+        let descriptor_sets = {
+            let set_layouts = [descriptor_set_layout];
+            let allocate_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&set_layouts);
+            unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()
+        };
+
         let layout = {
-            let create_info = vk::PipelineLayoutCreateInfo::default();
+            let set_layouts = [descriptor_set_layout];
+            let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
             unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
         };
 
@@ -334,12 +388,11 @@ impl RenderingService {
                     .location(3)
                     .format(vk::Format::R32G32B32A32_SFLOAT)
                     .offset(offset_of!(CharacterData, fg_color) as u32),
-                // 文字の描画に必要な情報なのでいったんコメントアウト
-                // vk::VertexInputAttributeDescription::default()
-                //     .binding(1)
-                //     .location(4)
-                //     .format(vk::Format::R32G32B32A32_SFLOAT)
-                //     .offset(offset_of!(CharacterData, uv01) as u32),
+                vk::VertexInputAttributeDescription::default()
+                    .binding(1)
+                    .location(4)
+                    .format(vk::Format::R32G32B32A32_SFLOAT)
+                    .offset(offset_of!(CharacterData, uv01) as u32),
             ];
             let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
                 .vertex_binding_descriptions(&vertex_binding_descriptions)
@@ -387,7 +440,7 @@ impl RenderingService {
             .unwrap()
         };
 
-        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 1024;
+        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 4096;
         let copy_src_buffer = {
             let queue_family_indices = [queue_family_index as u32];
             let create_info = vk::BufferCreateInfo::default()
@@ -475,12 +528,12 @@ impl RenderingService {
 
         let mut buffer_view = BufferView::new(ptr);
         {
-            const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5];
+            const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5];
             let vertex_buffer = buffer_view.vertex_buffer();
             vertex_buffer[0..VERTEX_DATA.len()].copy_from_slice(&VERTEX_DATA);
         }
         {
-            const INDEX_DATA: [u16; 6] = [0, 1, 2, 0, 2, 3];
+            const INDEX_DATA: [u16; 6] = [0, 1, 2, 2, 1, 3];
             let index_buffer = buffer_view.index_buffer();
             index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
         }
@@ -495,6 +548,98 @@ impl RenderingService {
                 .size(1024)])
         }
         .unwrap();
+
+        let glyph_image = {
+            let create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8_UNORM)
+                .extent(vk::Extent3D::default().width(4096).height(4096).depth(1))
+                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .array_layers(1)
+                .mip_levels(1)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            unsafe { device.create_image(&create_info, None) }.unwrap()
+        };
+
+        let glyph_memory = {
+            let requirements = unsafe { device.get_image_memory_requirements(glyph_image) };
+            let memory_index = {
+                unsafe { instance.get_physical_device_memory_properties(physical_device) }
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+                        (1 << index) & requirements.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
+            };
+            let create_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(requirements.size)
+                .memory_type_index(memory_index);
+            unsafe { device.allocate_memory(&create_info, None) }.unwrap()
+        };
+
+        unsafe {
+            device
+                .bind_image_memory(glyph_image, glyph_memory, 0)
+                .unwrap();
+        }
+
+        let glyph_image_view = {
+            let create_info = vk::ImageViewCreateInfo::default()
+                .image(glyph_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::R8_UNORM)
+                .components(
+                    vk::ComponentMapping::default()
+                        .r(vk::ComponentSwizzle::R)
+                        .g(vk::ComponentSwizzle::G)
+                        .b(vk::ComponentSwizzle::B)
+                        .a(vk::ComponentSwizzle::A),
+                )
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                );
+            unsafe { device.create_image_view(&create_info, None) }.unwrap()
+        };
+
+        let sampler = {
+            let create_info = vk::SamplerCreateInfo::default();
+            unsafe { device.create_sampler(&create_info, None) }.unwrap()
+        };
+
+        unsafe {
+            device.update_descriptor_sets(
+                &[
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[0])
+                        .dst_binding(0)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::SAMPLER)
+                        .image_info(&[vk::DescriptorImageInfo::default().sampler(sampler)]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[0])
+                        .dst_binding(1)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&[vk::DescriptorImageInfo::default()
+                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .image_view(glyph_image_view)]),
+                ],
+                &[],
+            )
+        };
 
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
@@ -540,7 +685,9 @@ impl RenderingService {
         };
 
         Self {
-            glyph_texture: Some(GlyphTexture::new(device.clone())),
+            glyph_table: GlyphTable::new(4096, 4096),
+            text_writer: TextWriter::new(),
+            range_allocator: RangeAllocator::new(4096, 4096),
             instance,
             device,
             debug_utils_loader,
@@ -564,15 +711,23 @@ impl RenderingService {
             shader_module,
             pipeline_layout: layout,
             pipelines,
+            descriptor_pool,
+            descriptor_sets,
+            descriptor_set_layout,
             buffer_memory: device_memory,
             copy_src_memory,
             buffer,
             copy_src_buffer,
+            // グリフ
+            glyph_image,
+            glyph_image_view,
+            glyph_memory,
+            glyph_sampler: sampler,
         }
     }
 
     async fn serve(
-        self,
+        mut self,
         mut params: RenderingServiceParams,
         mut cancellation_token: renge::CancellationToken,
     ) {
@@ -598,25 +753,10 @@ impl RenderingService {
         }
     }
 
-    async fn apply_patch(&self, str: &str, sender: &tokio::sync::mpsc::Sender<GlyphRequest>) {
-        for code in str.chars() {
-            let (s, receiver) = tokio::sync::oneshot::channel();
-            sender
-                .send(GlyphRequest {
-                    code,
-                    font_id: FontId::default(),
-                    size: 32.0f32,
-                    response: s,
-                })
-                .await
-                .unwrap();
-
-            let glyph = receiver.await.unwrap();
-            self.glyph_texture.as_ref().unwrap().write(&glyph);
-        }
-
+    async fn apply_patch(&mut self, str: &str, sender: &tokio::sync::mpsc::Sender<GlyphRequest>) {
         let device = &self.device;
 
+        // 文字ごとの情報を転送するコマンド
         unsafe {
             // GPU でコピー中だとデータ破壊が起きるので待つ
             // let semaphores = [self.data_copy_completed_semaphore];
@@ -625,50 +765,171 @@ impl RenderingService {
             //     .values(&[0]);
             // device.wait_semaphores(&wait_info, u64::MAX).unwrap();
 
+            // ラスタライズで await をまたいで Map した生ポインターにアクセスするとコンパイルエラーになる
+            // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
+            let mut dst_buffer = Vec::with_capacity(1024);
+            let mut buffer_image_copies = Vec::default();
+            let mut buffer_head_offset = 0;
+            for code in str.chars() {
+                let (s, receiver) = tokio::sync::oneshot::channel();
+                sender
+                    .send(GlyphRequest {
+                        code,
+                        font_id: FontId::default(),
+                        size: 32.0f32,
+                        response: s,
+                    })
+                    .await
+                    .unwrap();
+
+                let mut glyph = receiver.await.unwrap();
+
+                // 管理用データを構築
+                let Some(offset) = self
+                    .range_allocator
+                    .allocate(glyph.width as u32, glyph.height as u32)
+                else {
+                    continue;
+                };
+
+                self.glyph_table.insert_glyph(
+                    glyph.code,
+                    offset[0],
+                    offset[1],
+                    glyph.width as u32,
+                    glyph.height as u32,
+                );
+
+                // グリフデータの書き込み
+                let rect = self.glyph_table.get_rect(code).unwrap();
+                let offset_x = rect[0];
+                let offset_y = rect[1];
+                let width = rect[2];
+                let height = rect[3];
+                let buffer_image_copy = vk::BufferImageCopy::default()
+                    .buffer_offset(buffer_head_offset as u64)
+                    .buffer_image_height(0)
+                    .buffer_row_length(0)
+                    .image_offset(
+                        vk::Offset3D::default()
+                            .x(offset_x as i32)
+                            .y(offset_y as i32),
+                    )
+                    .image_extent(vk::Extent3D::default().width(width).height(height).depth(1))
+                    .image_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(0)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    );
+                buffer_image_copies.push(buffer_image_copy);
+                let length = glyph.data.len();
+                dst_buffer.append(&mut glyph.data);
+                buffer_head_offset += length;
+            }
+
             let ptr = device
                 .map_memory(
                     self.copy_src_memory,
-                    0,                                                           /*offset*/
-                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 16, /*size*/
+                    0, /*offset*/
+                    // std::mem::size_of::<CharacterData>() as vk::DeviceSize * 16, /*size*/
+                    4096,
                     vk::MemoryMapFlags::empty(),
                 )
-                .unwrap() as *mut CharacterData;
-            let copy_src = std::slice::from_raw_parts_mut(ptr, 16);
-            for index in 0..str.len() {
-                let x = -0.9 + index as f32 * 0.3;
-                copy_src[index].transform0 = [0.1, 0.0, x, 0.0];
-                copy_src[index].transform1 = [0.0, 0.2, -0.5, 0.0];
-                copy_src[index].fg_color = [0.0, 0.8, 0.0, 1.0];
+                .unwrap() as *mut u8;
 
-                let range = self.glyph_texture.as_ref().unwrap().range('A');
-                copy_src[index].uv01 = [
-                    range.upper_right()[0],
-                    range.upper_right()[1],
-                    range.lower_left()[0],
-                    range.lower_left()[1],
-                ];
-            }
+            // フォントデータのコピー
+            std::slice::from_raw_parts_mut(ptr, buffer_head_offset).copy_from_slice(&dst_buffer);
 
+            let ptr = ptr.byte_add(buffer_head_offset);
+            // 次の書き込みオフセットを64の倍数に切り上げる。
+            // 64は `align_of::<CharacterData>()` (通常4 or 8) の倍数でもあるため、
+            // これで両方のアライメント要件を満たすことができる。
+            let offset = ptr.align_offset(64);
+            let buffer_head_offset = buffer_head_offset + offset;
+
+            let copy_src =
+                std::slice::from_raw_parts_mut(ptr.add(offset) as *mut CharacterData, 16);
+            let size = self.text_writer.write(copy_src, str, &self.glyph_table);
+
+            let write_size = offset + size;
             let ranges = [vk::MappedMemoryRange::default()
                 .memory(self.copy_src_memory)
-                .offset(0)
-                .size((std::mem::size_of::<CharacterData>() * str.len()) as vk::DeviceSize)];
+                // 先頭からグリフデータが入っているのでその分をオフセットする
+                .offset(buffer_head_offset as vk::DeviceSize)
+                .size(write_size as vk::DeviceSize)
+                .size(832)];
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
-        };
 
-        let command_buffer = self.command_buffers[2];
-        unsafe {
+            let command_buffer = self.command_buffers[2];
             let begin_info = vk::CommandBufferBeginInfo::default();
             device
                 .begin_command_buffer(command_buffer, &begin_info)
                 .unwrap();
 
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                ash::vk::PipelineStageFlags::TRANSFER,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .image(self.glyph_image)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .src_access_mask(ash::vk::AccessFlags::NONE)
+                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)],
+            );
+
+            if !buffer_image_copies.is_empty() {
+                device.cmd_copy_buffer_to_image(
+                    command_buffer,
+                    self.copy_src_buffer,
+                    self.glyph_image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &buffer_image_copies,
+                );
+            }
+
             let regions = [vk::BufferCopy::default()
-                .src_offset(0)
+                .src_offset(buffer_head_offset as vk::DeviceSize)
                 .dst_offset(BufferView::character_data_offset())
-                .size((std::mem::size_of::<CharacterData>() * str.len()) as vk::DeviceSize)];
+                .size(size as vk::DeviceSize)];
             device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
+
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::TRANSFER,
+                ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image(self.glyph_image)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
+                    .dst_access_mask(ash::vk::AccessFlags::SHADER_READ)],
+            );
 
             device.end_command_buffer(command_buffer).unwrap();
         };
@@ -752,6 +1013,15 @@ impl RenderingService {
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipelines[0],
+            );
+
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0, /*first_set*/
+                &self.descriptor_sets,
+                &[],
             );
 
             // ひとつのバッファーを分割してふたつの頂点データとして利用
@@ -894,6 +1164,18 @@ impl Drop for RenderingService {
         let device = &self.device;
         unsafe { device.device_wait_idle().unwrap() }
 
+        unsafe {
+            device.destroy_sampler(self.glyph_sampler, None);
+            device.destroy_image(self.glyph_image, None);
+            device.destroy_image_view(self.glyph_image_view, None);
+            device.free_memory(self.glyph_memory, None);
+        }
+
+        unsafe { device.destroy_descriptor_set_layout(self.descriptor_set_layout, None) };
+        // unsafe { device.free_descriptor_sets(self.descriptor_pool, &self.descriptor_sets) }
+        //     .unwrap();
+        unsafe { device.destroy_descriptor_pool(self.descriptor_pool, None) };
+
         for pipeline in &self.pipelines {
             unsafe { device.destroy_pipeline(*pipeline, None) };
         }
@@ -941,9 +1223,6 @@ impl Drop for RenderingService {
                 .destroy_swapchain(self.swapchain, None)
         };
         unsafe { self.surface_loader.destroy_surface(self.surface, None) };
-
-        // Device よりも先に破棄するべし
-        self.glyph_texture = None;
 
         unsafe { self.device.destroy_device(None) };
         unsafe { self.instance.destroy_instance(None) };
