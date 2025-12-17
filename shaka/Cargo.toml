@@ -9,7 +9,8 @@ renge = { path = "../renge" }
 
 ash = { workspace = true }
 ash-window = { workspace = true }
-crossfont = { workspace = true }
+font-kit = "0.14"
+pathfinder_geometry = "*"
 wasmtime = "*"
 raw-window-handle = "0.6.0"
 tokio = { version = "1", features = ["full"] }

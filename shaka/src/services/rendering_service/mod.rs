@@ -10,7 +10,8 @@ use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
-    glyph_extract_service::GlyphRequest, rendering_service::buffer_view::CharacterData,
+    glyph_extract_service::{FontId, GlyphRequest},
+    rendering_service::buffer_view::CharacterData,
 };
 
 pub struct RenderingServiceParams {
@@ -598,17 +599,21 @@ impl RenderingService {
     }
 
     async fn apply_patch(&self, str: &str, sender: &tokio::sync::mpsc::Sender<GlyphRequest>) {
-        let (s, receiver) = tokio::sync::oneshot::channel();
-        sender
-            .send(GlyphRequest::new(&['A', 'B', 'C', 'D', 'E', 'F', 'G'], s).unwrap())
-            .await
-            .unwrap();
+        for code in str.chars() {
+            let (s, receiver) = tokio::sync::oneshot::channel();
+            sender
+                .send(GlyphRequest {
+                    code,
+                    font_id: FontId::default(),
+                    size: 32.0f32,
+                    response: s,
+                })
+                .await
+                .unwrap();
 
-        let response = receiver.await.unwrap();
-        self.glyph_texture
-            .as_ref()
-            .unwrap()
-            .write(response.glyphs());
+            let glyph = receiver.await.unwrap();
+            self.glyph_texture.as_ref().unwrap().write(&glyph);
+        }
 
         let device = &self.device;
 
