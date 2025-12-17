@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use ash::*;
 
-use crossfont::RasterizedGlyph;
+use crate::services::glyph_extract_service::Glyph;
 
 #[derive(Debug)]
 pub struct GlyphRange {}
@@ -93,13 +93,7 @@ impl GlyphTexture {
         GlyphRange {}
     }
 
-    pub fn write(&self, glyphs: &[RasterizedGlyph]) {
-        for glyph in glyphs {
-            if self.glyph_cache.contains(&glyph.character) {
-                continue;
-            }
-        }
-    }
+    pub fn write(&self, _glyph: &Glyph) {}
 }
 
 impl Drop for GlyphTexture {
