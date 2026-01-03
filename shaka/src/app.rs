@@ -7,7 +7,9 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-use crate::services::{GlyphExtractService, RenderingService, RenderingServiceParams};
+use crate::services::{
+    GlyphExtractService, RenderingService, RenderingServiceParams, ShellService,
+};
 
 pub struct UserEvent {}
 
@@ -37,6 +39,11 @@ impl ApplicationHandler<UserEvent> for App {
             .with_resizable(false);
         let window = event_loop.create_window(window_attributes).unwrap();
 
+        // シェルサービス
+        let (content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
+        let shell_service = ShellService::new(content_sender);
+        self.service_runner.push(shell_service);
+
         // グリフ抽出サービス
         // グリフのラスタライズが Send ではないので特定のスレッドに保持させてチャンネルでやりとりする
         // CPU を専有しないように spawn_blocking で起動する
@@ -57,6 +64,7 @@ impl ApplicationHandler<UserEvent> for App {
             tokio::sync::mpsc::channel(64);
         let params = RenderingServiceParams {
             receiver: redraw_request_receiver,
+            content_receiver,
             glyph_request_sender: glyph_service_adapter_sender,
         };
         self.service_runner

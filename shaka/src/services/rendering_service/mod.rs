@@ -19,6 +19,7 @@ use crate::services::{
 
 pub struct RenderingServiceParams {
     pub receiver: tokio::sync::mpsc::Receiver<()>,
+    pub content_receiver: tokio::sync::mpsc::Receiver<String>,
     pub glyph_request_sender: tokio::sync::mpsc::Sender<GlyphRequest>,
 }
 
@@ -732,9 +733,14 @@ impl RenderingService {
         mut cancellation_token: renge::CancellationToken,
     ) {
         let mut receiver = params.receiver;
+        let mut content_receiver = params.content_receiver;
+
+        // 実際には文字列の受信も loop の中に入れる
+        // いったん初期値だけ受け取る簡易的な実装から始める
+        let string = content_receiver.recv().await.unwrap();
 
         // 本来は変更を受信したら呼び出す
-        self.apply_patch("ABCDEFG", &mut params.glyph_request_sender)
+        self.apply_patch(&string, &mut params.glyph_request_sender)
             .await;
 
         let mut draw_params = DrawParams {
