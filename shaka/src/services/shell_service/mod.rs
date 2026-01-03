@@ -17,10 +17,27 @@ impl ShellService {
 
 impl Service for ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
-        self.content_sender
-            .send("AABBCC".to_string())
-            .await
-            .unwrap();
+        let mut multiplexer = asura::Multiplexer::new();
+        let (_id, controller) = multiplexer.spawn(&asura::Config::default());
+        loop {
+            match controller.recv_event() {
+                Ok(event) => match event {
+                    asura::Event::Updated => break,
+                    asura::Event::Exit => return,
+                    asura::Event::Others => continue,
+                },
+                Err(_) => return,
+            }
+        }
+
+        let content = controller
+            .read_contents()
+            .acquire_contents()
+            .iter()
+            .filter_map(|c| if c.code != ' ' { Some(c.code) } else { None })
+            .take(8)
+            .collect();
+        self.content_sender.send(content).await.unwrap();
 
         loop {
             tokio::select! {
