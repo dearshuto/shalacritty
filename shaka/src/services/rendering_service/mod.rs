@@ -35,6 +35,7 @@ pub struct RenderingService {
 
     instance: ash::Instance,
     device: ash::Device,
+    physical_device: vk::PhysicalDevice,
     #[allow(unused)]
     queue: vk::Queue,
     debug_utils_loader: ext::debug_utils::Instance,
@@ -691,6 +692,7 @@ impl RenderingService {
             range_allocator: RangeAllocator::new(4096, 4096),
             instance,
             device,
+            physical_device,
             debug_utils_loader,
             debug_utils_messanger: debug_utils,
             dynamic_rendering_device,
@@ -849,23 +851,39 @@ impl RenderingService {
             std::slice::from_raw_parts_mut(ptr, buffer_head_offset).copy_from_slice(&dst_buffer);
 
             let ptr = ptr.byte_add(buffer_head_offset);
-            // 次の書き込みオフセットを64の倍数に切り上げる。
-            // 64は `align_of::<CharacterData>()` (通常4 or 8) の倍数でもあるため、
-            // これで両方のアライメント要件を満たすことができる。
-            let offset = ptr.align_offset(64);
+            let limits = &self
+                .instance
+                .get_physical_device_properties(self.physical_device)
+                .limits;
+
+            // 次の書き込みオフセットを　SSBO に要求されるアラインメントの倍数に切り上げる。
+            // かつ CharacterData のアラインメントも満たすように、両者の最小公倍数を算出する
+            // さらにフラッシュするときのアラインメントも考慮しておく
+            let required_alignment = num_integer::lcm(
+                num_integer::lcm(
+                    limits.min_storage_buffer_offset_alignment as usize,
+                    std::mem::align_of::<CharacterData>(),
+                ),
+                limits.non_coherent_atom_size as usize,
+            );
+            let offset = ptr.align_offset(required_alignment);
             let buffer_head_offset = buffer_head_offset + offset;
 
             let copy_src =
                 std::slice::from_raw_parts_mut(ptr.add(offset) as *mut CharacterData, 16);
             let size = self.text_writer.write(copy_src, str, &self.glyph_table);
 
+            // フラッシュは特定の値の倍数である必要がある
+            // write_size 以上でかつある倍数である整数を flush_size とする
             let write_size = offset + size;
+            let flush_size = limits.non_coherent_atom_size as usize
+                * ((write_size + limits.non_coherent_atom_size as usize - 1)
+                    / limits.non_coherent_atom_size as usize);
             let ranges = [vk::MappedMemoryRange::default()
                 .memory(self.copy_src_memory)
                 // 先頭からグリフデータが入っているのでその分をオフセットする
                 .offset(buffer_head_offset as vk::DeviceSize)
-                .size(write_size as vk::DeviceSize)
-                .size(832)];
+                .size(flush_size as vk::DeviceSize)];
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
 

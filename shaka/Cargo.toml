@@ -11,6 +11,7 @@ ash = { workspace = true }
 ash-window = { workspace = true }
 font-kit = "0.14"
 pathfinder_geometry = "*"
+num-integer = "0.1"
 wasmtime = "*"
 raw-window-handle = "0.6.0"
 tokio = { workspace = true }
