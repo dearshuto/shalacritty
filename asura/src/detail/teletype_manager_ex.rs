@@ -104,9 +104,8 @@ impl TeletypeManagerEx {
             shell: Some(Shell::new("bash".to_string(), Vec::default())),
             #[cfg(target_os = "windows")]
             shell: Some(Shell::new("cmd.exe".to_string(), Vec::default())),
-            working_directory: None,
-            env: HashMap::default(),
             drain_on_exit: true,
+            ..Default::default()
         };
 
         let pty = alacritty_terminal::tty::new(pty_config, window_size, id.internal).unwrap();
