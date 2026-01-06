@@ -442,7 +442,7 @@ impl RenderingService {
             .unwrap()
         };
 
-        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 4096;
+        const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 64 * 1024;
         let copy_src_buffer = {
             let queue_family_indices = [queue_family_index as u32];
             let create_info = vk::BufferCreateInfo::default()
@@ -746,7 +746,7 @@ impl RenderingService {
             .await;
 
         let mut draw_params = DrawParams {
-            char_count: 7,
+            char_count: 64,
             frame: 0,
         };
         loop {
@@ -840,9 +840,8 @@ impl RenderingService {
             let ptr = device
                 .map_memory(
                     self.copy_src_memory,
-                    0, /*offset*/
-                    // std::mem::size_of::<CharacterData>() as vk::DeviceSize * 16, /*size*/
-                    4096,
+                    0,                                                            /*offset*/
+                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 128, /*size*/
                     vk::MemoryMapFlags::empty(),
                 )
                 .unwrap() as *mut u8;
@@ -870,7 +869,7 @@ impl RenderingService {
             let buffer_head_offset = buffer_head_offset + offset;
 
             let copy_src =
-                std::slice::from_raw_parts_mut(ptr.add(offset) as *mut CharacterData, 16);
+                std::slice::from_raw_parts_mut(ptr.add(offset) as *mut CharacterData, 128);
             let size = self.text_writer.write(copy_src, str, &self.glyph_table);
 
             // フラッシュは特定の値の倍数である必要がある
