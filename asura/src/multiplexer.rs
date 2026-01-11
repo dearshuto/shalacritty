@@ -44,20 +44,54 @@ impl From<alacritty_terminal::event::Event> for Event {
 }
 
 pub struct ShellController {
+    shell_receiver: ShellReceiver,
+    shell_sender: ShellSender,
+}
+
+impl ShellController {
+    pub fn is_running(&self) -> bool {
+        self.shell_receiver.is_running()
+    }
+
+    pub fn recv_event(&self) -> Result<Event, RecvError> {
+        self.shell_receiver.recv_event()
+    }
+
+    pub fn try_recv_event(&self) -> Result<Event, TryRecvError> {
+        self.shell_receiver.try_recv_event()
+    }
+
+    pub fn read_contents(&self) -> TerminalAccessor {
+        self.shell_receiver.read_contents()
+    }
+
+    pub fn send_input(&mut self, str: &str) {
+        self.shell_sender.send_input(str);
+    }
+
+    pub fn resize(
+        &mut self,
+        line_count: u16,
+        column_count: u16,
+        cell_width: u16,
+        cell_height: u16,
+    ) {
+        self.shell_sender
+            .resize(line_count, column_count, cell_width, cell_height);
+    }
+}
+
+pub struct ShellReceiver {
     // ターミナルの更新イベントの receiver
     // alacritty_terminal モジュールが asura 経由で外部ににじみ出ないように隠蔽している
     event_receiver: std::sync::mpsc::Receiver<alacritty_terminal::event::Event>,
-
-    // ターミナルに処理を送る sender
-    // セッターの役割
-    input_sender: alacritty_terminal::event_loop::EventLoopSender,
 
     // ターミナルの情報にアクセスするためのインスタンス
     // ゲッターの役割
     proxy: TerminalProxy,
 }
 
-impl ShellController {
+impl ShellReceiver {
     pub fn is_running(&self) -> bool {
         let Err(error) = self.event_receiver.recv_timeout(Duration::from_nanos(1)) else {
             return true;
@@ -86,7 +120,15 @@ impl ShellController {
     pub fn read_contents(&self) -> TerminalAccessor {
         self.proxy.read_lock()
     }
+}
 
+pub struct ShellSender {
+    // ターミナルに処理を送る sender
+    // セッターの役割
+    input_sender: alacritty_terminal::event_loop::EventLoopSender,
+}
+
+impl ShellSender {
     pub fn send_input(&mut self, str: &str) {
         let bytes: Vec<_> = str.bytes().collect();
         self.input_sender
@@ -126,6 +168,17 @@ impl Multiplexer {
     }
 
     pub fn spawn(&mut self, config: &Config) -> (ShellId, ShellController) {
+        let (id, sender, receiver) = self.spawn_separated(config);
+        (
+            id,
+            ShellController {
+                shell_sender: sender,
+                shell_receiver: receiver,
+            },
+        )
+    }
+
+    pub fn spawn_separated(&mut self, config: &Config) -> (ShellId, ShellSender, ShellReceiver) {
         let screen_lines = config.screen_lines;
         let dimension = Dimension {
             total_lines: config.total_lines,
@@ -149,9 +202,11 @@ impl Multiplexer {
 
         (
             id,
-            ShellController {
-                event_receiver: teletype_data.event_receiver,
+            ShellSender {
                 input_sender: teletype_data.input_sender,
+            },
+            ShellReceiver {
+                event_receiver: teletype_data.event_receiver,
                 proxy: teletype_data.proxy,
             },
         )
