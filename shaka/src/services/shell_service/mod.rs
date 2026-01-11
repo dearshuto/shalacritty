@@ -18,9 +18,9 @@ impl ShellService {
 impl Service for ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let mut multiplexer = asura::Multiplexer::new();
-        let (_id, controller) = multiplexer.spawn(&asura::Config::default());
+        let (_id, _sender, receiver) = multiplexer.spawn_separated(&asura::Config::default());
         loop {
-            match controller.recv_event() {
+            match receiver.recv_event() {
                 Ok(event) => match event {
                     asura::Event::Updated => break,
                     asura::Event::Exit => return,
@@ -30,7 +30,7 @@ impl Service for ShellService {
             }
         }
 
-        let content = controller
+        let content = receiver
             .read_contents()
             .acquire_contents()
             .iter()

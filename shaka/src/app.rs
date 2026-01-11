@@ -1,10 +1,12 @@
-use renge::ServiceRunner;
+use std::time::Duration;
+
+use renge::{Service, ServiceRunner};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{KeyEvent, WindowEvent},
+    event::WindowEvent,
     event_loop::EventLoopProxy,
-    window::{Window, WindowAttributes},
+    window::{Window, WindowAttributes, WindowId},
 };
 
 use crate::services::{
@@ -19,7 +21,7 @@ pub struct App {
     #[allow(unused)]
     event_loop_proxy: EventLoopProxy<UserEvent>,
     redraw_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
-    key_event_sender: Option<std::sync::mpsc::Sender<KeyEvent>>,
+    key_event_sender: Option<std::sync::mpsc::Sender<(WindowId, WindowEvent)>>,
 }
 
 impl App {
@@ -101,33 +103,17 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         match event {
-            WindowEvent::KeyboardInput {
-                #[allow(unused)]
-                device_id,
-                event,
-                #[allow(unused)]
-                is_synthetic,
-            } => {
-                let Some(sender) = &self.key_event_sender else {
-                    return;
-                };
-
-                sender.send(event).unwrap_or_default();
-            }
-            WindowEvent::RedrawRequested => {
-                let Some(sender) = &self.redraw_request_sender else {
-                    return;
-                };
-
-                let sender_cloned = sender.clone();
-                tokio::spawn(async move { sender_cloned.send(()).await.unwrap() });
-            }
             WindowEvent::CloseRequested => event_loop.exit(),
-            _ => {}
+            _ => {
+                let Some(sender) = self.key_event_sender.as_ref() else {
+                    return;
+                };
+                sender.send((window_id, event)).unwrap_or_default();
+            }
         }
     }
 
@@ -137,5 +123,40 @@ impl ApplicationHandler<UserEvent> for App {
         };
 
         window.request_redraw();
+    }
+}
+
+struct WindowEventAsynchronizer {
+    sender: tokio::sync::mpsc::Sender<(winit::window::WindowId, winit::event::WindowEvent)>,
+    receiver: std::sync::mpsc::Receiver<(winit::window::WindowId, winit::event::WindowEvent)>,
+}
+
+impl WindowEventAsynchronizer {
+    pub fn new(
+        senders: tokio::sync::mpsc::Sender<(winit::window::WindowId, winit::event::WindowEvent)>,
+        receiver: std::sync::mpsc::Receiver<(winit::window::WindowId, winit::event::WindowEvent)>,
+    ) -> Self {
+        Self {
+            sender: senders,
+            receiver,
+        }
+    }
+
+    async fn serve(self) {
+        loop {
+            match self.receiver.recv_timeout(Duration::from_millis(20)) {
+                Ok((id, event)) => {
+                    self.sender.send((id, event)).await.unwrap_or_default();
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    }
+}
+
+impl Service for WindowEventAsynchronizer {
+    async fn serve(self, _cancellation_token: renge::CancellationToken) {
+        self.serve().await;
     }
 }
