@@ -1,16 +1,18 @@
 use winit::{event::WindowEvent, window::WindowId};
 
+use crate::services::window_event_asynchronizer::AsyncWindowEvent;
+
 pub enum Action {}
 
 pub struct InputEventService {
-    receiver: tokio::sync::mpsc::Receiver<(WindowId, WindowEvent)>,
+    receiver: tokio::sync::mpsc::Receiver<(WindowId, AsyncWindowEvent)>,
     #[allow(unused)]
     sender: tokio::sync::mpsc::Sender<Action>,
 }
 
 impl InputEventService {
     pub fn new(
-        receiver: tokio::sync::mpsc::Receiver<(WindowId, WindowEvent)>,
+        receiver: tokio::sync::mpsc::Receiver<(WindowId, AsyncWindowEvent)>,
         sender: tokio::sync::mpsc::Sender<Action>,
     ) -> Self {
         InputEventService { receiver, sender }
@@ -25,31 +27,26 @@ impl InputEventService {
         }
     }
 
-    async fn handle_event(&mut self, event: WindowEvent) {
-        match event {
-            WindowEvent::KeyboardInput {
-                #[allow(unused)]
-                device_id,
-                event,
-                #[allow(unused)]
-                is_synthetic,
-            } => {
-                let Some(sender) = &self.key_event_sender else {
-                    return;
-                };
+    async fn handle_event(&mut self, _event: AsyncWindowEvent) {
+        // match event {
+        //     AsyncWindowEvent::KeyboardInput {
+        //         #[allow(unused)]
+        //         device_id,
+        //         event,
+        //     } => {
+        //         self.sender.send(event).unwrap_or_default();
+        //         1
+        //     }
+        //     WindowEvent::RedrawRequested => {
+        //         let Some(sender) = &self.redraw_request_sender else {
+        //             return;
+        //         };
 
-                sender.send(event).unwrap_or_default();
-            }
-            WindowEvent::RedrawRequested => {
-                let Some(sender) = &self.redraw_request_sender else {
-                    return;
-                };
-
-                let sender_cloned = sender.clone();
-                tokio::spawn(async move { sender_cloned.send(()).await.unwrap() });
-            }
-            WindowEvent::CloseRequested => {}
-            _ => {}
-        }
+        //         let sender_cloned = sender.clone();
+        //         tokio::spawn(async move { sender_cloned.send(()).await.unwrap() });
+        //     }
+        //     WindowEvent::CloseRequested => {}
+        //     _ => {}
+        // }
     }
 }
