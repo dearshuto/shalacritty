@@ -12,6 +12,7 @@ use crate::services::{
     WindowEventAsynchronizer,
 };
 
+#[derive(Debug)]
 pub struct UserEvent {}
 
 pub struct App {
@@ -99,6 +100,8 @@ impl ApplicationHandler<UserEvent> for App {
         self.window = Some(window);
         self.redraw_request_sender = Some(redraw_request_sender);
         self.window_event_sender = Some(window_event_sender);
+
+        self.event_loop_proxy.send_event(UserEvent {}).unwrap();
     }
 
     fn window_event(
@@ -118,11 +121,14 @@ impl ApplicationHandler<UserEvent> for App {
 
         match event {
             WindowEvent::RedrawRequested => {
-                let Some(window) = &self.window else {
+                let Some(sender) = &self.redraw_request_sender else {
                     return;
                 };
 
-                window.request_redraw();
+                let sender_cloned = sender.clone();
+                tokio::spawn(async move {
+                    sender_cloned.send(()).await.unwrap_or_default();
+                });
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}

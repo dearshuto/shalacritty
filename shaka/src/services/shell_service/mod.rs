@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use renge::Service;
 use winit::{
     event::{DeviceId, KeyEvent},
@@ -28,34 +30,43 @@ impl ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let mut multiplexer = asura::Multiplexer::new();
         let (_id, shell_controller) = multiplexer.spawn(&asura::Config::default());
-        loop {
-            match shell_controller.recv_event() {
-                Ok(event) => match event {
-                    asura::Event::Updated => break,
-                    asura::Event::Exit => return,
-                    asura::Event::Others => continue,
-                },
-                Err(_) => return,
-            }
-        }
-
-        let content = shell_controller
-            .read_contents()
-            .acquire_contents()
-            .iter()
-            .filter_map(|c| if c.code != ' ' { Some(c.code) } else { None })
-            .take(8)
-            .collect();
-        self.content_sender.send(content).await.unwrap();
 
         self.shell_controller = Some(shell_controller);
         loop {
             tokio::select! {
+                () = tokio::time::sleep(Duration::from_millis(100)) =>  {
+                    if let Some(content) = self.poll_contents() {
+                        self.content_sender.send(content).await.unwrap();
+                    }
+                },
                 Some((window_id, event)) = self.window_event_receiver.recv() => self.handle_window_event(window_id, event),
                 _ = &mut cancellation_token => break,
                 else => {}
             }
         }
+    }
+
+    fn poll_contents(&self) -> Option<String> {
+        let Some(controller) = &self.shell_controller else {
+            return None;
+        };
+
+        match controller.recv_event() {
+            Ok(event) => match event {
+                asura::Event::Updated => {
+                    let content = controller
+                        .read_contents()
+                        .acquire_contents()
+                        .iter()
+                        .filter_map(|c| if c.code != ' ' { Some(c.code) } else { None })
+                        .collect();
+                    return Some(content);
+                }
+                asura::Event::Exit => return None,
+                asura::Event::Others => return None,
+            },
+            Err(_) => return None,
+        };
     }
 
     fn handle_window_event(&mut self, _window_id: WindowId, event: AsyncWindowEvent) {
@@ -75,8 +86,6 @@ impl ShellService {
         let Some(text) = event.text_with_all_modifiers() else {
             return;
         };
-
-        println!("{}", text);
 
         let Some(shell_controller) = &mut self.shell_controller else {
             return;

@@ -737,20 +737,18 @@ impl RenderingService {
         let mut receiver = params.receiver;
         let mut content_receiver = params.content_receiver;
 
-        // 実際には文字列の受信も loop の中に入れる
-        // いったん初期値だけ受け取る簡易的な実装から始める
-        let string = content_receiver.recv().await.unwrap();
-
-        // 本来は変更を受信したら呼び出す
-        self.apply_patch(&string, &mut params.glyph_request_sender)
-            .await;
-
         let mut draw_params = DrawParams {
-            char_count: 64,
+            char_count: 0,
             frame: 0,
         };
         loop {
             tokio::select! {
+                Some(content) = content_receiver.recv() => {
+                    self.apply_patch(&content, &mut params.glyph_request_sender)
+                        .await;
+                    draw_params.char_count = content.len() as u32;
+                    self.draw(&draw_params);
+                },
                 Some(()) = receiver.recv() => {
                     self.draw(&draw_params);
                     draw_params.frame += 1;
@@ -778,7 +776,7 @@ impl RenderingService {
             let mut dst_buffer = Vec::with_capacity(1024);
             let mut buffer_image_copies = Vec::default();
             let mut buffer_head_offset = 0;
-            for code in str.chars() {
+            for code in str.chars().take(8) {
                 let (s, receiver) = tokio::sync::oneshot::channel();
                 sender
                     .send(GlyphRequest {
@@ -959,6 +957,10 @@ impl RenderingService {
     }
 
     fn draw(&self, params: &DrawParams) {
+        if params.char_count == 0 {
+            return;
+        }
+
         let device = &self.device;
         let display_semaphore = self.display_semaphores[0];
         let command_completed_semaphore = self.command_completed_semaphores[0];
