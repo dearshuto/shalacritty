@@ -3,6 +3,17 @@ name: Gemini Auto Coder
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Target Issue Number'
+        required: true
+      issue_title:
+        description: 'Issue Title'
+        required: true
+      issue_body:
+        description: 'Issue Content'
+        required: true
 
 jobs:
   auto-pr:
