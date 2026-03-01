@@ -61,7 +61,7 @@ pub struct TerminalProxy {
 }
 
 impl TerminalProxy {
-    pub fn read_lock(&self) -> TerminalAccessor {
+    pub fn read_lock(&self) -> TerminalAccessor<'_> {
         TerminalAccessor {
             internal: self.internal.lock(),
         }

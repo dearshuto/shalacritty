@@ -61,7 +61,7 @@ impl ShellController {
         self.shell_receiver.try_recv_event()
     }
 
-    pub fn read_contents(&self) -> TerminalAccessor {
+    pub fn read_contents(&self) -> TerminalAccessor<'_> {
         self.shell_receiver.read_contents()
     }
 
@@ -117,7 +117,7 @@ impl ShellReceiver {
         }
     }
 
-    pub fn read_contents(&self) -> TerminalAccessor {
+    pub fn read_contents(&self) -> TerminalAccessor<'_> {
         self.proxy.read_lock()
     }
 }
