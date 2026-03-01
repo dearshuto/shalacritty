@@ -1,0 +1,55 @@
+name: Rust
+
+on:
+  push:
+    branches: ["develop"]
+  pull_request:
+    branches: ["develop"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install slangc
+        run: |
+          # 2026 年 3 月 1 日時点の最新バージョン
+          SLANG_VERSION="2026.3.1"
+          curl -L "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64.tar.gz" -o slang.tar.gz
+          # 展開して適切なディレクトリに配置
+          mkdir -p ./slang-bin
+          tar -xzf slang.tar.gz -C ./slang-bin
+
+          # PATH に追加
+          echo "$(pwd)/slang-bin/bin" >> $GITHUB_PATH
+
+          # 実行権限の付与
+          chmod +x ./slang-bin/bin/slangc
+
+      # フォント、protobuf、Vulkan
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            protobuf-compiler \
+            libvulkan-dev
+
+      - uses: swatinem/rust-cache@v2
+
+      # build.rs に追加すれば不要になるかも
+      - name: Build shaders
+        run: |
+          slangc shalacritty/res/terminal.slang -target wgsl -o shalacritty/src/gfx/detail/terminal.wgsl
+          slangc shalacritty/res/terminal.slang -target spirv -o shaka/src/services/rendering_service/terminal.spv
+
+      - name: Build
+        run: cargo build
+      - name: Run tests
+        run: cargo test
