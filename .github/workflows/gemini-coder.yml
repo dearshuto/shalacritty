@@ -50,7 +50,7 @@ jobs:
 
           # -p: 非対話モードでプロンプトを実行
           # -y: 全てのアクション（ファイル編集・保存）を自動で許可（YOLOモード）
-          gemini -y -p "あなたはシニアエンジニアです。Issue #$ISSUE_NUM: $ISSUE_TITLE を解決するために、現在のコードを分析し、必要なファイルを直接修正して保存してください。内容: $ISSUE_BODY"
+          gemini -y --model gemini-2.5-flash -p "あなたはシニアエンジニアです。Issue #$ISSUE_NUM: $ISSUE_TITLE を解決するために、現在のコードを分析し、必要なファイルを直接修正して保存してください。内容: $ISSUE_BODY"
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
