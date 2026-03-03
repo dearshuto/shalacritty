@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # 2025 年 11 月 25 日のリビジョン
-alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "52031ea" }
+alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev = "e1779cbc5843fc856672b45c21d3ab26e518d72c" }
 
 itertools = "0.14"
 parking_lot = "*"
