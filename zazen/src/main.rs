@@ -6,6 +6,8 @@ use std::{
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
+    style::{Color, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Widget},
     DefaultTerminal,
 };
@@ -121,16 +123,27 @@ impl Widget for &App {
             .iter()
             .fold(
                 BTreeMap::default(),
-                |mut tree: BTreeMap<i32, String>, value| {
-                    tree.entry(value.y)
-                        .or_insert_with(String::new)
-                        .push(value.code);
-
+                |mut tree: BTreeMap<i32, Vec<asura::Content>>, value| {
+                    tree.entry(value.y).or_insert_with(Vec::new).push(value.clone());
                     tree
                 },
             )
             .into_iter()
-            .map(|(_key, value)| ListItem::new(value));
+            .map(|(_key, contents)| {
+                let spans: Vec<Span> = contents
+                    .into_iter()
+                    .map(|content| {
+                        let r = (content.fg[0] * 255.0) as u8;
+                        let g = (content.fg[1] * 255.0) as u8;
+                        let b = (content.fg[2] * 255.0) as u8;
+                        Span::styled(
+                            content.code.to_string(),
+                            Style::default().fg(Color::Rgb(r, g, b)),
+                        )
+                    })
+                    .collect();
+                ListItem::new(Text::from(Line::from(spans)))
+            });
 
         List::new(messages)
             .block(
