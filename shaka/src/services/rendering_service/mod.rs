@@ -959,11 +959,16 @@ impl RenderingService {
     }
 
     fn draw(&self, params: &DrawParams) {
+        if params.char_count == 0 {
+            return;
+        }
+
+        let buffer_index = (params.frame % 2) as usize;
         let device = &self.device;
-        let display_semaphore = self.display_semaphores[0];
-        let command_completed_semaphore = self.command_completed_semaphores[0];
-        let next_command_fence = self.command_fences[0];
-        let command_buffer = self.command_buffers[0];
+        let display_semaphore = self.display_semaphores[buffer_index];
+        let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
+        let next_command_fence = self.command_fences[(buffer_index + 1) % 2];
+        let command_buffer = self.command_buffers[buffer_index];
         let (next_frame_index, _) = unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
