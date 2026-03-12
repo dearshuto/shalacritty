@@ -83,10 +83,10 @@ impl App {
                                     Ok(String::from_utf8(asura::util::Unicode::enter().to_vec())
                                         .unwrap())
                                 }
-                                // event::KeyCode::Left => todo!(),
-                                // event::KeyCode::Right => todo!(),
-                                // event::KeyCode::Up => todo!(),
-                                // event::KeyCode::Down => todo!(),
+                                event::KeyCode::Left => Ok(String::from_utf8(asura::util::Unicode::allow_left().to_vec()).unwrap()),
+                                event::KeyCode::Right => Ok(String::from_utf8(asura::util::Unicode::allow_right().to_vec()).unwrap()),
+                                event::KeyCode::Up => Ok(String::from_utf8(asura::util::Unicode::allow_up().to_vec()).unwrap()),
+                                event::KeyCode::Down => Ok(String::from_utf8(asura::util::Unicode::allow_down().to_vec()).unwrap()),
                                 // event::KeyCode::Home => todo!(),
                                 // event::KeyCode::End => todo!(),
                                 // event::KeyCode::PageUp => todo!(),
