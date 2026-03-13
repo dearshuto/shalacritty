@@ -62,3 +62,8 @@ Vulkan. So they share the same software design.
   repository when changing the protocol or shared data structures.
 - **Performance:** Choose the best approach using asynchronous functions.
 - **Vulkan Safety:** Ensure cross-platform compatibility when using Vulkan.
+- **Test-Driven Reliability:** Run `cargo test` regularly and ensure that all
+  tests pass; verify compatibility when fixes are applied.
+- **Zero Regression:** If a test fails, fix the issue in your changes. Never
+  modify the test code itself. If the failure seems impossible to reproduce,
+  open a pull request marked `[WIP]` so others can investigate.
