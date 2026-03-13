@@ -168,5 +168,20 @@ impl Widget for &App {
                     .title(format!("{}x{}", area.width, area.height)),
             )
             .render(area, buf);
+
+        // Draw cursor
+        let cursor_point = terminal_accessor.get_cursor_point();
+        let cursor_x = cursor_point.0 as u16; // Corrected access for x
+        let cursor_y = cursor_point.1 as u16; // Corrected access for y
+
+        // Ensure cursor is within the visible area and within the drawing area bounds
+        if cursor_x < area.width && cursor_y < area.height {
+            // Get the cell at the cursor position
+            let cell = buf.cell_mut((area.x + cursor_x, area.y + cursor_y)).unwrap(); // Corrected method call and unwrapped Option
+            // Set its background color to indicate the cursor
+            // For a "2px wide bar", in a character-based terminal, we highlight the cell
+            // as this is the closest visual representation possible.
+            cell.set_bg(Color::LightGreen);
+        }
     }
 }
