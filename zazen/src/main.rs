@@ -47,75 +47,77 @@ impl App {
         let duration = Duration::from_millis(16);
         loop {
             terminal.draw(|frame| {
-                // TODO: 描画領域をシェルに反映する
+
                 frame.render_widget(&self, frame.area())
             })?;
             while event::poll(duration)? {
-                let Event::Key(key) = event::read()? else {
-                    continue;
-                };
-
-                match key.kind {
-                    KeyEventKind::Press => {
-                        let controller = self.controller_table.values_mut().next().unwrap();
-                        let str = if key.modifiers.contains(event::KeyModifiers::CONTROL) {
-                            if let event::KeyCode::Char(c) = key.code {
-                                let control_byte = if c.is_ascii_lowercase() {
-                                    c as u8 - b'a' + 1
-                                } else if c.is_ascii_uppercase() {
-                                    c as u8 - b'A' + 1
-                                } else if c == ' ' {
-                                    0x00 // Ctrl+Space is Null (0x00)
+                match event::read()? {
+                    Event::Key(key) => match key.kind {
+                        KeyEventKind::Press => {
+                            let controller = self.controller_table.values_mut().next().unwrap();
+                            let str = if key.modifiers.contains(event::KeyModifiers::CONTROL) {
+                                if let event::KeyCode::Char(c) = key.code {
+                                    let control_byte = if c.is_ascii_lowercase() {
+                                        c as u8 - b'a' + 1
+                                    } else if c.is_ascii_uppercase() {
+                                        c as u8 - b'A' + 1
+                                    } else if c == ' ' {
+                                        0x00 // Ctrl+Space is Null (0x00)
+                                    } else {
+                                        c as u8 // Fallback for other characters, might not be ideal
+                                    };
+                                    Ok(String::from_utf8(vec![control_byte]).unwrap_or_default())
                                 } else {
-                                    c as u8 // Fallback for other characters, might not be ideal
-                                };
-                                Ok(String::from_utf8(vec![control_byte]).unwrap_or_default())
-                            } else {
-                                Ok(String::new())
-                            }
-                        } else {
-                            match key.code {
-                                event::KeyCode::Backspace => Ok(String::from_utf8(
-                                    asura::util::Unicode::backspace().to_vec(),
-                                )
-                                .unwrap()),
-                                event::KeyCode::Enter => {
-                                    Ok(String::from_utf8(asura::util::Unicode::enter().to_vec())
-                                        .unwrap())
+                                    Ok(String::new())
                                 }
-                                event::KeyCode::Left => Ok(String::from_utf8(asura::util::Unicode::allow_left().to_vec()).unwrap()),
-                                event::KeyCode::Right => Ok(String::from_utf8(asura::util::Unicode::allow_right().to_vec()).unwrap()),
-                                event::KeyCode::Up => Ok(String::from_utf8(asura::util::Unicode::allow_up().to_vec()).unwrap()),
-                                event::KeyCode::Down => Ok(String::from_utf8(asura::util::Unicode::allow_down().to_vec()).unwrap()),
-                                // event::KeyCode::Home => todo!(),
-                                // event::KeyCode::End => todo!(),
-                                // event::KeyCode::PageUp => todo!(),
-                                // event::KeyCode::PageDown => todo!(),
-                                // event::KeyCode::Tab => todo!(),
-                                // event::KeyCode::BackTab => todo!(),
-                                // event::KeyCode::Delete => todo!(),
-                                // event::KeyCode::Insert => todo!(),
-                                // event::KeyCode::F(_) => todo!(),
-                                event::KeyCode::Char(c) => Ok(c.to_string()),
-                                // event::KeyCode::Null => todo!(),
-                                event::KeyCode::Esc => return Ok(()),
-                                // event::KeyCode::CapsLock => todo!(),
-                                // event::KeyCode::ScrollLock => todo!(),
-                                // event::KeyCode::NumLock => todo!(),
-                                // event::KeyCode::PrintScreen => todo!(),
-                                // event::KeyCode::Pause => todo!(),
-                                // event::KeyCode::Menu => todo!(),
-                                // event::KeyCode::KeypadBegin => todo!(),
-                                // event::KeyCode::Media(media_key_code) => todo!(),
-                                // event::KeyCode::Modifier(modifier_key_code) => todo!(),
-                                _ => Ok(String::new()),
-                            }
-                        };
-
-                        controller.send_input(&str.unwrap());
+                            } else {
+                                match key.code {
+                                    event::KeyCode::Backspace => Ok(String::from_utf8(
+                                        asura::util::Unicode::backspace().to_vec(),
+                                    )
+                                    .unwrap()),
+                                    event::KeyCode::Enter => {
+                                        Ok(String::from_utf8(asura::util::Unicode::enter().to_vec())
+                                            .unwrap())
+                                    }
+                                    event::KeyCode::Left => Ok(String::from_utf8(asura::util::Unicode::allow_left().to_vec()).unwrap()),
+                                    event::KeyCode::Right => Ok(String::from_utf8(asura::util::Unicode::allow_right().to_vec()).unwrap()),
+                                    event::KeyCode::Up => Ok(String::from_utf8(asura::util::Unicode::allow_up().to_vec()).unwrap()),
+                                    event::KeyCode::Down => Ok(String::from_utf8(asura::util::Unicode::allow_down().to_vec()).unwrap()),
+                                    // event::KeyCode::Home => todo!(),
+                                    // event::KeyCode::End => todo!(),
+                                    // event::KeyCode::PageUp => todo!(),
+                                    // event::KeyCode::PageDown => todo!(),
+                                    // event::KeyCode::Tab => todo!(),
+                                    // event::KeyCode::BackTab => todo!(),
+                                    // event::KeyCode::Delete => todo!(),
+                                    // event::KeyCode::Insert => todo!(),
+                                    // event::KeyCode::F(_) => todo!(),
+                                    event::KeyCode::Char(c) => Ok(c.to_string()),
+                                    // event::KeyCode::Null => todo!(),
+                                    event::KeyCode::Esc => return Ok(()),
+                                    // event::KeyCode::CapsLock => todo!(),
+                                    // event::KeyCode::ScrollLock => todo!(),
+                                    // event::KeyCode::NumLock => todo!(),
+                                    // event::KeyCode::PrintScreen => todo!(),
+                                    // event::KeyCode::Pause => todo!(),
+                                    // event::KeyCode::Menu => todo!(),
+                                    // event::KeyCode::KeypadBegin => todo!(),
+                                    // event::KeyCode::Media(media_key_code) => todo!(),
+                                    // event::KeyCode::Modifier(modifier_key_code) => todo!(),
+                                    _ => Ok(String::new()),
+                                }
+                            };
+                            controller.send_input(&str.unwrap());
+                        }
+                        KeyEventKind::Repeat => todo!(),
+                        KeyEventKind::Release => todo!(),
+                    },
+                    Event::Resize(new_width, new_height) => {
+                        let controller = self.controller_table.values_mut().next().unwrap();
+                        controller.resize(new_height, new_width, 1, 1);
                     }
-                    KeyEventKind::Repeat => todo!(),
-                    KeyEventKind::Release => todo!(),
+                    _ => {}
                 }
             }
         }
