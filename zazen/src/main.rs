@@ -5,18 +5,19 @@ use std::{
 
 use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::{
+use ratatui::{backend::CrosstermBackend, Terminal, 
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Widget},
-    DefaultTerminal,
 };
+
+mod tui;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let terminal = ratatui::init();
-    let app_result = App::new().run(terminal);
-    ratatui::restore();
+    let mut terminal = tui::init()?;
+    let app_result = App::new().run(&mut terminal);
+    tui::restore()?;
     app_result
 }
 
@@ -43,7 +44,7 @@ impl App {
     }
 
     /// Run the app until the user exits.
-    fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    fn run(mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<()> {
         let duration = Duration::from_millis(16);
         loop {
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
