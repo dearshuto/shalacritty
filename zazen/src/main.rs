@@ -46,10 +46,7 @@ impl App {
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         let duration = Duration::from_millis(16);
         loop {
-            terminal.draw(|frame| {
-
-                frame.render_widget(&self, frame.area())
-            })?;
+            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
             while event::poll(duration)? {
                 match event::read()? {
                     Event::Key(key) => match key.kind {
@@ -76,14 +73,26 @@ impl App {
                                         asura::util::Unicode::backspace().to_vec(),
                                     )
                                     .unwrap()),
-                                    event::KeyCode::Enter => {
-                                        Ok(String::from_utf8(asura::util::Unicode::enter().to_vec())
-                                            .unwrap())
-                                    }
-                                    event::KeyCode::Left => Ok(String::from_utf8(asura::util::Unicode::allow_left().to_vec()).unwrap()),
-                                    event::KeyCode::Right => Ok(String::from_utf8(asura::util::Unicode::allow_right().to_vec()).unwrap()),
-                                    event::KeyCode::Up => Ok(String::from_utf8(asura::util::Unicode::allow_up().to_vec()).unwrap()),
-                                    event::KeyCode::Down => Ok(String::from_utf8(asura::util::Unicode::allow_down().to_vec()).unwrap()),
+                                    event::KeyCode::Enter => Ok(String::from_utf8(
+                                        asura::util::Unicode::enter().to_vec(),
+                                    )
+                                    .unwrap()),
+                                    event::KeyCode::Left => Ok(String::from_utf8(
+                                        asura::util::Unicode::allow_left().to_vec(),
+                                    )
+                                    .unwrap()),
+                                    event::KeyCode::Right => Ok(String::from_utf8(
+                                        asura::util::Unicode::allow_right().to_vec(),
+                                    )
+                                    .unwrap()),
+                                    event::KeyCode::Up => Ok(String::from_utf8(
+                                        asura::util::Unicode::allow_up().to_vec(),
+                                    )
+                                    .unwrap()),
+                                    event::KeyCode::Down => Ok(String::from_utf8(
+                                        asura::util::Unicode::allow_down().to_vec(),
+                                    )
+                                    .unwrap()),
                                     // event::KeyCode::Home => todo!(),
                                     // event::KeyCode::End => todo!(),
                                     // event::KeyCode::PageUp => todo!(),
@@ -142,7 +151,9 @@ impl Widget for &App {
             .fold(
                 BTreeMap::default(),
                 |mut tree: BTreeMap<i32, Vec<asura::Content>>, value| {
-                    tree.entry(value.y).or_insert_with(Vec::new).push(value.clone());
+                    tree.entry(value.y)
+                        .or_insert_with(Vec::new)
+                        .push(value.clone());
                     tree
                 },
             )
@@ -174,15 +185,18 @@ impl Widget for &App {
         // Draw cursor
         let cursor_point = terminal_accessor.get_cursor_point();
         let cursor_x = cursor_point.0 as u16; // Corrected access for x
+                                              //
         let cursor_y = cursor_point.1 as u16; // Corrected access for y
 
         // Ensure cursor is within the visible area and within the drawing area bounds
         if cursor_x < area.width && cursor_y < area.height {
             // Get the cell at the cursor position
-            let cell = buf.cell_mut((area.x + cursor_x, area.y + cursor_y)).unwrap(); // Corrected method call and unwrapped Option
-            // Set its background color to indicate the cursor
-            // For a "2px wide bar", in a character-based terminal, we highlight the cell
-            // as this is the closest visual representation possible.
+            let cell = buf
+                .cell_mut((area.x + cursor_x, area.y + cursor_y))
+                .unwrap(); // Corrected method call and unwrapped Option
+                           // Set its background color to indicate the cursor
+                           // For a "2px wide bar", in a character-based terminal, we highlight the cell
+                           // as this is the closest visual representation possible.
             cell.set_bg(Color::LightGreen);
         }
     }
