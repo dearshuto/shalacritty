@@ -154,6 +154,18 @@ impl TerminalEmulator {
         )
     }
 
+    pub fn acquire_content<T: FnOnce(&[Content], (usize, i32))>(&self, id: ShellId, f: T) {
+        let Some(x) = self.shell_controller_table.get(&id) else {
+            return;
+        };
+
+        let contents = x.read_contents();
+        let cursor = contents.get_cursor_point();
+        let contents = contents.acquire_contents();
+
+        f(&contents, cursor);
+    }
+
     /// 指定したシェルの表示要素の差分を検出します
     pub fn diff(&self, id: ShellId, context: &mut DiffContext) -> Diff {
         let Some(controller) = self.shell_controller_table.get(&id) else {
