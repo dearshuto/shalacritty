@@ -10,6 +10,8 @@ use alacritty_terminal::{
 
 use parking_lot::MutexGuard;
 
+use crate::detail::ConfigBridge;
+
 use super::{convert_color_snorm, TeletypeId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,8 +114,8 @@ impl TeletypeManagerEx {
 
         let (sender, receiver) = std::sync::mpsc::channel();
         let event_proxy = EventProxy { sender };
-        let terminal =
-            alacritty_terminal::Term::new(Default::default(), &dimension, event_proxy.clone());
+        let config = ConfigBridge::generate_default();
+        let terminal = alacritty_terminal::Term::new(config, &dimension, event_proxy.clone());
         let terminal = Arc::new(FairMutex::new(terminal));
 
         let event_loop = EventLoop::new(
