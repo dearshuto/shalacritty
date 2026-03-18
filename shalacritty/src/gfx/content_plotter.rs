@@ -306,24 +306,24 @@ impl ContentPlotter {
 
     fn convert_named_color(color: NamedColor) -> [f32; 4] {
         match color {
-            NamedColor::Black => [0.0, 0.0, 0.0, 0.0],
-            NamedColor::Red => [1.0, 0.0, 0.0, 0.0],
-            NamedColor::Green => [0.0, 1.0, 0.0, 0.0],
-            NamedColor::Yellow => [1.0, 1.0, 0.0, 0.0],
-            NamedColor::Blue => [0.0, 0.0, 0.8, 0.0],
-            NamedColor::White => [1.0, 1.0, 1.0, 0.0],
-            NamedColor::Magenta => [1.0, 0.0, 1.0, 0.0],
-            NamedColor::Cyan => [87.0 / 255.0, 154.0 / 255.0, 205.0 / 255.0, 0.0],
-            NamedColor::BrightBlack => [0.8, 0.8, 0.2, 0.0],
+            NamedColor::Black => [0.0, 0.0, 0.0, 1.0],
+            NamedColor::Red => [1.0, 0.0, 0.0, 1.0],
+            NamedColor::Green => [0.0, 1.0, 0.0, 1.0],
+            NamedColor::Yellow => [1.0, 1.0, 0.0, 1.0],
+            NamedColor::Blue => [0.0, 0.0, 0.8, 1.0],
+            NamedColor::White => [1.0, 1.0, 1.0, 1.0],
+            NamedColor::Magenta => [1.0, 0.0, 1.0, 1.0],
+            NamedColor::Cyan => [87.0 / 255.0, 154.0 / 255.0, 205.0 / 255.0, 1.0],
+            NamedColor::BrightBlack => [0.8, 0.8, 0.2, 1.0],
             // NamedColor::BrightRed => todo!(),
             // NamedColor::BrightGreen => todo!(),
             // NamedColor::BrightYellow => todo!(),
-            NamedColor::BrightBlue => [0.0, 0.0, 1.0, 0.0],
-            NamedColor::BrightMagenta => [1.0, 0.0, 1.0, 0.0],
-            NamedColor::BrightCyan => [0.0, 1.0, 1.0, 0.0],
-            NamedColor::BrightWhite => [0.8, 0.8, 0.8, 0.0],
-            NamedColor::Foreground => [1.0, 1.0, 1.0, 0.0],
-            NamedColor::Background => [1.0, 1.0, 1.0, 0.0],
+            NamedColor::BrightBlue => [0.0, 0.0, 1.0, 1.0],
+            NamedColor::BrightMagenta => [1.0, 0.0, 1.0, 1.0],
+            NamedColor::BrightCyan => [0.0, 1.0, 1.0, 1.0],
+            NamedColor::BrightWhite => [0.8, 0.8, 0.8, 1.0],
+            NamedColor::Foreground => [1.0, 1.0, 1.0, 1.0],
+            NamedColor::Background => [1.0, 1.0, 1.0, 1.0],
             // NamedColor::Cursor => todo!(),
             // NamedColor::DimBlack => todo!(),
             // NamedColor::DimRed => todo!(),
@@ -337,7 +337,7 @@ impl ContentPlotter {
             // NamedColor::DimForeground => todo!(),
             _ => {
                 println!("unknown color: {:?}", color);
-                [0.0, 0.0, 0.0, 0.0]
+                [0.0, 0.0, 0.0, 1.0]
             }
         }
     }

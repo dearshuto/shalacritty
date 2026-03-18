@@ -116,7 +116,7 @@ Texture2D<float> g_GlyphTexture : register(t0);
 
 [shader("fragment")]
 float4 character_fs(float4 color: COLOR0, float2 uv: TEXCOORD1) {
-  float alpha = g_GlyphTexture.Sample(g_SamplerState, uv);
+  float alpha = g_GlyphTexture.Sample(g_GlyphSamplerState, uv);
   return float4(color.x, color.y, color.z, alpha);
 }
 
