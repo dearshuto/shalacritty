@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use color_eyre::{eyre::Ok, Result};
+use color_eyre::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{
     style::{Color, Style},
@@ -50,73 +50,11 @@ impl App {
                 match event::read()? {
                     Event::Key(key) => match key.kind {
                         KeyEventKind::Press => {
-                            let str = if key.modifiers.contains(event::KeyModifiers::CONTROL) {
-                                if let event::KeyCode::Char(c) = key.code {
-                                    let control_byte = if c.is_ascii_lowercase() {
-                                        c as u8 - b'a' + 1
-                                    } else if c.is_ascii_uppercase() {
-                                        c as u8 - b'A' + 1
-                                    } else if c == ' ' {
-                                        0x00 // Ctrl+Space is Null (0x00)
-                                    } else {
-                                        c as u8 // Fallback for other characters, might not be ideal
-                                    };
-                                    Ok(String::from_utf8(vec![control_byte]).unwrap_or_default())
-                                } else {
-                                    Ok(String::new())
-                                }
-                            } else {
-                                match key.code {
-                                    event::KeyCode::Backspace => Ok(String::from_utf8(
-                                        asura::util::Unicode::backspace().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    event::KeyCode::Enter => Ok(String::from_utf8(
-                                        asura::util::Unicode::enter().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    event::KeyCode::Left => Ok(String::from_utf8(
-                                        asura::util::Unicode::allow_left().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    event::KeyCode::Right => Ok(String::from_utf8(
-                                        asura::util::Unicode::allow_right().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    event::KeyCode::Up => Ok(String::from_utf8(
-                                        asura::util::Unicode::allow_up().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    event::KeyCode::Down => Ok(String::from_utf8(
-                                        asura::util::Unicode::allow_down().to_vec(),
-                                    )
-                                    .unwrap()),
-                                    // event::KeyCode::Home => todo!(),
-                                    // event::KeyCode::End => todo!(),
-                                    // event::KeyCode::PageUp => todo!(),
-                                    // event::KeyCode::PageDown => todo!(),
-                                    // event::KeyCode::Tab => todo!(),
-                                    // event::KeyCode::BackTab => todo!(),
-                                    // event::KeyCode::Delete => todo!(),
-                                    // event::KeyCode::Insert => todo!(),
-                                    // event::KeyCode::F(_) => todo!(),
-                                    event::KeyCode::Char(c) => Ok(c.to_string()),
-                                    // event::KeyCode::Null => todo!(),
-                                    event::KeyCode::Esc => return Ok(()),
-                                    // event::KeyCode::CapsLock => todo!(),
-                                    // event::KeyCode::ScrollLock => todo!(),
-                                    // event::KeyCode::NumLock => todo!(),
-                                    // event::KeyCode::PrintScreen => todo!(),
-                                    // event::KeyCode::Pause => todo!(),
-                                    // event::KeyCode::Menu => todo!(),
-                                    // event::KeyCode::KeypadBegin => todo!(),
-                                    // event::KeyCode::Media(media_key_code) => todo!(),
-                                    // event::KeyCode::Modifier(modifier_key_code) => todo!(),
-                                    _ => Ok(String::new()),
-                                }
+                            let Ok(str) = zazen::KeyEventBridge::new(key).convert() else {
+                                return Ok(());
                             };
                             let shell_id = self.controller_table.iter().next().unwrap();
-                            self.terminal_emulator.send_input(*shell_id, &str.unwrap());
+                            self.terminal_emulator.send_input(*shell_id, &str);
                         }
                         KeyEventKind::Repeat => todo!(),
                         KeyEventKind::Release => todo!(),
