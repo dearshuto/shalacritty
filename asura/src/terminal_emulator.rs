@@ -125,8 +125,8 @@ impl TerminalEmulator {
                     continue;
                 };
 
-                let line_count = actual_size.width as u16;
-                let column_count = actual_size.height as u16;
+                let line_count = actual_size.height as u16;
+                let column_count = actual_size.width as u16;
                 controller.resize(line_count, column_count, 8, 8);
             }
         }
