@@ -146,6 +146,57 @@ impl VirtualWindow {
         false
     }
 
+    #[allow(unused)]
+    pub fn split_horizontal(&mut self, id: TileId) -> Option<TileId> {
+        let mut parent_id = None;
+        for (p_id, children) in &self.hierarchy_table {
+            if children.contains(&id) {
+                parent_id = Some(*p_id);
+                break;
+            }
+        }
+
+        let Some(parent_id) = parent_id else {
+            return None;
+        };
+
+        let Some(children) = self.hierarchy_table.get_mut(&parent_id) else {
+            return None;
+        };
+
+        // 元のタイルのインデックスを見つける
+        let Some(index) = children.iter().position(|&child_id| child_id == id) else {
+            return None;
+        };
+
+        let new_tile_id = TileId::new();
+        let new_tile = Tile {
+            width: 1.0,
+            height: 1.0,
+        };
+
+        self.tile_table.insert(new_tile_id, new_tile);
+
+        // 新しいタイルの初期サイズを設定
+        let parent_actual_size = *self.actual_size_table.get(&parent_id).unwrap();
+        self.actual_size_table.insert(new_tile_id, parent_actual_size);
+
+        // 新しいタイルを元のタイルの隣に挿入
+        children.insert(index + 1, new_tile_id);
+
+        // 親のオリエンテーションをHorizontalに設定
+        self.orientation_table
+            .insert(parent_id, Orientation::Horizontal);
+
+        // 新しいタイルの階層エントリを作成
+        self.hierarchy_table
+            .insert(new_tile_id, Vec::default());
+
+        self.calculate_actual_size();
+
+        Some(new_tile_id)
+    }
+
     /// ルートから葉に向かってサイズを計算していきます
     fn calculate_actual_size(&mut self) {
         let mut ids = vec![self.root_id];
@@ -175,11 +226,11 @@ impl VirtualWindow {
                 match orientation {
                     Orientation::Horizontal => {
                         size.width = actual_size.width;
-                        size.height = actual_size.height / len as u32
+                        size.height = actual_size.height / len
                     }
                     Orientation::Vertical => {
                         size.height = actual_size.height;
-                        size.width = actual_size.width / len as u32
+                        size.width = actual_size.width / len
                     }
                 };
 
@@ -220,5 +271,23 @@ mod tests {
         let actual_size = vw.get_actual_size(id).unwrap();
         assert_eq!(actual_size.width, 1280);
         assert_eq!(actual_size.height, 960);
+    }
+
+    #[test]
+    fn split_horizontal() {
+        let (id, mut vw) = VirtualWindow::new(640, 480);
+        let new_id = vw.split_horizontal(id).unwrap();
+
+        // ちゃんと新しい ID が生成されているか
+        assert_ne!(id, new_id);
+
+        // サイズが半分になっているか
+        let actual_size = vw.get_actual_size(id).unwrap();
+        assert_eq!(actual_size.width, 640);
+        assert_eq!(actual_size.height, 240);
+
+        let new_actual_size = vw.get_actual_size(new_id).unwrap();
+        assert_eq!(new_actual_size.width, 640);
+        assert_eq!(new_actual_size.height, 240);
     }
 }
