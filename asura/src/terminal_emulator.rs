@@ -99,6 +99,20 @@ impl TerminalEmulator {
         (tab_id, shell_id)
     }
 
+    pub fn split_horizontal(&mut self, shell_id: ShellId) {
+        let (_tab_id, window) = self.tab_table.iter_mut().next().unwrap();
+
+        let Some(tile_id) = self.shell_tile_table.get(&shell_id) else {
+            return;
+        };
+        let Some(new_tile) = window.split_horizontal(*tile_id) else {
+            return;
+        };
+        let (new_shell_id, controller) = self.multiplexer.spawn(&Config::default());
+        self.shell_tile_table.insert(new_shell_id, new_tile);
+        self.shell_controller_table.insert(new_shell_id, controller);
+    }
+
     /// ターミナル領域をリサイズします
     pub fn resize(&mut self, width: u32, height: u32) {
         // すべてのタブにリサイズを反映
