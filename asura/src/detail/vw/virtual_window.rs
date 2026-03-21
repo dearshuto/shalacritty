@@ -290,4 +290,23 @@ mod tests {
         assert_eq!(new_actual_size.width, 640);
         assert_eq!(new_actual_size.height, 240);
     }
+    #[test]
+    fn split_horizontal_and_remove() {
+        let (id, mut vw) = VirtualWindow::new(640, 480);
+
+        let new_tile_id = vw.split_horizontal(id).unwrap();
+        vw.remove(new_tile_id);
+
+        // 分割した後に消したらまた全画面分に戻る
+        let actual_size = vw.get_actual_size(id).unwrap();
+        assert_eq!(actual_size.width, 640);
+        assert_eq!(actual_size.height, 480);
+
+        // 元から存在したタイルを削除した場合は残ったタイルが全画面になる
+        let new_tile_id = vw.split_horizontal(id).unwrap();
+        vw.remove(id);
+        let actual_size = vw.get_actual_size(new_tile_id).unwrap();
+        assert_eq!(actual_size.width, 640);
+        assert_eq!(actual_size.height, 480);
+    }
 }
