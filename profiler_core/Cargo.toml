@@ -8,7 +8,7 @@ serde_json.workspace = true
 reqwest = "*"
 tonic = "0.12.2"
 prost = "*"
-warp = "0.3"
+warp = { workspace = true }
 tokio.workspace = true
 serde.workspace = true
 

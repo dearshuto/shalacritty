@@ -12,3 +12,4 @@ ash-window = "*"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
+warp = { version = "0.3.7", features = [] }

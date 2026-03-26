@@ -9,6 +9,7 @@ use winit::{
 
 use crate::services::{
     GlyphExtractService, InputEventService, RenderingService, RenderingServiceParams, ShellService,
+    ZellijBridgeService,
 };
 
 pub struct UserEvent {}
@@ -84,6 +85,9 @@ impl ApplicationHandler<UserEvent> for App {
         };
         self.service_runner
             .push_with_params(rendering_service, params);
+
+        let zellij_bridge_service = ZellijBridgeService::new();
+        self.service_runner.push(zellij_bridge_service);
 
         // 同期的に動くグリフのラスタライズと非同期のサービスの変換
         let _ = tokio::spawn(async move {
