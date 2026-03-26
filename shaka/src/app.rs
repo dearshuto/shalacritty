@@ -44,7 +44,7 @@ impl ApplicationHandler<UserEvent> for App {
 
         // キー入力
         let (key_event_sender, key_event_receiver) = std::sync::mpsc::channel();
-        let (action_sender, _action_receiver) = tokio::sync::mpsc::channel(1);
+        let (action_sender, action_receiver) = tokio::sync::mpsc::channel(1);
         let _input_event_service_handle = tokio::spawn(async move {
             tokio::task::spawn_blocking(async || {
                 let input_event_service = InputEventService::new(key_event_receiver, action_sender);
@@ -57,7 +57,7 @@ impl ApplicationHandler<UserEvent> for App {
 
         // シェルサービス
         let (content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
-        let shell_service = ShellService::new(content_sender);
+        let shell_service = ShellService::new(content_sender, action_receiver);
         self.service_runner.push(shell_service);
 
         // グリフ抽出サービス
