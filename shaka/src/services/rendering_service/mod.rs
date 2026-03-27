@@ -737,14 +737,6 @@ impl RenderingService {
         let mut receiver = params.receiver;
         let mut content_receiver = params.content_receiver;
 
-        // 実際には文字列の受信も loop の中に入れる
-        // いったん初期値だけ受け取る簡易的な実装から始める
-        let string = content_receiver.recv().await.unwrap();
-
-        // 本来は変更を受信したら呼び出す
-        self.apply_patch(&string, &mut params.glyph_request_sender)
-            .await;
-
         let mut draw_params = DrawParams {
             char_count: 64,
             frame: 0,
@@ -754,6 +746,10 @@ impl RenderingService {
                 Some(()) = receiver.recv() => {
                     self.draw(&draw_params);
                     draw_params.frame += 1;
+                },
+                Some(string) = content_receiver.recv() => {
+                    self.apply_patch(&string, &mut params.glyph_request_sender)
+                        .await;
                 },
                 _ = &mut cancellation_token => break,
                 else => {},
