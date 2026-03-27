@@ -1,13 +1,17 @@
 use renge::Service;
 
+use crate::services::Action;
+
 pub struct ShellService {
     content_sender: tokio::sync::mpsc::Sender<String>,
-    content_receiver: tokio::sync::mpsc::Receiver<String>,
+    content_receiver: tokio::sync::mpsc::Receiver<Action>,
 }
 
 impl ShellService {
-    pub fn new(content_sender: tokio::sync::mpsc::Sender<String>) -> Self {
-        let (_content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
+    pub fn new(
+        content_sender: tokio::sync::mpsc::Sender<String>,
+        content_receiver: tokio::sync::mpsc::Receiver<Action>,
+    ) -> Self {
         Self {
             content_sender,
             content_receiver,
@@ -18,7 +22,7 @@ impl ShellService {
 impl Service for ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let mut multiplexer = asura::Multiplexer::new();
-        let (_id, controller) = multiplexer.spawn(&asura::Config::default());
+        let (_id, mut controller) = multiplexer.spawn(&asura::Config::default());
         loop {
             match controller.recv_event() {
                 Ok(event) => match event {
@@ -41,7 +45,10 @@ impl Service for ShellService {
 
         loop {
             tokio::select! {
-                Some(_args) = self.content_receiver.recv() => {},
+                Some(action) = self.content_receiver.recv() => {
+                    let Action::Input(str) = action else { continue };
+                    controller.send_input(&str);
+                },
                 _ = &mut cancellation_token => break,
                 else => {}
             }
