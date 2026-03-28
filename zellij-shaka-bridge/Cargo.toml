@@ -1,9 +1,11 @@
 [package]
 name = "zellij-shaka-bridge"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-zellij-tile = "0.44.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+zellij-tile = { version = "0.44" }
+# serde = { version = "1.0", features = ["derive"] }
+# serde_json = "1.0"
+serde = "1.0.175"
+serde_json = "1.0.103"
