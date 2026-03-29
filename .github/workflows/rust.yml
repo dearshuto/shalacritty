@@ -41,7 +41,15 @@ jobs:
             protobuf-compiler \
             libvulkan-dev
 
+      #　WASM ターゲットをインストール
+      # zellij-shaka-bridge をビルドするために必要
+      - name: Add WASM target
+        run: rustup target add wasm32-wasip1
+
       - uses: swatinem/rust-cache@v2
+        with:
+          # ターゲットごとにキャッシュを分ける設定を確認
+          shared-key: "wasm-build"
 
       # build.rs に追加すれば不要になるかも
       - name: Build shaders
@@ -50,6 +58,9 @@ jobs:
           slangc shalacritty/res/terminal.slang -target spirv -o shaka/src/services/rendering_service/terminal.spv
 
       - name: Build
-        run: cargo build
+        run: |
+          cargo build --bin shaka
+          cargo build --bin zellij-shaka-bridge --target wasm32-wasip1
       - name: Run tests
-        run: cargo test
+        run: |
+          cargo test

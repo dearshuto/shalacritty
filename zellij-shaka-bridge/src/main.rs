@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use zellij_tile::ZellijPlugin;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use zellij_tile::prelude::*;
 use zellij_tile::register_plugin;
 use zellij_tile::shim::report_panic;
-use serde::{Deserialize, Serialize};
-use serde_json;
+use zellij_tile::ZellijPlugin;
 
 #[derive(Debug, Default)]
 pub struct ShakaBridge;
@@ -16,6 +16,15 @@ pub struct ActiveTabInfo {
 }
 
 impl zellij_tile::ZellijPlugin for ShakaBridge {
+    fn load(&mut self, _configuration: BTreeMap<String, String>) {
+        request_permission(&[
+            PermissionType::ReadApplicationState,
+            PermissionType::WebAccess,
+        ]);
+
+        subscribe(&[EventType::TabUpdate]);
+    }
+
     fn update(&mut self, event: zellij_tile::prelude::Event) -> bool {
         let Event::TabUpdate(tab_infos) = event else {
             return false;
@@ -29,7 +38,7 @@ impl zellij_tile::ZellijPlugin for ShakaBridge {
             let body = serde_json::to_vec(&active_tab_info).unwrap_or_default();
 
             web_request(
-                "https://localhost:5050/data",
+                "http://localhost:5050/data",
                 HttpVerb::Post,
                 BTreeMap::from([("User-Agent".to_string(), "Zellij-Plugin".to_string())]),
                 body,            // Body
