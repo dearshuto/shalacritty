@@ -5,7 +5,7 @@ mod text_writer;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
 
-use std::{borrow::Cow, io::Cursor, mem::offset_of};
+use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
 
 use buffer_view::BufferView;
 
@@ -26,6 +26,7 @@ pub struct RenderingServiceParams {
 struct DrawParams {
     char_count: u32,
     frame: u64,
+    is_data_copy_required: bool,
 }
 
 pub struct RenderingService {
@@ -56,7 +57,9 @@ pub struct RenderingService {
     display_semaphores: Vec<vk::Semaphore>,
     data_copy_completed_semaphore: vk::Semaphore,
     command_completed_semaphores: Vec<vk::Semaphore>,
-    command_fences: Vec<vk::Fence>,
+
+    // コマンド同期用のタイムラインセマフォ
+    command_semaphore: vk::Semaphore,
 
     command_pool: vk::CommandPool,
     // 0, 1 →  描画コマンドのダブルバッファリング
@@ -214,13 +217,16 @@ impl RenderingService {
                 ash::vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
             let mut sync_features =
                 ash::vk::PhysicalDeviceSynchronization2Features::default().synchronization2(true);
+            let mut timeline_semaphore_features =
+                vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 .queue_create_infos(std::slice::from_ref(&queue_info))
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
                 .push_next(&mut vulkan_features)
                 .push_next(&mut dynamic_rendering_features)
-                .push_next(&mut sync_features);
+                .push_next(&mut sync_features)
+                .push_next(&mut timeline_semaphore_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -658,15 +664,18 @@ impl RenderingService {
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
-        let command_fences = {
-            let create_info = vk::FenceCreateInfo::default();
-            let fence0 = unsafe { device.create_fence(&create_info, None) }.unwrap();
-            let fence1 = unsafe { device.create_fence(&create_info, None) }.unwrap();
-            vec![fence0, fence1]
-        };
-
-        let (display_semaphores, command_completed_semaphores, data_copy_completed_semaphore) = {
+        let (
+            display_semaphores,
+            command_completed_semaphores,
+            command_semaphore,
+            data_copy_completed_semaphore,
+        ) = {
             let create_info = vk::SemaphoreCreateInfo::default();
+            let mut semaphore_type_create_info = vk::SemaphoreTypeCreateInfo::default()
+                .semaphore_type(vk::SemaphoreType::TIMELINE)
+                .initial_value(0);
+            let timeline_semaphore_create_info =
+                vk::SemaphoreCreateInfo::default().push_next(&mut semaphore_type_create_info);
             let display_semaphore0 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             let display_semaphore1 =
@@ -676,12 +685,17 @@ impl RenderingService {
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             let command_completed_semaphore1 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-
+            let command_semaphore = unsafe {
+                device
+                    .create_semaphore(&timeline_semaphore_create_info, None)
+                    .unwrap()
+            };
             let data_copy_completed_semaphore =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             (
                 vec![display_semaphore0, display_semaphore1],
                 vec![command_completed_semaphore0, command_completed_semaphore1],
+                command_semaphore,
                 data_copy_completed_semaphore,
             )
         };
@@ -699,7 +713,7 @@ impl RenderingService {
             display_semaphores,
             command_completed_semaphores,
             data_copy_completed_semaphore,
-            command_fences,
+            command_semaphore,
             command_pool,
             command_buffers,
             surface,
@@ -740,6 +754,7 @@ impl RenderingService {
         let mut draw_params = DrawParams {
             char_count: 64,
             frame: 0,
+            is_data_copy_required: false,
         };
         loop {
             tokio::select! {
@@ -750,6 +765,11 @@ impl RenderingService {
                 Some(string) = content_receiver.recv() => {
                     self.apply_patch(&string, &mut params.glyph_request_sender)
                         .await;
+
+                    draw_params.is_data_copy_required = true;
+                    self.draw(&draw_params);
+                    draw_params.is_data_copy_required = false;
+                    draw_params.frame += 1;
                 },
                 _ = &mut cancellation_token => break,
                 else => {},
@@ -963,8 +983,20 @@ impl RenderingService {
         let device = &self.device;
         let display_semaphore = self.display_semaphores[buffer_index];
         let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
-        let next_command_fence = self.command_fences[(buffer_index + 1) % 2];
         let command_buffer = self.command_buffers[buffer_index];
+
+        // コマンドバッファーが空いているか
+        if 2 <= params.frame {
+            let semaphores = [self.command_semaphore];
+            // ダブルバッファリングしているので確認したいのは N-2 番目の処理だが、
+            // N-2 番目の処理が終わった時点のセマフォーの値は N-2 からインクリメントされた値なので N-1 でよい
+            let values = [params.frame - 1];
+            let wait_info = vk::SemaphoreWaitInfo::default()
+                .semaphores(&semaphores)
+                .values(&values);
+            unsafe { device.wait_semaphores(&wait_info, u64::MAX) }.unwrap();
+        }
+
         let (next_frame_index, _) = unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -1107,36 +1139,35 @@ impl RenderingService {
 
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
-        // データ更新のパッチ適用コマンド
-        let is_data_copy_required = true;
-        if is_data_copy_required {
-            // コピーだけなので StageMask はなくてよい？
-            let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffers[2]];
-            // TODO: 本当は前回の描画コマンドの終了を待つ
-            let wait_semaphores = [display_semaphore];
-            let signal_semaphores = [self.data_copy_completed_semaphore];
-            let submit_info = [vk::SubmitInfo::default()
-                .wait_dst_stage_mask(&wait_mask)
-                .command_buffers(&command_buffers)
-                .wait_semaphores(&wait_semaphores)
-                .signal_semaphores(&signal_semaphores)];
-            unsafe { device.queue_submit(self.queue, &submit_info, vk::Fence::null()) }.unwrap();
-        }
-
-        {
-            let wait_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [command_buffer];
-            // データコピーのコマンドを待つ
-            let wait_semaphores = [self.data_copy_completed_semaphore];
-            let signal_semaphores = [command_completed_semaphore];
-            let submit_info = [vk::SubmitInfo::default()
-                .wait_dst_stage_mask(&wait_mask)
-                .command_buffers(&command_buffers)
-                .wait_semaphores(&wait_semaphores)
-                .signal_semaphores(&signal_semaphores)];
-            unsafe { device.queue_submit(self.queue, &submit_info, next_command_fence) }.unwrap();
-        }
+        let command_buffer_submit_infos = [
+            vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffers[2]),
+            vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer),
+        ];
+        let command_buffer_infos = if params.is_data_copy_required {
+            &command_buffer_submit_infos[..]
+        } else {
+            // データコピーが不要な場合は描画コマンドだけ実行する
+            &command_buffer_submit_infos[1..]
+        };
+        let wait_semaphore_infos = [vk::SemaphoreSubmitInfo::default()
+            .semaphore(display_semaphore)
+            .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)];
+        let signal_semaphore_infos = [
+            // コマンドバッファー同期用のセマフォの更新
+            vk::SemaphoreSubmitInfo::default()
+                .semaphore(self.command_semaphore)
+                .value(params.frame + 1)
+                .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS),
+            // ディスプレイの Present 用のセマフォをシグナル
+            vk::SemaphoreSubmitInfo::default()
+                .semaphore(command_completed_semaphore)
+                .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS),
+        ];
+        let submit_infos = [vk::SubmitInfo2::default()
+            .command_buffer_infos(&command_buffer_infos)
+            .wait_semaphore_infos(&wait_semaphore_infos)
+            .signal_semaphore_infos(&signal_semaphore_infos)];
+        unsafe { device.queue_submit2(self.queue, &submit_infos, vk::Fence::null()) }.unwrap();
 
         {
             let wait_semaphores = [command_completed_semaphore];
@@ -1211,16 +1242,15 @@ impl Drop for RenderingService {
         for semaphore in &self.command_completed_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
         }
+        unsafe {
+            device.destroy_semaphore(self.command_semaphore, None);
+        }
 
         unsafe {
             device.destroy_semaphore(self.data_copy_completed_semaphore, None);
         }
         for semaphore in &self.display_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
-        }
-
-        for fence in &self.command_fences {
-            unsafe { device.destroy_fence(*fence, None) };
         }
 
         unsafe { self.device.free_memory(self.copy_src_memory, None) };
