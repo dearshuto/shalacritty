@@ -968,7 +968,7 @@ impl RenderingService {
                 &[],
                 &[],
                 &[ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .old_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                     .image(self.glyph_image)
                     .subresource_range(
@@ -1098,6 +1098,31 @@ impl RenderingService {
                     .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)],
             )
         };
+
+        if params.frame == 0 && !params.is_data_copy_required {
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ash::vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[ash::vk::ImageMemoryBarrier::default()
+                        .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                        .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image(self.glyph_image)
+                        .subresource_range(
+                            ash::vk::ImageSubresourceRange::default()
+                                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        )],
+                )
+            }
+        }
 
         let color_attachments = [vk::RenderingAttachmentInfo::default()
             .image_view(self.present_image_views[next_frame_index as usize])
