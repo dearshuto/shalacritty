@@ -1,4 +1,5 @@
 mod buffer_view;
+mod dirty_tracker;
 mod glyph_table;
 mod range_allocator;
 mod text_writer;
@@ -14,7 +15,9 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
-    rendering_service::{buffer_view::CharacterData, text_writer::TextWriter},
+    rendering_service::{
+        buffer_view::CharacterData, dirty_tracker::ChunkFactory, text_writer::TextWriter,
+    },
 };
 
 pub struct RenderingServiceParams {
@@ -1288,5 +1291,21 @@ impl renge::ParametricService for RenderingService {
 
     async fn serve(self, params: Self::Params, cancellation_token: renge::CancellationToken) {
         self.serve(params, cancellation_token).await;
+    }
+}
+
+struct MappedMemoryRangeFactory<'a> {
+    memory: vk::DeviceMemory,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> ChunkFactory for MappedMemoryRangeFactory<'a> {
+    type Chunk = vk::MappedMemoryRange<'a>;
+
+    fn create(&self, offset: u64, size: u64) -> Self::Chunk {
+        vk::MappedMemoryRange::default()
+            .memory(self.memory)
+            .offset(offset)
+            .size(size)
     }
 }
