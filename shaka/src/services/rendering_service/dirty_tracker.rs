@@ -9,6 +9,13 @@ pub struct DirtyTracker {
 }
 
 impl DirtyTracker {
+    pub fn new(atom_size: u64) -> Self {
+        Self {
+            atom_size,
+            ranges: Vec::new(),
+        }
+    }
+
     /// 更新が発生したバイト範囲を登録します
     fn add(&mut self, offset: u64, size: u64) {
         let start = offset;
