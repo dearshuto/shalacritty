@@ -1,3 +1,4 @@
+mod buffer_layout;
 mod buffer_view;
 mod glyph_table;
 mod range_allocator;
@@ -7,14 +8,14 @@ use range_allocator::RangeAllocator;
 
 use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
 
-use buffer_view::BufferView;
-
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
-    rendering_service::{buffer_view::CharacterData, text_writer::TextWriter},
+    rendering_service::{
+        buffer_layout::BufferLayout, buffer_view::CharacterData, text_writer::TextWriter,
+    },
 };
 
 pub struct RenderingServiceParams {
@@ -78,7 +79,12 @@ pub struct RenderingService {
     buffer_memory: vk::DeviceMemory,
     copy_src_memory: vk::DeviceMemory,
     buffer: vk::Buffer,
+    buffer_layout: BufferLayout,
+    vertex_data_index: usize,
+    index_data_index: usize,
+    character_data_index: usize,
     copy_src_buffer: vk::Buffer,
+
     // グリフ
     glyph_image: vk::Image,
     glyph_image_view: vk::ImageView,
@@ -459,7 +465,7 @@ impl RenderingService {
             unsafe { device.create_buffer(&create_info, None) }.unwrap()
         };
 
-        const BUFFER_SIZE: vk::DeviceSize = 16 * 1024;
+        const BUFFER_SIZE: vk::DeviceSize = 128 * 1024;
         let buffer = {
             let queue_family_indices = [queue_family_index as u32];
             let create_info = vk::BufferCreateInfo::default()
@@ -528,32 +534,63 @@ impl RenderingService {
             device.map_memory(
                 device_memory,
                 0, /*offset*/
-                16 * 1024,
+                vk::WHOLE_SIZE,
                 vk::MemoryMapFlags::empty(),
             )
         }
         .unwrap();
 
-        let mut buffer_view = BufferView::new(ptr);
+        let limits = unsafe {
+            &instance
+                .get_physical_device_properties(physical_device)
+                .limits
+        };
+        let min_storage_buffer_offset_alignment =
+            limits.min_storage_buffer_offset_alignment as usize;
+        // let min_uniform_buffer_offset_alignment =
+        //     limits.min_uniform_buffer_offset_alignment as usize;
+        // let non_coherent_atom_size = limits.non_coherent_atom_size as usize;
+
+        let mut buffer_layout = BufferLayout::new();
+        let vertex_data_alignment =
+            min_storage_buffer_offset_alignment.max(std::mem::align_of::<f32>());
+        let vertex_data_index = buffer_layout.add::<f32>(8, vertex_data_alignment);
+        let index_data_alignment =
+            min_storage_buffer_offset_alignment.max(std::mem::align_of::<u16>());
+        let index_data_index = buffer_layout.add::<u16>(6, index_data_alignment);
+        let character_data_alignment =
+            min_storage_buffer_offset_alignment.max(std::mem::align_of::<CharacterData>());
+        let character_data_index =
+            buffer_layout.add::<CharacterData>(1024, character_data_alignment);
+
         {
             const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5];
-            let vertex_buffer = buffer_view.vertex_buffer();
-            vertex_buffer[0..VERTEX_DATA.len()].copy_from_slice(&VERTEX_DATA);
+            buffer_layout
+                .get_slice_mut(ptr as *mut f32, vertex_data_index)
+                .copy_from_slice(&VERTEX_DATA);
         }
         {
             const INDEX_DATA: [u16; 6] = [0, 1, 2, 2, 1, 3];
-            let index_buffer = buffer_view.index_buffer();
-            index_buffer[0..INDEX_DATA.len()].copy_from_slice(&INDEX_DATA);
+            buffer_layout
+                .get_slice_mut(ptr as *mut u16, index_data_index)
+                .copy_from_slice(&INDEX_DATA);
         }
 
         // background_view.transform0 = [1.0, 0.0, 0.0, 1.0];
         // background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
 
         unsafe {
+            let atom_size = limits.non_coherent_atom_size as usize;
+            let total_size = buffer_layout.total_size();
+            let flush_size = if total_size % atom_size == 0 {
+                total_size
+            } else {
+                total_size + (atom_size - (total_size % atom_size))
+            };
             device.flush_mapped_memory_ranges(&[vk::MappedMemoryRange::default()
                 .memory(device_memory)
                 .offset(0)
-                .size(1024)])
+                .size(flush_size as vk::DeviceSize)])
         }
         .unwrap();
 
@@ -734,6 +771,11 @@ impl RenderingService {
             buffer_memory: device_memory,
             copy_src_memory,
             buffer,
+            buffer_layout,
+            vertex_data_index,
+            index_data_index,
+            character_data_index,
+
             copy_src_buffer,
             // グリフ
             glyph_image,
@@ -793,7 +835,6 @@ impl RenderingService {
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
             let mut buffer_image_copies = Vec::default();
-            let mut buffer_head_offset = 0;
             for code in str.chars() {
                 let (s, receiver) = tokio::sync::oneshot::channel();
                 sender
@@ -831,7 +872,7 @@ impl RenderingService {
                 let width = rect[2];
                 let height = rect[3];
                 let buffer_image_copy = vk::BufferImageCopy::default()
-                    .buffer_offset(buffer_head_offset as u64)
+                    .buffer_offset(dst_buffer.len() as u64)
                     .buffer_image_height(0)
                     .buffer_row_length(0)
                     .image_offset(
@@ -848,56 +889,56 @@ impl RenderingService {
                             .layer_count(1),
                     );
                 buffer_image_copies.push(buffer_image_copy);
-                let length = glyph.data.len();
                 dst_buffer.append(&mut glyph.data);
-                buffer_head_offset += length;
+            }
+
+            let limits = &self
+                .instance
+                .get_physical_device_properties(self.physical_device)
+                .limits;
+            let mut buffer_layout = BufferLayout::new();
+            let glyph_data_index = buffer_layout.add::<u8>(dst_buffer.len(), 1);
+            let character_data_index = buffer_layout
+                .add::<CharacterData>(128, limits.min_storage_buffer_offset_alignment as usize);
+
+            let glyph_section = buffer_layout.get_section(glyph_data_index);
+            for copy in &mut buffer_image_copies {
+                copy.buffer_offset += glyph_section.offset as u64;
             }
 
             let ptr = device
                 .map_memory(
                     self.copy_src_memory,
-                    0,                                                            /*offset*/
-                    std::mem::size_of::<CharacterData>() as vk::DeviceSize * 128, /*size*/
+                    0,                                            /*offset*/
+                    buffer_layout.total_size() as vk::DeviceSize, /*size*/
                     vk::MemoryMapFlags::empty(),
                 )
                 .unwrap() as *mut u8;
 
             // フォントデータのコピー
-            std::slice::from_raw_parts_mut(ptr, buffer_head_offset).copy_from_slice(&dst_buffer);
+            buffer_layout
+                .get_slice_mut(ptr as *mut u8, glyph_data_index)
+                .copy_from_slice(&dst_buffer);
 
-            let ptr = ptr.byte_add(buffer_head_offset);
-            let limits = &self
-                .instance
-                .get_physical_device_properties(self.physical_device)
-                .limits;
+            let character_data =
+                buffer_layout.get_slice_mut(ptr as *mut CharacterData, character_data_index);
 
-            // 次の書き込みオフセットを　SSBO に要求されるアラインメントの倍数に切り上げる。
-            // かつ CharacterData のアラインメントも満たすように、両者の最小公倍数を算出する
-            // さらにフラッシュするときのアラインメントも考慮しておく
-            let required_alignment = num_integer::lcm(
-                num_integer::lcm(
-                    limits.min_storage_buffer_offset_alignment as usize,
-                    std::mem::align_of::<CharacterData>(),
-                ),
-                limits.non_coherent_atom_size as usize,
-            );
-            let offset = ptr.align_offset(required_alignment);
-            let buffer_head_offset = buffer_head_offset + offset;
-
-            let copy_src =
-                std::slice::from_raw_parts_mut(ptr.add(offset) as *mut CharacterData, 128);
-            let size = self.text_writer.write(copy_src, str, &self.glyph_table);
+            let character_count = self
+                .text_writer
+                .write(character_data, str, &self.glyph_table);
+            buffer_layout.resize::<CharacterData>(character_data_index, character_count as usize);
 
             // フラッシュは特定の値の倍数である必要がある
-            // write_size 以上でかつある倍数である整数を flush_size とする
-            let write_size = offset + size;
-            let flush_size = limits.non_coherent_atom_size as usize
-                * ((write_size + limits.non_coherent_atom_size as usize - 1)
-                    / limits.non_coherent_atom_size as usize);
+            let atom_size = limits.non_coherent_atom_size as usize;
+            let total_size = buffer_layout.total_size();
+            let flush_size = if total_size % atom_size == 0 {
+                total_size
+            } else {
+                total_size + (atom_size - (total_size % atom_size))
+            };
             let ranges = [vk::MappedMemoryRange::default()
                 .memory(self.copy_src_memory)
-                // 先頭からグリフデータが入っているのでその分をオフセットする
-                .offset(buffer_head_offset as vk::DeviceSize)
+                .offset(0)
                 .size(flush_size as vk::DeviceSize)];
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
@@ -941,10 +982,12 @@ impl RenderingService {
                 );
             }
 
+            let src_char_section = buffer_layout.get_section(character_data_index);
+            let dst_char_section = self.buffer_layout.get_section(self.character_data_index);
             let regions = [vk::BufferCopy::default()
-                .src_offset(buffer_head_offset as vk::DeviceSize)
-                .dst_offset(BufferView::character_data_offset())
-                .size(size as vk::DeviceSize)];
+                .src_offset(src_char_section.offset as vk::DeviceSize)
+                .dst_offset(dst_char_section.offset as vk::DeviceSize)
+                .size(src_char_section.size as vk::DeviceSize)];
             device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
 
             device.cmd_pipeline_barrier(
@@ -1082,20 +1125,23 @@ impl RenderingService {
 
             // ひとつのバッファーを分割してふたつの頂点データとして利用
             // 矩形をシェーダー上で生成してしまえば頂点分のデータはいらなくなるかも
+            let vertex_section = self.buffer_layout.get_section(self.vertex_data_index);
+            let character_data_section = self.buffer_layout.get_section(self.character_data_index);
             device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0, /*first_binding*/
                 &[self.buffer, self.buffer],
                 &[
-                    BufferView::vertex_buffer_offset(),
-                    BufferView::character_data_offset(),
+                    vertex_section.offset as u64,
+                    character_data_section.offset as u64,
                 ],
             );
 
+            let index_section = self.buffer_layout.get_section(self.index_data_index);
             device.cmd_bind_index_buffer(
                 command_buffer,
                 self.buffer,
-                (std::mem::size_of::<f32>() * 16) as u64, /*offset*/
+                index_section.offset as u64, /*offset*/
                 vk::IndexType::UINT16,
             );
 
