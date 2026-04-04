@@ -763,7 +763,7 @@ impl RenderingService {
                     draw_params.frame += 1;
                 },
                 Some(string) = content_receiver.recv() => {
-                    self.apply_patch(&string, &mut params.glyph_request_sender)
+                    self.apply_patch(draw_params.frame, &string, &mut params.glyph_request_sender)
                         .await;
 
                     draw_params.is_data_copy_required = true;
@@ -777,17 +777,28 @@ impl RenderingService {
         }
     }
 
-    async fn apply_patch(&mut self, str: &str, sender: &tokio::sync::mpsc::Sender<GlyphRequest>) {
+    async fn apply_patch(
+        &mut self,
+        current_frame: u64,
+        str: &str,
+        sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
+    ) {
         let device = &self.device;
 
         // 文字ごとの情報を転送するコマンド
         unsafe {
             // GPU でコピー中だとデータ破壊が起きるので待つ
-            // let semaphores = [self.data_copy_completed_semaphore];
-            // let wait_info = vk::SemaphoreWaitInfo::default()
-            //     .semaphores(&semaphores)
-            //     .values(&[0]);
-            // device.wait_semaphores(&wait_info, u64::MAX).unwrap();
+            if 2 < current_frame {
+                let semaphores = [self.data_copy_completed_semaphore];
+                // 本来はコピーコマンドもダブルバッファリングするべきだが、
+                // コピー用のコマンドバッファーはひとつしか用意してないので前回のフレームを待つ
+                // 待つ値としては、N-1 フレーム目の完了時にインクリメントされたあとなので N が正しい
+                let values = [current_frame];
+                let wait_info = vk::SemaphoreWaitInfo::default()
+                    .semaphores(&semaphores)
+                    .values(&values);
+                device.wait_semaphores(&wait_info, u64::MAX).unwrap();
+            }
 
             // ラスタライズで await をまたいで Map した生ポインターにアクセスするとコンパイルエラーになる
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
