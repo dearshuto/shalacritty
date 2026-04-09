@@ -35,6 +35,6 @@ impl TextWriter {
             count += 1;
         }
 
-        count * std::mem::size_of::<CharacterData>()
+        count
     }
 }
