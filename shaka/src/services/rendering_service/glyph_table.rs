@@ -28,7 +28,15 @@ impl GlyphTable {
 
     // offsetx, offsety, width, height
     pub fn get_rect(&self, code: char) -> Option<[u32; 4]> {
-        self.table.get(&code).copied()
+        let Some(rect) = self.table.get(&code) else {
+            return None;
+        };
+
+        if !(rect[2] > 0 && rect[3] > 0) {
+            return None;
+        }
+
+        Some(*rect)
     }
 
     pub fn get_range(&self, code: char) -> Option<[f32; 4]> {

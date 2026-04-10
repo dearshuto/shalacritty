@@ -877,7 +877,9 @@ impl RenderingService {
                 );
 
                 // グリフデータの書き込み
-                let rect = self.glyph_table.get_rect(code).unwrap();
+                let Some(rect) = self.glyph_table.get_rect(code) else {
+                    continue;
+                };
                 let offset_x = rect[0];
                 let offset_y = rect[1];
                 let width = rect[2];
