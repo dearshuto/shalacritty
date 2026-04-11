@@ -1033,6 +1033,11 @@ impl RenderingService {
             return;
         }
 
+        if params.frame != 0 {
+            return;
+        }
+        println!("{}", params.frame);
+
         let buffer_index = (params.frame % 2) as usize;
         let device = &self.device;
         let display_semaphore = self.display_semaphores[buffer_index];
@@ -1099,18 +1104,21 @@ impl RenderingService {
             )
         };
 
-        if params.frame == 0 && !params.is_data_copy_required {
+        if params.is_data_copy_required {
+            println!("AAA");
             unsafe {
                 device.cmd_pipeline_barrier(
                     command_buffer,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ash::vk::PipelineStageFlags::TRANSFER,
+                    ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
                     ash::vk::DependencyFlags::empty(),
                     &[],
                     &[],
                     &[ash::vk::ImageMemoryBarrier::default()
                         .old_layout(ash::vk::ImageLayout::UNDEFINED)
                         .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .src_access_mask(vk::AccessFlags::empty())
+                        .dst_access_mask(vk::AccessFlags::SHADER_READ)
                         .image(self.glyph_image)
                         .subresource_range(
                             ash::vk::ImageSubresourceRange::default()
@@ -1221,16 +1229,18 @@ impl RenderingService {
 
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
-        let command_buffer_submit_infos = [
-            vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffers[2]),
-            vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer),
-        ];
-        let command_buffer_infos = if params.is_data_copy_required {
-            &command_buffer_submit_infos[..]
-        } else {
-            // データコピーが不要な場合は描画コマンドだけ実行する
-            &command_buffer_submit_infos[1..]
-        };
+        if params.is_data_copy_required {
+            let command_buffer_infos =
+                [vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffers[2])];
+            let submit_infos = [
+                vk::SubmitInfo2::default().command_buffer_infos(&command_buffer_infos), // .wait_semaphore_infos(&wait_semaphore_infos)
+                                                                                        // .signal_semaphore_infos(&signal_semaphore_infos)
+            ];
+            unsafe { device.queue_submit2(self.queue, &submit_infos, vk::Fence::null()) }.unwrap();
+        }
+
+        let command_buffer_infos =
+            [vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer)];
         let wait_semaphore_infos = [vk::SemaphoreSubmitInfo::default()
             .semaphore(display_semaphore)
             .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)];
@@ -1265,6 +1275,8 @@ impl RenderingService {
             }
             .unwrap();
         }
+
+        println!("End");
     }
 
     extern "system" fn vulkan_debug_callback(
