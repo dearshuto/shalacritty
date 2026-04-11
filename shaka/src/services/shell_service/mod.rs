@@ -39,7 +39,6 @@ impl Service for ShellService {
             .acquire_contents()
             .iter()
             .filter_map(|c| if c.code != ' ' { Some(c.code) } else { None })
-            .take(8)
             .collect();
         self.content_sender.send(content).await.unwrap();
 
