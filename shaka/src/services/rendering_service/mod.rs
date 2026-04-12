@@ -26,7 +26,9 @@ pub struct RenderingServiceParams {
 
 struct DrawParams {
     char_count: u32,
+    copy_command_index: u64,
     frame: u64,
+    copy_frame: u64,
     is_data_copy_required: bool,
 }
 
@@ -64,7 +66,7 @@ pub struct RenderingService {
 
     command_pool: vk::CommandPool,
     // 0, 1 →  描画コマンドのダブルバッファリング
-    // 2 -> コピー用のコマンドバッファー
+    // 2, 3 -> コピー用のコマンドバッファー
     command_buffers: Vec<vk::CommandBuffer>,
 
     // パイプライン関係
@@ -697,7 +699,7 @@ impl RenderingService {
             let allocate_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(3);
+                .command_buffer_count(4);
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
@@ -728,7 +730,7 @@ impl RenderingService {
                     .unwrap()
             };
             let data_copy_completed_semaphore =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+                unsafe { device.create_semaphore(&timeline_semaphore_create_info, None) }.unwrap();
             (
                 vec![display_semaphore0, display_semaphore1],
                 vec![command_completed_semaphore0, command_completed_semaphore1],
@@ -795,7 +797,9 @@ impl RenderingService {
 
         let mut draw_params = DrawParams {
             char_count: 64,
+            copy_command_index: 0,
             frame: 0,
+            copy_frame: 0,
             is_data_copy_required: false,
         };
         loop {
@@ -805,13 +809,15 @@ impl RenderingService {
                     draw_params.frame += 1;
                 },
                 Some(string) = content_receiver.recv() => {
-                    self.apply_patch(draw_params.frame, &string, &mut params.glyph_request_sender)
+                    let new_copy_command_index = self.apply_patch(draw_params.copy_command_index, &string, &mut params.glyph_request_sender)
                         .await;
 
                     draw_params.is_data_copy_required = true;
                     self.draw(&draw_params);
                     draw_params.is_data_copy_required = false;
+                    draw_params.copy_command_index = new_copy_command_index;
                     draw_params.frame += 1;
+                    draw_params.copy_frame += 1;
                 },
                 _ = &mut cancellation_token => break,
                 else => {},
@@ -821,21 +827,18 @@ impl RenderingService {
 
     async fn apply_patch(
         &mut self,
-        current_frame: u64,
+        current_buffer_index: u64,
         str: &str,
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
-    ) {
+    ) -> u64 {
         let device = &self.device;
 
         // 文字ごとの情報を転送するコマンド
         unsafe {
             // GPU でコピー中だとデータ破壊が起きるので待つ
-            if 2 < current_frame {
+            if 2 <= current_buffer_index {
                 let semaphores = [self.data_copy_completed_semaphore];
-                // 本来はコピーコマンドもダブルバッファリングするべきだが、
-                // コピー用のコマンドバッファーはひとつしか用意してないので前回のフレームを待つ
-                // 待つ値としては、N-1 フレーム目の完了時にインクリメントされたあとなので N が正しい
-                let values = [current_frame];
+                let values = [current_buffer_index as u64 - 1];
                 let wait_info = vk::SemaphoreWaitInfo::default()
                     .semaphores(&semaphores)
                     .values(&values);
@@ -956,7 +959,7 @@ impl RenderingService {
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
 
-            let command_buffer = self.command_buffers[2];
+            let command_buffer = self.command_buffers[2 + current_buffer_index as usize];
             let begin_info = vk::CommandBufferBeginInfo::default();
             device
                 .begin_command_buffer(command_buffer, &begin_info)
@@ -1028,9 +1031,11 @@ impl RenderingService {
 
             device.end_command_buffer(command_buffer).unwrap();
         };
+        return (current_buffer_index + 1) % 2;
     }
 
     fn draw(&self, params: &DrawParams) {
+        println!("{}", params.frame);
         if params.char_count == 0 {
             return;
         }
@@ -1044,8 +1049,6 @@ impl RenderingService {
         // コマンドバッファーが空いているか
         if 2 <= params.frame {
             let semaphores = [self.command_semaphore];
-            // ダブルバッファリングしているので確認したいのは N-2 番目の処理だが、
-            // N-2 番目の処理が終わった時点のセマフォーの値は N-2 からインクリメントされた値なので N-1 でよい
             let values = [params.frame - 1];
             let wait_info = vk::SemaphoreWaitInfo::default()
                 .semaphores(&semaphores)
@@ -1199,7 +1202,8 @@ impl RenderingService {
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
         let command_buffer_submit_infos = [
-            vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffers[2]),
+            vk::CommandBufferSubmitInfo::default()
+                .command_buffer(self.command_buffers[2 + params.copy_command_index as usize]),
             vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer),
         ];
         let command_buffer_infos = if params.is_data_copy_required {
@@ -1221,7 +1225,20 @@ impl RenderingService {
             vk::SemaphoreSubmitInfo::default()
                 .semaphore(command_completed_semaphore)
                 .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS),
+            // コピー用セマフォ
+            vk::SemaphoreSubmitInfo::default()
+                .semaphore(self.data_copy_completed_semaphore)
+                .value(params.copy_frame as u64 + 1)
+                .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS),
         ];
+        let signal_semaphore_infos = if params.is_data_copy_required {
+            &signal_semaphore_infos[..]
+        } else {
+            &signal_semaphore_infos[..2]
+        };
+        if params.is_data_copy_required {
+            println!("Required");
+        }
         let submit_infos = [vk::SubmitInfo2::default()
             .command_buffer_infos(&command_buffer_infos)
             .wait_semaphore_infos(&wait_semaphore_infos)
