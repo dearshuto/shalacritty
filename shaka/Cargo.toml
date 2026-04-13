@@ -16,5 +16,6 @@ num-integer = "0.1"
 wasmtime = "*"
 raw-window-handle = "0.6.0"
 tokio = { workspace = true }
+tokio-stream = { version = "*", features = ["sync"] }
 winit = { version = "0.30" }
 warp = { workspace = true }
