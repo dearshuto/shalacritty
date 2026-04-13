@@ -2,14 +2,14 @@ use renge::ServiceRunner;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{KeyEvent, WindowEvent},
+    event::WindowEvent,
     event_loop::EventLoopProxy,
     window::{Window, WindowAttributes},
 };
 
 use crate::services::{
-    GlyphExtractService, InputEventService, RenderingService, RenderingServiceParams, ShellService,
-    ZellijBridgeService,
+    EventStream, GlyphExtractService, InputEventService, RenderingService, RenderingServiceParams,
+    ShellService, StreamingEvent, ZellijBridgeService,
 };
 
 pub struct UserEvent {}
@@ -20,7 +20,7 @@ pub struct App {
     #[allow(unused)]
     event_loop_proxy: EventLoopProxy<UserEvent>,
     redraw_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
-    key_event_sender: Option<std::sync::mpsc::Sender<KeyEvent>>,
+    event_sender_bridge: Option<std::sync::mpsc::Sender<StreamingEvent>>,
 }
 
 impl App {
@@ -30,30 +30,38 @@ impl App {
             service_runner: ServiceRunner::default(),
             event_loop_proxy: proxy,
             redraw_request_sender: None,
-            key_event_sender: None,
+            event_sender_bridge: None,
         }
     }
 }
 
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window_attributes = WindowAttributes::default()
-            .with_inner_size(PhysicalSize::new(1280, 960))
-            .with_resizable(false);
+        let window_attributes =
+            WindowAttributes::default().with_inner_size(PhysicalSize::new(1280, 960));
         let window = event_loop.create_window(window_attributes).unwrap();
 
-        // キー入力
-        let (key_event_sender, key_event_receiver) = std::sync::mpsc::channel();
-        let (action_sender, action_receiver) = tokio::sync::mpsc::channel(1);
-        let _input_event_service_handle = tokio::spawn(async move {
-            tokio::task::spawn_blocking(async || {
-                let input_event_service = InputEventService::new(key_event_receiver, action_sender);
-                input_event_service.serve().await;
+        let (sender, receiver) = tokio::sync::mpsc::channel(10);
+        let (event_sender, event_receiver) = tokio::sync::broadcast::channel(10);
+        let event_stream = EventStream::new(receiver, event_sender);
+        self.service_runner.push(event_stream);
+        let (event_sender_bridge, event_receiver_bridge) =
+            std::sync::mpsc::channel::<StreamingEvent>();
+        let _ = tokio::spawn(async move {
+            tokio::task::spawn_blocking(async move || match event_receiver_bridge.recv() {
+                Ok(event) => sender.send(event).await.unwrap(),
+                Err(_) => {}
             })
             .await
             .unwrap()
             .await;
         });
+
+        // キー入力
+        let (action_sender, action_receiver) = tokio::sync::mpsc::channel(1);
+        let input_event_service = InputEventService::new(action_sender);
+        self.service_runner
+            .push_with_params(input_event_service, event_receiver);
 
         // シェルサービス
         let (content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
@@ -99,28 +107,27 @@ impl ApplicationHandler<UserEvent> for App {
         window.request_redraw();
         self.window = Some(window);
         self.redraw_request_sender = Some(redraw_request_sender);
-        self.key_event_sender = Some(key_event_sender);
+        self.event_sender_bridge = Some(event_sender_bridge);
     }
 
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         match event {
-            WindowEvent::KeyboardInput {
-                #[allow(unused)]
-                device_id,
-                event,
-                #[allow(unused)]
-                is_synthetic,
-            } => {
-                let Some(sender) = &self.key_event_sender else {
+            WindowEvent::KeyboardInput { .. } => {
+                let Some(sender) = &self.event_sender_bridge else {
                     return;
                 };
 
-                sender.send(event).unwrap_or_default();
+                sender
+                    .send(StreamingEvent {
+                        window_id,
+                        window_event: event,
+                    })
+                    .unwrap_or_default();
             }
             WindowEvent::RedrawRequested => {
                 let Some(sender) = &self.redraw_request_sender else {
@@ -129,6 +136,18 @@ impl ApplicationHandler<UserEvent> for App {
 
                 let sender_cloned = sender.clone();
                 tokio::spawn(async move { sender_cloned.send(()).await.unwrap() });
+            }
+            WindowEvent::Resized(_) => {
+                let Some(sender) = &self.event_sender_bridge else {
+                    return;
+                };
+
+                sender
+                    .send(StreamingEvent {
+                        window_id,
+                        window_event: event,
+                    })
+                    .unwrap_or_default();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}

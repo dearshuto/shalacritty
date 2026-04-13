@@ -1,6 +1,8 @@
-use std::time::Duration;
-
+use renge::ParametricService;
+use tokio_stream::StreamExt;
 use winit::{event::KeyEvent, platform::modifier_supplement::KeyEventExtModifierSupplement};
+
+use crate::services::EventKind;
 
 #[derive(Debug, PartialEq)]
 pub enum Action {
@@ -8,24 +10,31 @@ pub enum Action {
 }
 
 pub struct InputEventService {
-    receiver: std::sync::mpsc::Receiver<KeyEvent>,
     sender: tokio::sync::mpsc::Sender<Action>,
 }
 
 impl InputEventService {
-    pub fn new(
-        receiver: std::sync::mpsc::Receiver<KeyEvent>,
-        sender: tokio::sync::mpsc::Sender<Action>,
-    ) -> Self {
-        InputEventService { receiver, sender }
+    pub fn new(sender: tokio::sync::mpsc::Sender<Action>) -> Self {
+        InputEventService { sender }
     }
 
-    pub async fn serve(mut self) {
+    async fn serve(mut self, receiver: tokio::sync::broadcast::Receiver<EventKind>) {
+        let mut stream =
+            tokio_stream::wrappers::BroadcastStream::new(receiver).filter_map(|event_kind| {
+                let Ok(event) = event_kind else {
+                    return None;
+                };
+
+                let EventKind::KeyboardInput { event, .. } = event else {
+                    return None;
+                };
+
+                Some(event)
+            });
+
         loop {
-            match self.receiver.recv_timeout(Duration::from_micros(100)) {
-                Ok(request) => self.handle_key_event(request).await,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            while let Some(event) = stream.next().await {
+                self.handle_key_event(event).await;
             }
         }
     }
@@ -38,5 +47,13 @@ impl InputEventService {
                 }
             }
         }
+    }
+}
+
+impl ParametricService for InputEventService {
+    type Params = tokio::sync::broadcast::Receiver<EventKind>;
+
+    async fn serve(self, receiver: Self::Params, _cancellation_token: renge::CancellationToken) {
+        self.serve(receiver).await;
     }
 }
