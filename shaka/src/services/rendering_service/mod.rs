@@ -61,6 +61,9 @@ pub struct RenderingService {
     data_copy_completed_semaphore: vk::Semaphore,
     command_completed_semaphores: Vec<vk::Semaphore>,
 
+    // コマンドの追い越し防止フェンス
+    in_flight_fences: Vec<vk::Fence>,
+
     // コマンド同期用のタイムラインセマフォ
     command_semaphore: vk::Semaphore,
 
@@ -699,7 +702,8 @@ impl RenderingService {
             let allocate_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(4);
+                // 描画用とコピー用をイメージ分確保
+                .command_buffer_count((swapchain_images.len() * 2) as u32);
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
@@ -720,10 +724,6 @@ impl RenderingService {
             let display_semaphore1 =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
 
-            let command_completed_semaphore0 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-            let command_completed_semaphore1 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             let command_semaphore = unsafe {
                 device
                     .create_semaphore(&timeline_semaphore_create_info, None)
@@ -731,12 +731,22 @@ impl RenderingService {
             };
             let data_copy_completed_semaphore =
                 unsafe { device.create_semaphore(&timeline_semaphore_create_info, None) }.unwrap();
+
             (
                 vec![display_semaphore0, display_semaphore1],
-                vec![command_completed_semaphore0, command_completed_semaphore1],
+                (0..swapchain_images.len())
+                    .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
+                    .collect(),
                 command_semaphore,
                 data_copy_completed_semaphore,
             )
+        };
+
+        let in_flight_fences = {
+            let info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+            (0..2)
+                .map(|_| unsafe { device.create_fence(&info, None).unwrap() })
+                .collect::<Vec<_>>()
         };
 
         Self {
@@ -753,6 +763,7 @@ impl RenderingService {
             command_completed_semaphores,
             data_copy_completed_semaphore,
             command_semaphore,
+            in_flight_fences,
             command_pool,
             command_buffers,
             surface,
@@ -925,8 +936,8 @@ impl RenderingService {
             let ptr = device
                 .map_memory(
                     self.copy_src_memory,
-                    0,                                            /*offset*/
-                    buffer_layout.total_size() as vk::DeviceSize, /*size*/
+                    0,              /*offset*/
+                    vk::WHOLE_SIZE, /*size*/
                     vk::MemoryMapFlags::empty(),
                 )
                 .unwrap() as *mut u8;
@@ -959,7 +970,7 @@ impl RenderingService {
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
 
-            let command_buffer = self.command_buffers[2 + current_buffer_index as usize];
+            let command_buffer = self.command_buffers[3 + current_buffer_index as usize];
             let begin_info = vk::CommandBufferBeginInfo::default();
             device
                 .begin_command_buffer(command_buffer, &begin_info)
@@ -1031,7 +1042,7 @@ impl RenderingService {
 
             device.end_command_buffer(command_buffer).unwrap();
         };
-        return (current_buffer_index + 1) % 2;
+        return (current_buffer_index + 1) % 3;
     }
 
     fn draw(&self, params: &DrawParams) {
@@ -1043,17 +1054,13 @@ impl RenderingService {
         let buffer_index = (params.frame % 2) as usize;
         let device = &self.device;
         let display_semaphore = self.display_semaphores[buffer_index];
-        let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
-        let command_buffer = self.command_buffers[buffer_index];
+        let in_flight_fence = self.in_flight_fences[buffer_index];
 
         // コマンドバッファーが空いているか
-        if 2 <= params.frame {
-            let semaphores = [self.command_semaphore];
-            let values = [params.frame - 1];
-            let wait_info = vk::SemaphoreWaitInfo::default()
-                .semaphores(&semaphores)
-                .values(&values);
-            unsafe { device.wait_semaphores(&wait_info, u64::MAX) }.unwrap();
+        unsafe {
+            device
+                .wait_for_fences(&[in_flight_fence], true, u64::MAX)
+                .unwrap()
         }
 
         let (next_frame_index, _) = unsafe {
@@ -1065,6 +1072,12 @@ impl RenderingService {
             )
         }
         .unwrap();
+        println!("frame/acquire= {}/{}", params.frame, next_frame_index);
+        let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
+        let command_buffer = self.command_buffers[buffer_index];
+
+        // フェンスをリセット（画像取得が成功した後にリセットするのが安全）
+        unsafe { device.reset_fences(&[in_flight_fence]).unwrap() };
 
         unsafe {
             device.reset_command_buffer(
@@ -1203,7 +1216,7 @@ impl RenderingService {
 
         let command_buffer_submit_infos = [
             vk::CommandBufferSubmitInfo::default()
-                .command_buffer(self.command_buffers[2 + params.copy_command_index as usize]),
+                .command_buffer(self.command_buffers[3 + params.copy_command_index as usize]),
             vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer),
         ];
         let command_buffer_infos = if params.is_data_copy_required {
@@ -1243,7 +1256,7 @@ impl RenderingService {
             .command_buffer_infos(&command_buffer_infos)
             .wait_semaphore_infos(&wait_semaphore_infos)
             .signal_semaphore_infos(&signal_semaphore_infos)];
-        unsafe { device.queue_submit2(self.queue, &submit_infos, vk::Fence::null()) }.unwrap();
+        unsafe { device.queue_submit2(self.queue, &submit_infos, in_flight_fence) }.unwrap();
 
         {
             let wait_semaphores = [command_completed_semaphore];
