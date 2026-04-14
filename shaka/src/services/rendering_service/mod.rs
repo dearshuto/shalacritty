@@ -698,7 +698,7 @@ impl RenderingService {
             let allocate_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(3);
+                .command_buffer_count((swapchain_images.len() * 2) as u32);
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
@@ -714,10 +714,10 @@ impl RenderingService {
                 .initial_value(0);
             let timeline_semaphore_create_info =
                 vk::SemaphoreCreateInfo::default().push_next(&mut semaphore_type_create_info);
-            let display_semaphores = (0..2)
+            let display_semaphores = (0..swapchain_images.len())
                 .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
                 .collect();
-            let command_completed_semaphores = (0..2)
+            let command_completed_semaphores = (0..swapchain_images.len())
                 .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
                 .collect();
             let command_semaphore = unsafe {
@@ -737,7 +737,7 @@ impl RenderingService {
 
         let in_flight_fences = {
             let info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-            (0..2)
+            (0..swapchain_images.len())
                 .map(|_| unsafe { device.create_fence(&info, None).unwrap() })
                 .collect::<Vec<_>>()
         };
