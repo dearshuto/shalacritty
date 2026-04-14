@@ -713,15 +713,12 @@ impl RenderingService {
                 .initial_value(0);
             let timeline_semaphore_create_info =
                 vk::SemaphoreCreateInfo::default().push_next(&mut semaphore_type_create_info);
-            let display_semaphore0 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-            let display_semaphore1 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-
-            let command_completed_semaphore0 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
-            let command_completed_semaphore1 =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
+            let display_semaphores = (0..2)
+                .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
+                .collect();
+            let command_completed_semaphores = (0..2)
+                .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
+                .collect();
             let command_semaphore = unsafe {
                 device
                     .create_semaphore(&timeline_semaphore_create_info, None)
@@ -730,8 +727,8 @@ impl RenderingService {
             let data_copy_completed_semaphore =
                 unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             (
-                vec![display_semaphore0, display_semaphore1],
-                vec![command_completed_semaphore0, command_completed_semaphore1],
+                display_semaphores,
+                command_completed_semaphores,
                 command_semaphore,
                 data_copy_completed_semaphore,
             )
