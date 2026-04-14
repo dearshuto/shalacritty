@@ -27,7 +27,6 @@ pub struct RenderingServiceParams {
 struct DrawParams {
     char_count: u32,
     frame: u64,
-    is_data_copy_required: bool,
 }
 
 pub struct RenderingService {
@@ -802,7 +801,6 @@ impl RenderingService {
         let mut draw_params = DrawParams {
             char_count: 64,
             frame: 0,
-            is_data_copy_required: false,
         };
         loop {
             tokio::select! {
@@ -811,12 +809,9 @@ impl RenderingService {
                     draw_params.frame += 1;
                 },
                 Some(string) = content_receiver.recv() => {
-                    self.apply_patch(draw_params.frame, &string, &mut params.glyph_request_sender)
+                    // 内部で draw を呼び出します
+                    self.apply_patch(&draw_params, &string, &mut params.glyph_request_sender)
                         .await;
-
-                    draw_params.is_data_copy_required = true;
-                    self.draw(&draw_params);
-                    draw_params.is_data_copy_required = false;
                     draw_params.frame += 1;
                 },
                 _ = &mut cancellation_token => break,
@@ -827,11 +822,12 @@ impl RenderingService {
 
     async fn apply_patch(
         &mut self,
-        current_frame: u64,
+        params: &DrawParams,
         str: &str,
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;
+        let current_frame = params.frame;
 
         // 文字ごとの情報を転送するコマンド
         unsafe {
@@ -962,81 +958,82 @@ impl RenderingService {
             device.flush_mapped_memory_ranges(&ranges).unwrap();
             device.unmap_memory(self.copy_src_memory);
 
-            let command_buffer = self.command_buffers[2];
-            let begin_info = vk::CommandBufferBeginInfo::default();
-            device
-                .begin_command_buffer(command_buffer, &begin_info)
-                .unwrap();
-
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
-                    .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .image(self.glyph_image)
-                    .subresource_range(
-                        ash::vk::ImageSubresourceRange::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .src_access_mask(ash::vk::AccessFlags::NONE)
-                    .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)],
-            );
-
-            if !buffer_image_copies.is_empty() {
-                device.cmd_copy_buffer_to_image(
+            self.draw_with_callback(params, |command_buffer, _params| {
+                device.cmd_pipeline_barrier(
                     command_buffer,
-                    self.copy_src_buffer,
-                    self.glyph_image,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &buffer_image_copies,
+                    ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                    ash::vk::PipelineStageFlags::TRANSFER,
+                    ash::vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[ash::vk::ImageMemoryBarrier::default()
+                        .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                        .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .image(self.glyph_image)
+                        .subresource_range(
+                            ash::vk::ImageSubresourceRange::default()
+                                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        )
+                        .src_access_mask(ash::vk::AccessFlags::NONE)
+                        .dst_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)],
                 );
-            }
 
-            let src_char_section = buffer_layout.get_section(character_data_index);
-            let dst_char_section = self.buffer_layout.get_section(self.character_data_index);
-            let regions = [vk::BufferCopy::default()
-                .src_offset(src_char_section.offset as vk::DeviceSize)
-                .dst_offset(dst_char_section.offset as vk::DeviceSize)
-                .size(src_char_section.size as vk::DeviceSize)];
-            device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
+                if !buffer_image_copies.is_empty() {
+                    device.cmd_copy_buffer_to_image(
+                        command_buffer,
+                        self.copy_src_buffer,
+                        self.glyph_image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &buffer_image_copies,
+                    );
+                }
 
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                ash::vk::PipelineStageFlags::TRANSFER,
-                ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
-                ash::vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image(self.glyph_image)
-                    .subresource_range(
-                        ash::vk::ImageSubresourceRange::default()
-                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )
-                    .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(ash::vk::AccessFlags::SHADER_READ)],
-            );
+                let src_char_section = buffer_layout.get_section(character_data_index);
+                let dst_char_section = self.buffer_layout.get_section(self.character_data_index);
+                let regions = [vk::BufferCopy::default()
+                    .src_offset(src_char_section.offset as vk::DeviceSize)
+                    .dst_offset(dst_char_section.offset as vk::DeviceSize)
+                    .size(src_char_section.size as vk::DeviceSize)];
+                device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
 
-            device.end_command_buffer(command_buffer).unwrap();
-        };
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    ash::vk::PipelineStageFlags::TRANSFER,
+                    ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    ash::vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[ash::vk::ImageMemoryBarrier::default()
+                        .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image(self.glyph_image)
+                        .subresource_range(
+                            ash::vk::ImageSubresourceRange::default()
+                                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        )
+                        .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
+                        .dst_access_mask(ash::vk::AccessFlags::SHADER_READ)],
+                );
+            });
+        }
     }
 
     fn draw(&self, params: &DrawParams) {
+        self.draw_with_callback(params, |_, _| {});
+    }
+
+    fn draw_with_callback<F>(&self, params: &DrawParams, callback: F)
+    where
+        F: FnOnce(vk::CommandBuffer, &DrawParams),
+    {
         if params.char_count == 0 {
             return;
         }
@@ -1083,6 +1080,8 @@ impl RenderingService {
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
         }
+
+        callback(command_buffer, params);
 
         unsafe {
             device.cmd_pipeline_barrier(
@@ -1205,16 +1204,8 @@ impl RenderingService {
 
         unsafe { device.end_command_buffer(command_buffer) }.unwrap();
 
-        let command_buffer_submit_infos = [
-            vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffers[2]),
-            vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer),
-        ];
-        let command_buffer_infos = if params.is_data_copy_required {
-            &command_buffer_submit_infos[..]
-        } else {
-            // データコピーが不要な場合は描画コマンドだけ実行する
-            &command_buffer_submit_infos[1..]
-        };
+        let command_buffer_infos =
+            [vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer)];
         let wait_semaphore_infos = [vk::SemaphoreSubmitInfo::default()
             .semaphore(display_semaphore)
             .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)];
