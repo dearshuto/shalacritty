@@ -58,6 +58,7 @@ pub struct RenderingService {
     display_semaphores: Vec<vk::Semaphore>,
     data_copy_completed_semaphore: vk::Semaphore,
     command_completed_semaphores: Vec<vk::Semaphore>,
+    in_flight_fences: Vec<vk::Fence>,
 
     // コマンド同期用のタイムラインセマフォ
     command_semaphore: vk::Semaphore,
@@ -734,6 +735,13 @@ impl RenderingService {
             )
         };
 
+        let in_flight_fences = {
+            let info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+            (0..2)
+                .map(|_| unsafe { device.create_fence(&info, None).unwrap() })
+                .collect::<Vec<_>>()
+        };
+
         Self {
             glyph_table: GlyphTable::new(4096, 4096),
             text_writer: TextWriter::new(),
@@ -748,6 +756,7 @@ impl RenderingService {
             command_completed_semaphores,
             data_copy_completed_semaphore,
             command_semaphore,
+            in_flight_fences,
             command_pool,
             command_buffers,
             surface,
@@ -1035,19 +1044,15 @@ impl RenderingService {
         let buffer_index = (params.frame % 2) as usize;
         let device = &self.device;
         let display_semaphore = self.display_semaphores[buffer_index];
+        let in_flight_fence = self.in_flight_fences[buffer_index];
         let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
         let command_buffer = self.command_buffers[buffer_index];
 
         // コマンドバッファーが空いているか
-        if 2 <= params.frame {
-            let semaphores = [self.command_semaphore];
-            // ダブルバッファリングしているので確認したいのは N-2 番目の処理だが、
-            // N-2 番目の処理が終わった時点のセマフォーの値は N-2 からインクリメントされた値なので N-1 でよい
-            let values = [params.frame - 1];
-            let wait_info = vk::SemaphoreWaitInfo::default()
-                .semaphores(&semaphores)
-                .values(&values);
-            unsafe { device.wait_semaphores(&wait_info, u64::MAX) }.unwrap();
+        unsafe {
+            device
+                .wait_for_fences(&[in_flight_fence], true, u64::MAX)
+                .unwrap()
         }
 
         let (next_frame_index, _) = unsafe {
@@ -1059,6 +1064,11 @@ impl RenderingService {
             )
         }
         .unwrap();
+
+        // フェンスをリセット
+        // ウィンドウのリサイズなどでイメージの取得に失敗することがあるので、
+        // ここで待つことで確実に描画を開始できる状態であることを保証できる
+        unsafe { device.reset_fences(&[in_flight_fence]).unwrap() };
 
         unsafe {
             device.reset_command_buffer(
@@ -1294,6 +1304,12 @@ impl Drop for RenderingService {
         unsafe { device.destroy_pipeline_layout(self.pipeline_layout, None) };
 
         unsafe { device.destroy_shader_module(self.shader_module, None) };
+
+        for fence in &self.in_flight_fences {
+            unsafe {
+                device.destroy_fence(*fence, None);
+            }
+        }
 
         for semaphore in &self.command_completed_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
