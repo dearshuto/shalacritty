@@ -805,10 +805,12 @@ impl RenderingService {
         loop {
             tokio::select! {
                 Some(()) = receiver.recv() => {
+                    println!("Draw");
                     self.draw(&draw_params);
                     draw_params.frame += 1;
                 },
                 Some(string) = content_receiver.recv() => {
+                    println!("apply");
                     // 内部で draw を呼び出します
                     self.apply_patch(&draw_params, &string, &mut params.glyph_request_sender)
                         .await;
@@ -831,19 +833,6 @@ impl RenderingService {
 
         // 文字ごとの情報を転送するコマンド
         unsafe {
-            // GPU でコピー中だとデータ破壊が起きるので待つ
-            if 2 < current_frame {
-                let semaphores = [self.data_copy_completed_semaphore];
-                // 本来はコピーコマンドもダブルバッファリングするべきだが、
-                // コピー用のコマンドバッファーはひとつしか用意してないので前回のフレームを待つ
-                // 待つ値としては、N-1 フレーム目の完了時にインクリメントされたあとなので N が正しい
-                let values = [current_frame];
-                let wait_info = vk::SemaphoreWaitInfo::default()
-                    .semaphores(&semaphores)
-                    .values(&values);
-                device.wait_semaphores(&wait_info, u64::MAX).unwrap();
-            }
-
             // ラスタライズで await をまたいで Map した生ポインターにアクセスするとコンパイルエラーになる
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
@@ -1034,6 +1023,7 @@ impl RenderingService {
     where
         F: FnOnce(vk::CommandBuffer, &DrawParams),
     {
+        println!("{}", params.frame);
         if params.char_count == 0 {
             return;
         }
@@ -1080,6 +1070,31 @@ impl RenderingService {
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
         }
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image(self.glyph_image)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .src_access_mask(ash::vk::AccessFlags::NONE)
+                    .dst_access_mask(ash::vk::AccessFlags::SHADER_READ)],
+            )
+        };
 
         callback(command_buffer, params);
 
@@ -1240,6 +1255,8 @@ impl RenderingService {
             }
             .unwrap();
         }
+
+        unsafe { device.device_wait_idle().unwrap() }
     }
 
     extern "system" fn vulkan_debug_callback(
