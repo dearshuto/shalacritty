@@ -1224,7 +1224,7 @@ impl RenderingService {
             .command_buffer_infos(&command_buffer_infos)
             .wait_semaphore_infos(&wait_semaphore_infos)
             .signal_semaphore_infos(&signal_semaphore_infos)];
-        unsafe { device.queue_submit2(self.queue, &submit_infos, vk::Fence::null()) }.unwrap();
+        unsafe { device.queue_submit2(self.queue, &submit_infos, in_flight_fence) }.unwrap();
 
         {
             let wait_semaphores = [command_completed_semaphore];
