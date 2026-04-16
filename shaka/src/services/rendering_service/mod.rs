@@ -56,7 +56,6 @@ pub struct RenderingService {
 
     // フレーム同期
     display_semaphores: Vec<vk::Semaphore>,
-    data_copy_completed_semaphore: vk::Semaphore,
     command_completed_semaphores: Vec<vk::Semaphore>,
     in_flight_fences: Vec<vk::Fence>,
 
@@ -702,12 +701,7 @@ impl RenderingService {
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
-        let (
-            display_semaphores,
-            command_completed_semaphores,
-            command_semaphore,
-            data_copy_completed_semaphore,
-        ) = {
+        let (display_semaphores, command_completed_semaphores, command_semaphore) = {
             let create_info = vk::SemaphoreCreateInfo::default();
             let mut semaphore_type_create_info = vk::SemaphoreTypeCreateInfo::default()
                 .semaphore_type(vk::SemaphoreType::TIMELINE)
@@ -725,13 +719,10 @@ impl RenderingService {
                     .create_semaphore(&timeline_semaphore_create_info, None)
                     .unwrap()
             };
-            let data_copy_completed_semaphore =
-                unsafe { device.create_semaphore(&create_info, None) }.unwrap();
             (
                 display_semaphores,
                 command_completed_semaphores,
                 command_semaphore,
-                data_copy_completed_semaphore,
             )
         };
 
@@ -754,7 +745,6 @@ impl RenderingService {
             dynamic_rendering_device,
             display_semaphores,
             command_completed_semaphores,
-            data_copy_completed_semaphore,
             command_semaphore,
             in_flight_fences,
             command_pool,
@@ -831,23 +821,9 @@ impl RenderingService {
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;
-        let current_frame = params.frame;
 
         // 文字ごとの情報を転送するコマンド
         unsafe {
-            // GPU でコピー中だとデータ破壊が起きるので待つ
-            if 2 < current_frame {
-                let semaphores = [self.data_copy_completed_semaphore];
-                // 本来はコピーコマンドもダブルバッファリングするべきだが、
-                // コピー用のコマンドバッファーはひとつしか用意してないので前回のフレームを待つ
-                // 待つ値としては、N-1 フレーム目の完了時にインクリメントされたあとなので N が正しい
-                let values = [current_frame];
-                let wait_info = vk::SemaphoreWaitInfo::default()
-                    .semaphores(&semaphores)
-                    .values(&values);
-                device.wait_semaphores(&wait_info, u64::MAX).unwrap();
-            }
-
             // ラスタライズで await をまたいで Map した生ポインターにアクセスするとコンパイルエラーになる
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
@@ -1337,9 +1313,6 @@ impl Drop for RenderingService {
             device.destroy_semaphore(self.command_semaphore, None);
         }
 
-        unsafe {
-            device.destroy_semaphore(self.data_copy_completed_semaphore, None);
-        }
         for semaphore in &self.display_semaphores {
             unsafe { device.destroy_semaphore(*semaphore, None) };
         }
