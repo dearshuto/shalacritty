@@ -48,9 +48,10 @@ impl ApplicationHandler<UserEvent> for App {
         let (event_sender_bridge, event_receiver_bridge) =
             std::sync::mpsc::channel::<StreamingEvent>();
         let _ = tokio::spawn(async move {
-            tokio::task::spawn_blocking(async move || match event_receiver_bridge.recv() {
-                Ok(event) => sender.send(event).await.unwrap(),
-                Err(_) => {}
+            tokio::task::spawn_blocking(async move || {
+                while let Ok(event) = event_receiver_bridge.recv() {
+                    sender.send(event).await.unwrap()
+                }
             })
             .await
             .unwrap()
