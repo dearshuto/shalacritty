@@ -27,6 +27,7 @@ pub struct RenderingServiceParams {
 struct DrawParams {
     char_count: u32,
     frame: u64,
+    image_layout: vk::ImageLayout,
 }
 
 pub struct RenderingService {
@@ -801,18 +802,21 @@ impl RenderingService {
         let mut draw_params = DrawParams {
             char_count: 64,
             frame: 0,
+            image_layout: vk::ImageLayout::UNDEFINED,
         };
         loop {
             tokio::select! {
                 Some(()) = receiver.recv() => {
                     self.draw(&draw_params);
                     draw_params.frame += 1;
+                    draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 },
                 Some(string) = content_receiver.recv() => {
                     // 内部で draw を呼び出します
                     self.apply_patch(&draw_params, &string, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
+                    draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 },
                 _ = &mut cancellation_token => break,
                 else => {},
@@ -967,7 +971,7 @@ impl RenderingService {
                     &[],
                     &[],
                     &[ash::vk::ImageMemoryBarrier::default()
-                        .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                        .old_layout(params.image_layout)
                         .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                         .image(self.glyph_image)
                         .subresource_range(
@@ -1022,17 +1026,18 @@ impl RenderingService {
                         .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
                         .dst_access_mask(ash::vk::AccessFlags::SHADER_READ)],
                 );
+                Some(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             });
         }
     }
 
     fn draw(&self, params: &DrawParams) {
-        self.draw_with_callback(params, |_, _| {});
+        self.draw_with_callback(params, |_, _| None);
     }
 
     fn draw_with_callback<F>(&self, params: &DrawParams, callback: F)
     where
-        F: FnOnce(vk::CommandBuffer, &DrawParams),
+        F: FnOnce(vk::CommandBuffer, &DrawParams) -> Option<vk::ImageLayout>,
     {
         if params.char_count == 0 {
             return;
@@ -1081,7 +1086,30 @@ impl RenderingService {
             unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
         }
 
-        callback(command_buffer, params);
+        // コールバックで遷移が発生するか、すでに遷移済みじゃなかったら遷移する
+        let new_glyph_layout = callback(command_buffer, params);
+        if new_glyph_layout.is_some() {
+            // いい感じに遷移してくれてるのでなにもしない
+        } else if params.image_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            // すでに遷移済みなので何もしない
+        } else {
+            // 誰も遷移させてないので UNDEFINED のまま
+            // シェーダーで読み取れるように遷移させる
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                    ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    ash::vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[ash::vk::ImageMemoryBarrier::default()
+                        .old_layout(vk::ImageLayout::UNDEFINED)
+                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image(self.glyph_image)],
+                )
+            }
+        }
 
         unsafe {
             device.cmd_pipeline_barrier(
