@@ -983,6 +983,21 @@ impl RenderingService {
                 device.cmd_pipeline_barrier(
                     command_buffer,
                     ash::vk::PipelineStageFlags::TRANSFER,
+                    ash::vk::PipelineStageFlags::VERTEX_INPUT,
+                    ash::vk::DependencyFlags::empty(),
+                    &[ash::vk::MemoryBarrier::default()
+                        .src_access_mask(ash::vk::AccessFlags::TRANSFER_WRITE)
+                        .dst_access_mask(
+                            ash::vk::AccessFlags::VERTEX_ATTRIBUTE_READ
+                                | ash::vk::AccessFlags::INDEX_READ,
+                        )],
+                    &[],
+                    &[],
+                );
+
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    ash::vk::PipelineStageFlags::TRANSFER,
                     ash::vk::PipelineStageFlags::FRAGMENT_SHADER,
                     ash::vk::DependencyFlags::empty(),
                     &[],
