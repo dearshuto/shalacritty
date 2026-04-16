@@ -1106,7 +1106,15 @@ impl RenderingService {
                     &[ash::vk::ImageMemoryBarrier::default()
                         .old_layout(vk::ImageLayout::UNDEFINED)
                         .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image(self.glyph_image)],
+                        .image(self.glyph_image)
+                        .subresource_range(
+                            ash::vk::ImageSubresourceRange::default()
+                                .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        )],
                 )
             }
         }
