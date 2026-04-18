@@ -862,20 +862,21 @@ impl RenderingService {
                 let Some(rect) = self.glyph_table.get_rect(code) else {
                     continue;
                 };
-                let offset_x = rect[0];
-                let offset_y = rect[1];
-                let width = rect[2];
-                let height = rect[3];
                 let buffer_image_copy = vk::BufferImageCopy::default()
                     .buffer_offset(dst_buffer.len() as u64)
                     .buffer_image_height(0)
                     .buffer_row_length(0)
                     .image_offset(
                         vk::Offset3D::default()
-                            .x(offset_x as i32)
-                            .y(offset_y as i32),
+                            .x(rect.offsetx as i32)
+                            .y(rect.offsety as i32),
                     )
-                    .image_extent(vk::Extent3D::default().width(width).height(height).depth(1))
+                    .image_extent(
+                        vk::Extent3D::default()
+                            .width(rect.width)
+                            .height(rect.height)
+                            .depth(1),
+                    )
                     .image_subresource(
                         vk::ImageSubresourceLayers::default()
                             .aspect_mask(vk::ImageAspectFlags::COLOR)
