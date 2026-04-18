@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 
+pub struct Rect {
+    pub offsetx: u32,
+    pub offsety: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 pub struct GlyphTable {
     size: [u32; 2],
 
-    // offsetx, offsety, width, height
-    table: HashMap<char, [u32; 4]>,
+    table: HashMap<char, Rect>,
 }
 
 impl GlyphTable {
@@ -23,31 +29,39 @@ impl GlyphTable {
         width: u32,
         height: u32,
     ) {
-        self.table.insert(char, [offsetx, offsety, width, height]);
+        self.table.insert(
+            char,
+            Rect {
+                offsetx,
+                offsety,
+                width,
+                height,
+            },
+        );
     }
 
     // offsetx, offsety, width, height
-    pub fn get_rect(&self, code: char) -> Option<[u32; 4]> {
+    pub fn get_rect(&self, code: char) -> Option<&Rect> {
         let Some(rect) = self.table.get(&code) else {
             return None;
         };
 
-        if !(rect[2] > 0 && rect[3] > 0) {
+        if !(rect.width > 0 && rect.height > 0) {
             return None;
         }
 
-        Some(*rect)
+        Some(rect)
     }
 
     pub fn get_range(&self, code: char) -> Option<[f32; 4]> {
-        let Some([offsetx, offsety, width, height]) = self.table.get(&code) else {
+        let Some(rect) = self.table.get(&code) else {
             return None;
         };
         Some([
-            *offsetx as f32 / self.size[0] as f32,
-            *offsety as f32 / self.size[1] as f32,
-            (*offsetx + *width) as f32 / self.size[0] as f32,
-            (*offsety + *height) as f32 / self.size[1] as f32,
+            rect.offsetx as f32 / self.size[0] as f32,
+            rect.offsety as f32 / self.size[1] as f32,
+            (rect.offsetx + rect.width) as f32 / self.size[0] as f32,
+            (rect.offsety + rect.height) as f32 / self.size[1] as f32,
         ])
     }
 }
