@@ -2,26 +2,27 @@
 name: "🤖 AI Coding Task"
 about: Gemini CLI にコーディングを依頼する
 title: "[AI] "
-labels: ["gemini-run"]
+labels: ["gemini-fix"]
 ---
 
 ##  Goal
 ex. Add files
 
 ## Scope
-- **Primary:** `crates/shaka/src/input.rs`
-- **Secondary:** `crates/shaka/src/config.rs`
+- **Primary:** `shaka/src/input.rs`
+- **Secondary:** `shaka/src/config.rs`
 - **Avoid:** `vulkan-render/` (Ignore them)
 
 ## Requirements & Constraints
-1. `architecture.md` のイベントループ設計に従うこと。
-2. 新しい依存ライブラリ（crate）を追加しないこと。
-3. 既存のユニットテストが通ることを確認すること。
+1. Strictly adhere to the design principles specified in `architecture.md`.
+2. Do not introduce any new external dependencies (crates).
+3. Ensure that all existing unit tests pass successfully after your changes.
+4. Refrain from modifying or adding any existing test cases.
 
 ## Context Hints
 - `alacritty_terminal` の `Action` 型を拡張する必要があります。
 - 以前 `baby-rs` で実装したネットワークエラーハンドリングの手法を参考にしてください。
 
 ## Definition of Done
-- [ ] 修正後のコード
-- [ ] 影響範囲の短いサマリー
+- [ ] Refactored and newly implemented code.
+- [ ] A concise summary of the impact and changes.
