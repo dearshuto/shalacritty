@@ -18,11 +18,12 @@ use crate::services::{
         buffer_layout::BufferLayout, buffer_view::CharacterData, text_writer::TextWriter,
         transfer_queue::TransferQueue,
     },
+    shell_service::TextData,
 };
 
 pub struct RenderingServiceParams {
     pub receiver: tokio::sync::mpsc::Receiver<()>,
-    pub content_receiver: tokio::sync::mpsc::Receiver<String>,
+    pub content_receiver: tokio::sync::mpsc::Receiver<TextData>,
     pub glyph_request_sender: tokio::sync::mpsc::Sender<GlyphRequest>,
 }
 
@@ -805,9 +806,9 @@ impl RenderingService {
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 },
-                Some(string) = content_receiver.recv() => {
+                Some(text_data) = content_receiver.recv() => {
                     // 内部で draw を呼び出します
-                    self.apply_patch(&draw_params, &string, &mut params.glyph_request_sender)
+                    self.apply_patch(&draw_params, &text_data.text, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
