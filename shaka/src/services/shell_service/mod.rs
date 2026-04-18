@@ -5,14 +5,18 @@ use tokio::task;
 
 use crate::services::Action;
 
+pub struct TextData {
+    pub text: String,
+}
+
 pub struct ShellService {
-    content_sender: tokio::sync::mpsc::Sender<String>,
+    content_sender: tokio::sync::mpsc::Sender<TextData>,
     content_receiver: tokio::sync::mpsc::Receiver<Action>,
 }
 
 impl ShellService {
     pub fn new(
-        content_sender: tokio::sync::mpsc::Sender<String>,
+        content_sender: tokio::sync::mpsc::Sender<TextData>,
         content_receiver: tokio::sync::mpsc::Receiver<Action>,
     ) -> Self {
         Self {
@@ -58,7 +62,7 @@ impl Service for ShellService {
                     shell_sender.send_input(&str);
                 },
                 Some(str) = content_receiver.recv() => {
-                    self.content_sender.send(str).await.unwrap();
+                    self.content_sender.send(TextData { text: str }).await.unwrap();
                 },
                 _ = &mut cancellation_token => break,
                 else => {println!("else")}
