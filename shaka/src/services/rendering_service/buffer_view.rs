@@ -1,4 +1,5 @@
 #[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct CharacterData {
     pub transform0: [f32; 4],
     pub transform1: [f32; 4],

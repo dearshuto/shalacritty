@@ -3,6 +3,7 @@ mod buffer_view;
 mod glyph_table;
 mod range_allocator;
 mod text_writer;
+mod transfer_queue;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
 
@@ -15,6 +16,7 @@ use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
     rendering_service::{
         buffer_layout::BufferLayout, buffer_view::CharacterData, text_writer::TextWriter,
+        transfer_queue::TransferQueue,
     },
 };
 
@@ -28,6 +30,7 @@ struct DrawParams {
     char_count: u32,
     frame: u64,
     image_layout: vk::ImageLayout,
+    transfer_queue: TransferQueue<CharacterData>,
 }
 
 pub struct RenderingService {
@@ -793,6 +796,7 @@ impl RenderingService {
             char_count: 64,
             frame: 0,
             image_layout: vk::ImageLayout::UNDEFINED,
+            transfer_queue: TransferQueue::new(),
         };
         loop {
             tokio::select! {
