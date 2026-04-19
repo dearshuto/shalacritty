@@ -808,7 +808,7 @@ impl RenderingService {
                 },
                 Some(text_data) = content_receiver.recv() => {
                     // 内部で draw を呼び出します
-                    self.apply_patch(&draw_params, &text_data.text, &mut params.glyph_request_sender)
+                    self.apply_patch(&draw_params, &text_data.contents, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
@@ -822,7 +822,7 @@ impl RenderingService {
     async fn apply_patch(
         &mut self,
         params: &DrawParams,
-        str: &str,
+        contents: &[asura::Content],
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;
@@ -833,7 +833,7 @@ impl RenderingService {
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
             let mut buffer_image_copies = Vec::default();
-            for code in str.chars() {
+            for code in contents.iter().map(|c| c.code) {
                 let (s, receiver) = tokio::sync::oneshot::channel();
                 sender
                     .send(GlyphRequest {
@@ -924,9 +924,9 @@ impl RenderingService {
             let character_data =
                 buffer_layout.get_slice_mut(ptr as *mut CharacterData, character_data_index);
 
-            let character_count = self
-                .text_writer
-                .write(character_data, str, &self.glyph_table);
+            let character_count =
+                self.text_writer
+                    .write(character_data, contents, &self.glyph_table);
             buffer_layout.resize::<CharacterData>(character_data_index, character_count as usize);
 
             // フラッシュは特定の値の倍数である必要がある
