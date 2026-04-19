@@ -3,15 +3,22 @@ use std::time::Duration;
 use renge::Service;
 use tokio::task;
 
-use crate::services::Action;
+use crate::services::{Action, utils};
+
+pub struct Patch {
+    pub index: usize,
+    pub contents: asura::Content,
+}
 
 pub struct TextData {
-    pub contents: Vec<asura::Content>,
+    pub patches: Vec<Patch>,
+    pub str_count: usize,
 }
 
 pub struct ShellService {
     content_sender: tokio::sync::mpsc::Sender<TextData>,
     content_receiver: tokio::sync::mpsc::Receiver<Action>,
+    old_contents: Vec<asura::Content>,
 }
 
 impl ShellService {
@@ -22,12 +29,44 @@ impl ShellService {
         Self {
             content_sender,
             content_receiver,
+            old_contents: Vec::default(),
         }
     }
 
     async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
+        let str_count = contents.len();
+        let diff_collection = utils::diff_calculator::calculate_diff(&self.old_contents, &contents);
+
+        // TODO: パッチ化する
+        let mut old_index = 0;
+        let mut new_index = 0;
+        let mut patches = Vec::new();
+        for diff in diff_collection {
+            match diff {
+                utils::diff_calculator::Diff::Common(_) => {
+                    old_index += 1;
+                    new_index += 1;
+                    continue;
+                }
+                utils::diff_calculator::Diff::Add(content) => {
+                    patches.push(Patch {
+                        index: old_index,
+                        contents: content,
+                    });
+                    old_index += 1;
+                }
+                utils::diff_calculator::Diff::Remove(_) => {
+                    new_index += 1;
+                }
+            }
+        }
+
+        self.old_contents = contents;
         self.content_sender
-            .send(TextData { contents })
+            .send(TextData {
+                patches: Vec::default(),
+                str_count,
+            })
             .await
             .unwrap();
     }
