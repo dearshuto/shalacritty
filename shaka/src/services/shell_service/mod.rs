@@ -6,7 +6,7 @@ use tokio::task;
 use crate::services::Action;
 
 pub struct TextData {
-    pub text: String,
+    pub contents: Vec<asura::Content>,
 }
 
 pub struct ShellService {
@@ -24,6 +24,13 @@ impl ShellService {
             content_receiver,
         }
     }
+
+    async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
+        self.content_sender
+            .send(TextData { contents })
+            .await
+            .unwrap();
+    }
 }
 
 impl Service for ShellService {
@@ -39,13 +46,13 @@ impl Service for ShellService {
                 match shell_receiver.try_recv_event() {
                     Ok(event) => match event {
                         asura::Event::Updated => {
-                            let str: String = shell_receiver
+                            let contents: Vec<_> = shell_receiver
                                 .read_contents()
                                 .acquire_contents()
-                                .iter()
-                                .filter_map(|c| if c.code != ' ' { Some(c.code) } else { None })
+                                .into_iter()
+                                .filter_map(|c| if c.code != ' ' { Some(c) } else { None })
                                 .collect();
-                            content_sender.send(str).await.unwrap();
+                            content_sender.send(contents).await.unwrap();
                         }
                         asura::Event::Exit => continue,
                         asura::Event::Others => continue,
@@ -61,9 +68,7 @@ impl Service for ShellService {
                     let Action::Input(str) = action else { continue };
                     shell_sender.send_input(&str);
                 },
-                Some(str) = content_receiver.recv() => {
-                    self.content_sender.send(TextData { text: str }).await.unwrap();
-                },
+                Some(contents) = content_receiver.recv() => self.handle_contents(contents).await,
                 _ = &mut cancellation_token => break,
                 else => {println!("else")}
             }
