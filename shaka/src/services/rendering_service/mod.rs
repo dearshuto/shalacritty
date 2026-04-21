@@ -15,10 +15,12 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
     rendering_service::{
-        buffer_layout::BufferLayout, buffer_view::CharacterData, text_writer::TextWriter,
+        buffer_layout::BufferLayout,
+        buffer_view::CharacterData,
+        text_writer::{CopyRange, TextWriter},
         transfer_queue::TransferQueue,
     },
-    shell_service::TextData,
+    shell_service::{Patch, TextData},
 };
 
 pub struct RenderingServiceParams {
@@ -808,7 +810,7 @@ impl RenderingService {
                 },
                 Some(text_data) = content_receiver.recv() => {
                     // 内部で draw を呼び出します
-                    self.apply_patch(&draw_params, &text_data.contents, &mut params.glyph_request_sender)
+                    self.apply_patch(&draw_params, &text_data.patches, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
@@ -822,7 +824,7 @@ impl RenderingService {
     async fn apply_patch(
         &mut self,
         params: &DrawParams,
-        contents: &[asura::Content],
+        patches: &[Patch],
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;
@@ -833,7 +835,7 @@ impl RenderingService {
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
             let mut buffer_image_copies = Vec::default();
-            for code in contents.iter().map(|c| c.code) {
+            for code in patches.iter().map(|c| c.content.code) {
                 let (s, receiver) = tokio::sync::oneshot::channel();
                 sender
                     .send(GlyphRequest {
@@ -924,10 +926,10 @@ impl RenderingService {
             let character_data =
                 buffer_layout.get_slice_mut(ptr as *mut CharacterData, character_data_index);
 
-            let character_count =
+            let copy_ranges: Vec<vk::BufferCopy> =
                 self.text_writer
-                    .write(character_data, contents, &self.glyph_table);
-            buffer_layout.resize::<CharacterData>(character_data_index, character_count as usize);
+                    .write(character_data, patches, &self.glyph_table);
+            buffer_layout.resize::<CharacterData>(character_data_index, copy_ranges.len());
 
             // フラッシュは特定の値の倍数である必要がある
             let atom_size = limits.non_coherent_atom_size as usize;
@@ -980,10 +982,13 @@ impl RenderingService {
 
                 let src_char_section = buffer_layout.get_section(character_data_index);
                 let dst_char_section = self.buffer_layout.get_section(self.character_data_index);
-                let regions = [vk::BufferCopy::default()
-                    .src_offset(src_char_section.offset as vk::DeviceSize)
-                    .dst_offset(dst_char_section.offset as vk::DeviceSize)
-                    .size(src_char_section.size as vk::DeviceSize)];
+                let regions: Vec<_> = copy_ranges
+                    .iter()
+                    .map(|x| {
+                        x.src_offset(x.src_offset + src_char_section.offset as u64)
+                            .dst_offset(x.dst_offset + dst_char_section.offset as u64)
+                    })
+                    .collect();
                 device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
 
                 // バッファーのコピー待ち
@@ -1381,5 +1386,14 @@ impl renge::ParametricService for RenderingService {
 
     async fn serve(self, params: Self::Params, cancellation_token: renge::CancellationToken) {
         self.serve(params, cancellation_token).await;
+    }
+}
+
+impl CopyRange for vk::BufferCopy {
+    fn new(src_offset: usize, dst_offset: usize, count: usize) -> Self {
+        vk::BufferCopy::default()
+            .src_offset(src_offset as vk::DeviceSize)
+            .dst_offset(dst_offset as vk::DeviceSize)
+            .size(count as vk::DeviceSize)
     }
 }
