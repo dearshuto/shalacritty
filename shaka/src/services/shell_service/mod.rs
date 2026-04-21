@@ -3,15 +3,22 @@ use std::time::Duration;
 use renge::Service;
 use tokio::task;
 
-use crate::services::Action;
+use crate::services::{Action, utils::diff_calculator::calculate_diff};
+
+pub struct Patch {
+    pub index: usize,
+    pub content: asura::Content,
+}
 
 pub struct TextData {
-    pub contents: Vec<asura::Content>,
+    pub patches: Vec<Patch>,
+    pub char_count: usize,
 }
 
 pub struct ShellService {
     content_sender: tokio::sync::mpsc::Sender<TextData>,
     content_receiver: tokio::sync::mpsc::Receiver<Action>,
+    old_contents: Vec<asura::Content>,
 }
 
 impl ShellService {
@@ -22,14 +29,51 @@ impl ShellService {
         Self {
             content_sender,
             content_receiver,
+            old_contents: Vec::default(),
         }
     }
 
     async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
+        let diff_collection = calculate_diff(&self.old_contents, &contents);
+        let mut old_content_index = 0;
+        let mut new_content_index = 0;
+        let mut patches = Vec::new();
+        for diff in diff_collection {
+            match diff {
+                super::utils::diff_calculator::Diff::Common(content) => {
+                    if old_content_index != new_content_index {
+                        let patch = Patch {
+                            index: new_content_index as usize,
+                            content,
+                        };
+                        patches.push(patch);
+                    }
+                    old_content_index += 1;
+                    new_content_index += 1;
+                }
+                super::utils::diff_calculator::Diff::Add(content) => {
+                    let patch = Patch {
+                        index: new_content_index as usize,
+                        content,
+                    };
+                    patches.push(patch);
+                    new_content_index += 1;
+                }
+                super::utils::diff_calculator::Diff::Remove(_) => {
+                    old_content_index += 1;
+                }
+            }
+        }
+
         self.content_sender
-            .send(TextData { contents })
+            .send(TextData {
+                patches,
+                char_count: contents.len(),
+            })
             .await
             .unwrap();
+
+        self.old_contents = contents;
     }
 }
 

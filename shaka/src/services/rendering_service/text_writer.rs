@@ -1,5 +1,6 @@
 use crate::services::{
     rendering_service::{buffer_view::CharacterData, glyph_table::GlyphTable},
+    shell_service::Patch,
     utils,
 };
 
@@ -13,15 +14,15 @@ impl TextWriter {
     pub fn write(
         &self,
         dst_buffer: &mut [CharacterData],
-        contents: &[asura::Content],
+        patches: &[Patch],
         glyph_table: &GlyphTable,
     ) -> usize {
         let window_size = [1280, 960];
         let font_size = 32.0;
 
-        let count = contents.len().min(dst_buffer.len());
+        let count = patches.len().min(dst_buffer.len());
         for index in 0..count {
-            let content = &contents[index];
+            let content = &patches[index];
             let matrix = utils::compute_world_matrix(
                 window_size,
                 font_size,

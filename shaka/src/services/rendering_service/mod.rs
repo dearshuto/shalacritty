@@ -18,7 +18,7 @@ use crate::services::{
         buffer_layout::BufferLayout, buffer_view::CharacterData, text_writer::TextWriter,
         transfer_queue::TransferQueue,
     },
-    shell_service::TextData,
+    shell_service::{Patch, TextData},
 };
 
 pub struct RenderingServiceParams {
@@ -808,7 +808,7 @@ impl RenderingService {
                 },
                 Some(text_data) = content_receiver.recv() => {
                     // 内部で draw を呼び出します
-                    self.apply_patch(&draw_params, &text_data.contents, &mut params.glyph_request_sender)
+                    self.apply_patch(&draw_params, &text_data.patches, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
@@ -822,7 +822,7 @@ impl RenderingService {
     async fn apply_patch(
         &mut self,
         params: &DrawParams,
-        contents: &[asura::Content],
+        patches: &[Patch],
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;
@@ -833,7 +833,7 @@ impl RenderingService {
             // そこで一時的なバッファーに書き出しておいて後で Map したメモリーにコピーする手法を採用している
             let mut dst_buffer = Vec::with_capacity(1024);
             let mut buffer_image_copies = Vec::default();
-            for code in contents.iter().map(|c| c.code) {
+            for code in patches.iter().map(|patch| patch.content.code) {
                 let (s, receiver) = tokio::sync::oneshot::channel();
                 sender
                     .send(GlyphRequest {
