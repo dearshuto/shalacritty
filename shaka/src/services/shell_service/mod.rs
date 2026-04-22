@@ -83,10 +83,10 @@ impl Service for ShellService {
         let (_id, mut shell_sender, shell_receiver) =
             multiplexer.spawn_separated(&asura::Config::default());
 
-        let (content_sender, mut content_receiver) = tokio::sync::mpsc::channel(10);
+        let (content_sender, mut content_receiver) = tokio::sync::mpsc::channel(1);
         let task = task::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
                 match shell_receiver.try_recv_event() {
                     Ok(event) => match event {
                         asura::Event::Updated => {
