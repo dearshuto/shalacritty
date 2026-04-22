@@ -52,6 +52,7 @@ pub struct RenderingService {
     dynamic_rendering_device: khr::dynamic_rendering::Device,
 
     // Graphics Framework
+    image_count: usize,
     surface: vk::SurfaceKHR,
     surface_loader: khr::surface::Instance,
     swapchain_loader: khr::swapchain::Device,
@@ -755,6 +756,7 @@ impl RenderingService {
             in_flight_fences,
             command_pool,
             command_buffers,
+            image_count: swapchain_images.len(),
             surface,
             queue,
             surface_loader,
@@ -1055,11 +1057,10 @@ impl RenderingService {
             return;
         }
 
-        let buffer_index = (params.frame % 2) as usize;
+        let buffer_index = (params.frame as usize) % self.image_count;
         let device = &self.device;
         let display_semaphore = self.display_semaphores[buffer_index];
         let in_flight_fence = self.in_flight_fences[buffer_index];
-        let command_completed_semaphore = self.command_completed_semaphores[buffer_index];
         let command_buffer = self.command_buffers[buffer_index];
 
         // コマンドバッファーが空いているか
@@ -1078,6 +1079,9 @@ impl RenderingService {
             )
         }
         .unwrap();
+
+        let command_completed_semaphore =
+            self.command_completed_semaphores[next_frame_index as usize];
 
         // フェンスをリセット
         // ウィンドウのリサイズなどでイメージの取得に失敗することがあるので、
