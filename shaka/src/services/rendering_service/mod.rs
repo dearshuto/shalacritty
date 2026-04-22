@@ -809,6 +809,7 @@ impl RenderingService {
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 },
                 Some(text_data) = content_receiver.recv() => {
+                    draw_params.char_count = text_data.char_count as u32;
                     // 内部で draw を呼び出します
                     self.apply_patch(&draw_params, &text_data.patches, &mut params.glyph_request_sender)
                         .await;
