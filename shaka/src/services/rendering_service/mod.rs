@@ -847,7 +847,9 @@ impl RenderingService {
                     .await
                     .unwrap();
 
-                let mut glyph = receiver.await.unwrap();
+                let Ok(mut glyph) = receiver.await else {
+                    continue;
+                };
 
                 // 管理用データを構築
                 let Some(offset) = self
