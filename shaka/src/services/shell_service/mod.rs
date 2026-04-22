@@ -5,8 +5,14 @@ use tokio::task;
 
 use crate::services::Action;
 
+pub struct Patch {
+    pub index: usize,
+    pub content: asura::Content,
+}
+
 pub struct TextData {
-    pub contents: Vec<asura::Content>,
+    pub patches: Vec<Patch>,
+    pub char_count: usize,
 }
 
 pub struct ShellService {
@@ -26,8 +32,20 @@ impl ShellService {
     }
 
     async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
+        let char_count = contents.len();
+        let patches = contents
+            .into_iter()
+            .enumerate()
+            .map(|(index, content)| Patch {
+                index,
+                content: content,
+            })
+            .collect::<Vec<_>>();
         self.content_sender
-            .send(TextData { contents })
+            .send(TextData {
+                patches,
+                char_count,
+            })
             .await
             .unwrap();
     }
