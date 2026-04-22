@@ -41,8 +41,8 @@ impl ApplicationHandler<UserEvent> for App {
             WindowAttributes::default().with_inner_size(PhysicalSize::new(1280, 960));
         let window = event_loop.create_window(window_attributes).unwrap();
 
-        let (sender, receiver) = tokio::sync::mpsc::channel(10);
-        let (event_sender, event_receiver) = tokio::sync::broadcast::channel(10);
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        let (event_sender, event_receiver) = tokio::sync::broadcast::channel(1);
         let event_stream = EventStream::new(receiver, event_sender);
         self.service_runner.push(event_stream);
         let (event_sender_bridge, event_receiver_bridge) =
