@@ -980,31 +980,39 @@ impl RenderingService {
                     );
                 }
 
-                let src_char_section = buffer_layout.get_section(character_data_index);
-                let dst_char_section = self.buffer_layout.get_section(self.character_data_index);
-                let regions: Vec<_> = copy_ranges
-                    .iter()
-                    .map(|x| {
-                        x.src_offset(x.src_offset + src_char_section.offset as u64)
-                            .dst_offset(x.dst_offset + dst_char_section.offset as u64)
-                    })
-                    .collect();
-                device.cmd_copy_buffer(command_buffer, self.copy_src_buffer, self.buffer, &regions);
+                if !copy_ranges.is_empty() {
+                    let src_char_section = buffer_layout.get_section(character_data_index);
+                    let dst_char_section =
+                        self.buffer_layout.get_section(self.character_data_index);
+                    let regions: Vec<_> = copy_ranges
+                        .iter()
+                        .map(|x| {
+                            x.src_offset(x.src_offset + src_char_section.offset as u64)
+                                .dst_offset(x.dst_offset + dst_char_section.offset as u64)
+                        })
+                        .collect();
+                    device.cmd_copy_buffer(
+                        command_buffer,
+                        self.copy_src_buffer,
+                        self.buffer,
+                        &regions,
+                    );
 
-                // バッファーのコピー待ち
-                let buffer_barrier = vk::BufferMemoryBarrier2::default()
-                    // コピー操作（TRANSFERステージでの書き込み）の完了を待つ
-                    .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
-                    .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-                    // 頂点入力（VERTEX_INPUTステージでの読み込み）の前に完了を保証する
-                    .dst_stage_mask(vk::PipelineStageFlags2::VERTEX_INPUT)
-                    .dst_access_mask(vk::AccessFlags2::VERTEX_ATTRIBUTE_READ)
-                    .buffer(self.buffer)
-                    .offset(dst_char_section.offset as vk::DeviceSize)
-                    .size(dst_char_section.size as vk::DeviceSize);
-                let dependency_info = vk::DependencyInfo::default()
-                    .buffer_memory_barriers(std::slice::from_ref(&buffer_barrier));
-                device.cmd_pipeline_barrier2(command_buffer, &dependency_info);
+                    // バッファーのコピー待ち
+                    let buffer_barrier = vk::BufferMemoryBarrier2::default()
+                        // コピー操作（TRANSFERステージでの書き込み）の完了を待つ
+                        .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                        .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                        // 頂点入力（VERTEX_INPUTステージでの読み込み）の前に完了を保証する
+                        .dst_stage_mask(vk::PipelineStageFlags2::VERTEX_INPUT)
+                        .dst_access_mask(vk::AccessFlags2::VERTEX_ATTRIBUTE_READ)
+                        .buffer(self.buffer)
+                        .offset(dst_char_section.offset as vk::DeviceSize)
+                        .size(dst_char_section.size as vk::DeviceSize);
+                    let dependency_info = vk::DependencyInfo::default()
+                        .buffer_memory_barriers(std::slice::from_ref(&buffer_barrier));
+                    device.cmd_pipeline_barrier2(command_buffer, &dependency_info);
+                }
 
                 device.cmd_pipeline_barrier(
                     command_buffer,
