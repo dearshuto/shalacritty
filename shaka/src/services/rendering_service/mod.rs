@@ -33,7 +33,7 @@ struct DrawParams {
     char_count: u32,
     frame: u64,
     image_layout: vk::ImageLayout,
-    transfer_queue: TransferQueue<CharacterData>,
+    transfer_queue: TransferQueue<Patch>,
 }
 
 pub struct RenderingService {
@@ -803,6 +803,7 @@ impl RenderingService {
             image_layout: vk::ImageLayout::UNDEFINED,
             transfer_queue: TransferQueue::new(),
         };
+        let mut patch_buffer = [Default::default(); 64];
         loop {
             tokio::select! {
                 Some(()) = receiver.recv() => {
@@ -812,8 +813,9 @@ impl RenderingService {
                 },
                 Some(text_data) = content_receiver.recv() => {
                     draw_params.char_count = text_data.char_count as u32;
+                    draw_params.transfer_queue.push(&mut patch_buffer, &text_data.patches);
                     // 内部で draw を呼び出します
-                    self.apply_patch(&draw_params, &text_data.patches, &mut params.glyph_request_sender)
+                    self.apply_patch(&draw_params, &patch_buffer, &mut params.glyph_request_sender)
                         .await;
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;

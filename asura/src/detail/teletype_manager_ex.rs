@@ -14,7 +14,7 @@ use crate::detail::ConfigBridge;
 
 use super::{convert_color_snorm, TeletypeId};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct Content {
     pub code: char,
     pub x: usize,

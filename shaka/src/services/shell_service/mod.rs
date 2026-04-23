@@ -5,6 +5,7 @@ use tokio::task;
 
 use crate::services::{Action, utils::diff_calculator::calculate_diff};
 
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Patch {
     pub index: usize,
     pub content: asura::Content,
