@@ -1,6 +1,6 @@
 use crate::services::{
     rendering_service::{buffer_view::CharacterData, glyph_table::GlyphTable},
-    shell_service::Patch,
+    shell_service::PatchData,
     utils,
 };
 
@@ -18,7 +18,7 @@ impl TextWriter {
     pub fn write<T>(
         &self,
         dst_buffer: &mut [CharacterData],
-        patches: &[Patch],
+        patches: &[PatchData],
         glyph_table: &GlyphTable,
     ) -> Vec<T>
     where

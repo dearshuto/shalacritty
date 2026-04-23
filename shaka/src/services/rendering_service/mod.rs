@@ -20,7 +20,7 @@ use crate::services::{
         text_writer::{CopyRange, TextWriter},
         transfer_queue::TransferQueue,
     },
-    shell_service::{Patch, TextData},
+    shell_service::{PatchData, TextData},
 };
 
 pub struct RenderingServiceParams {
@@ -33,7 +33,7 @@ struct DrawParams {
     char_count: u32,
     frame: u64,
     image_layout: vk::ImageLayout,
-    transfer_queue: TransferQueue<Patch>,
+    transfer_queue: TransferQueue<PatchData>,
 }
 
 pub struct RenderingService {
@@ -829,7 +829,7 @@ impl RenderingService {
     async fn apply_patch(
         &mut self,
         params: &DrawParams,
-        patches: &[Patch],
+        patches: &[PatchData],
         sender: &tokio::sync::mpsc::Sender<GlyphRequest>,
     ) {
         let device = &self.device;

@@ -3,16 +3,25 @@ use std::time::Duration;
 use renge::Service;
 use tokio::task;
 
-use crate::services::{Action, utils::diff_calculator::calculate_diff};
+use crate::services::{
+    Action,
+    utils::{self, Patch, diff_calculator::calculate_diff},
+};
 
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Patch {
+pub struct PatchData {
     pub index: usize,
     pub content: asura::Content,
 }
 
+impl Patch<asura::Content> for PatchData {
+    fn new(index: usize, content: asura::Content) -> Self {
+        Self { index, content }
+    }
+}
+
 pub struct TextData {
-    pub patches: Vec<Patch>,
+    pub patches: Vec<PatchData>,
     pub char_count: usize,
 }
 
@@ -36,36 +45,7 @@ impl ShellService {
 
     async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
         let diff_collection = calculate_diff(&self.old_contents, &contents);
-        let mut old_content_index = 0;
-        let mut new_content_index = 0;
-        let mut patches = Vec::new();
-        for diff in diff_collection {
-            match diff {
-                super::utils::diff_calculator::Diff::Common(content) => {
-                    if old_content_index != new_content_index {
-                        let patch = Patch {
-                            index: new_content_index as usize,
-                            content,
-                        };
-                        patches.push(patch);
-                    }
-                    old_content_index += 1;
-                    new_content_index += 1;
-                }
-                super::utils::diff_calculator::Diff::Add(content) => {
-                    let patch = Patch {
-                        index: new_content_index as usize,
-                        content,
-                    };
-                    patches.push(patch);
-                    new_content_index += 1;
-                }
-                super::utils::diff_calculator::Diff::Remove(_) => {
-                    old_content_index += 1;
-                }
-            }
-        }
-
+        let patches = utils::generate_patch(diff_collection.into_iter());
         self.content_sender
             .send(TextData {
                 patches,
