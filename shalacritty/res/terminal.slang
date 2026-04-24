@@ -160,7 +160,7 @@ CharacterVertexOutput character_vs_tentative(CharacterDataTentative data) {
 float4 character_fs_tentative(float4 fgColor: COLOR0, float2 uv: TEXCOORD1)
     : SV_Target {
   float alpha = g_GlyphTexture.Sample(g_GlyphSamplerState, uv);
-  return float4(0.0, 0.0, alpha, 1.0);
+  return float4(0.7, 0.8, 0.9, alpha);
 }
 
 // ============================================================================
