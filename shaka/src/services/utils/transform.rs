@@ -36,7 +36,8 @@ pub fn compute_world_matrix(
     let py = offset_y + (grid_y as f32 + 0.5) * font_size;
 
     let tx = (px / width) * 2.0 - 1.0;
-    let ty = (py / height) * 2.0 - 1.0;
+    // Y軸が上向きなので、ピクセル座標を反転して計算
+    let ty = ((height - py) / height) * 2.0 - 1.0;
 
     nalgebra::Matrix3::new(
         sx, 0.0, tx, //
