@@ -67,7 +67,6 @@ impl Service for ShellService {
         let (content_sender, mut content_receiver) = tokio::sync::mpsc::channel(1);
         let task = task::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(10)).await;
                 match shell_receiver.try_recv_event() {
                     Ok(event) => match event {
                         asura::Event::Updated => {
@@ -79,10 +78,18 @@ impl Service for ShellService {
                                 .collect();
                             content_sender.send(contents).await.unwrap();
                         }
-                        asura::Event::Exit => continue,
-                        asura::Event::Others => continue,
+                        asura::Event::Exit => {
+                            break;
+                        }
+                        asura::Event::Others => {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            continue;
+                        }
                     },
-                    Err(_) => continue,
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        continue;
+                    }
                 }
             }
         });
