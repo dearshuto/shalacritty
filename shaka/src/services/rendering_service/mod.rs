@@ -433,7 +433,13 @@ impl RenderingService {
                 .rasterization_samples(vk::SampleCountFlags::TYPE_1);
             let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default();
             let blend_attachment_states = [vk::PipelineColorBlendAttachmentState::default()
-                .blend_enable(false)
+                .blend_enable(true)
+                .color_blend_op(vk::BlendOp::ADD)
+                .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+                .alpha_blend_op(vk::BlendOp::ADD)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
                 .color_write_mask(vk::ColorComponentFlags::RGBA)];
             let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
                 .logic_op(vk::LogicOp::CLEAR)
