@@ -420,7 +420,10 @@ impl RenderingService {
                 .vertex_attribute_descriptions(&vertex_attribute_descriptions);
             let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::default()
                 .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-            let viewpors = [vk::Viewport::default().width(1280.0).height(960.0)];
+            let viewpors = [vk::Viewport::default()
+                .width(1280.0)
+                .height(-960.0)
+                .y(960.0)];
             let scissors =
                 [vk::Rect2D::default().extent(vk::Extent2D::default().width(1280).height(960))];
             let viewport_state = vk::PipelineViewportStateCreateInfo::default()
