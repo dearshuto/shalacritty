@@ -41,7 +41,12 @@ impl TextWriter {
             // 3 要素を足りない分はゼロ埋めしつつ 4 要素にする
             dst_buffer[index].transform0 = matrix.column(0).fixed_resize::<4, 1>(0.0).into();
             dst_buffer[index].transform1 = matrix.column(1).fixed_resize::<4, 1>(0.0).into();
-            dst_buffer[index].fg_color = [0.0, 0.8, 0.0, 1.0];
+            dst_buffer[index].fg_color = [
+                patch.content.fg[0],
+                patch.content.fg[1],
+                patch.content.fg[2],
+                1.0,
+            ];
 
             let Some(range) = glyph_table.get_range(patch.content.code) else {
                 continue;
