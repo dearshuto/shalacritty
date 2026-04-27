@@ -15,6 +15,8 @@ where
         self.pop(dst_buffer)
     }
 
+    /// キューイングしたデータを取り出します。
+    /// dst_buffer に書き込んだ要素数を返します。
     pub fn pop(&mut self, dst_buffer: &mut [T]) -> usize {
         let copy_count = dst_buffer.len().min(self.buffer.len());
         dst_buffer[0..copy_count].copy_from_slice(&self.buffer[0..copy_count]);
@@ -22,6 +24,12 @@ where
         copy_count
     }
 
+    /// キューイングしたデータの数を返します。
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// キューイングしたデータが空であるか判定します。
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
