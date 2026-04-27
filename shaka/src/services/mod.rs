@@ -1,5 +1,6 @@
 mod event_stream;
 mod glyph_extract_service;
+mod image_service;
 mod input_event_service;
 mod rendering_service;
 mod shell_service;

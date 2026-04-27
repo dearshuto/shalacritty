@@ -7,13 +7,14 @@ mod transfer_queue;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
 
-use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
+use std::{borrow::Cow, collections::HashMap, io::Cursor, mem::offset_of, u64};
 
 use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
     glyph_extract_service::{FontId, GlyphRequest},
+    image_service::ImageId,
     rendering_service::{
         buffer_layout::BufferLayout,
         buffer_view::CharacterData,
@@ -91,6 +92,7 @@ pub struct RenderingService {
     index_data_index: usize,
     character_data_index: usize,
     copy_src_buffer: vk::Buffer,
+    images: HashMap<ImageId, vk::Image>,
 
     // グリフ
     glyph_image: vk::Image,
