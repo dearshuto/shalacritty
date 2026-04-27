@@ -13,6 +13,7 @@ use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
+    EventKind,
     glyph_extract_service::{FontId, GlyphRequest},
     rendering_service::{
         buffer_layout::BufferLayout,
@@ -27,6 +28,8 @@ pub struct RenderingServiceParams {
     pub receiver: tokio::sync::mpsc::Receiver<()>,
     pub content_receiver: tokio::sync::mpsc::Receiver<TextData>,
     pub glyph_request_sender: tokio::sync::mpsc::Sender<GlyphRequest>,
+    #[allow(unused)]
+    pub resize_receiver: tokio::sync::broadcast::Receiver<EventKind>,
 }
 
 struct DrawParams {
