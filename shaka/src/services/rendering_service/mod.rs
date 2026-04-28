@@ -92,7 +92,7 @@ pub struct RenderingService {
     index_data_index: usize,
     character_data_index: usize,
     copy_src_buffer: vk::Buffer,
-    images: HashMap<ImageId, vk::Image>,
+    // images: HashMap<ImageId, vk::Image>,
 
     // グリフ
     glyph_image: vk::Image,
