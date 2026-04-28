@@ -44,8 +44,9 @@ pub struct RenderingService {
     instance: ash::Instance,
     device: ash::Device,
     physical_device: vk::PhysicalDevice,
-    #[allow(unused)]
     queue: vk::Queue,
+    #[allow(unused)]
+    transfer_queue: vk::Queue,
     debug_utils_loader: ext::debug_utils::Instance,
     debug_utils_messanger: vk::DebugUtilsMessengerEXT,
 
@@ -177,45 +178,69 @@ impl RenderingService {
 
         // 物理デバイスの検索
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-        let (physical_device, queue_family_index) =
+        let (physical_device, graphics_queue_index, graphics_queue_count, transfer_queue_index) = {
             unsafe { instance.enumerate_physical_devices() }
                 .unwrap()
                 .iter()
                 .find_map(|physical_device| {
-                    unsafe {
+                    let properties = unsafe {
                         instance.get_physical_device_queue_family_properties(*physical_device)
+                    };
+
+                    let mut graphics_queue_count = None;
+                    let mut graphics_queue_index = None;
+                    let mut transfer_queue_index = None;
+                    for (index, property) in properties.into_iter().enumerate() {
+                        if graphics_queue_index.is_none() {
+                            if property.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                                graphics_queue_count = Some(property.queue_count);
+                                graphics_queue_index = Some(index);
+                            }
+                        }
+
+                        if transfer_queue_index.is_none() {
+                            // 転送用は専用キューがあるか
+                            if property.queue_flags == vk::QueueFlags::TRANSFER {
+                                transfer_queue_index = Some(index);
+                                break;
+                            }
+
+                            // 次点で描画キューと干渉しないで使えるキューがあるか
+                            if property.queue_flags.contains(vk::QueueFlags::TRANSFER)
+                                && !property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                            {
+                                transfer_queue_index = Some(index);
+                                break;
+                            }
+                        }
                     }
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, info)| {
-                        if !info.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                            return None;
-                        }
+                    // Transfer 専用キューが見つからない場合、Graphics が Transfer 能力を内包しているので相乗りさせる
+                    if transfer_queue_index.is_none() {
+                        transfer_queue_index = graphics_queue_index;
+                    }
 
-                        if !unsafe {
-                            surface_loader.get_physical_device_surface_support(
-                                *physical_device,
-                                index as u32,
-                                surface,
-                            )
-                        }
-                        .unwrap()
-                        {
-                            return None;
-                        }
-
-                        Some((*physical_device, index))
-                    })
+                    return Some((
+                        *physical_device,
+                        graphics_queue_index.unwrap(),
+                        graphics_queue_count.unwrap(),
+                        transfer_queue_index.unwrap(),
+                    ));
                 })
-                .unwrap();
+                .unwrap()
+        };
 
         // デバイス作成
         let device = unsafe {
             let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
             let priorities = [1.0];
-            let queue_info = vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_family_index as u32)
-                .queue_priorities(&priorities);
+            let queue_infos = [
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(graphics_queue_index as u32)
+                    .queue_priorities(&priorities),
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(transfer_queue_index as u32)
+                    .queue_priorities(&priorities),
+            ];
             let device_extension_names_raw = [
                 ash::khr::swapchain::NAME.as_ptr(),
                 ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
@@ -233,7 +258,13 @@ impl RenderingService {
             let mut timeline_semaphore_features =
                 vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
             let device_create_info = ash::vk::DeviceCreateInfo::default()
-                .queue_create_infos(std::slice::from_ref(&queue_info))
+                // キューファミリーインデックスはユニークでないといけないので、
+                // Transfer キューが Graphics キューに相乗りしてる場合はグラフィックスだけが設定されるようにする
+                .queue_create_infos(if graphics_queue_index != transfer_queue_index {
+                    &queue_infos
+                } else {
+                    std::slice::from_ref(&queue_infos[graphics_queue_index])
+                })
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
                 .push_next(&mut vulkan_features)
@@ -248,7 +279,18 @@ impl RenderingService {
 
         let dynamic_rendering_device = khr::dynamic_rendering::Device::new(&instance, &device);
 
-        let queue = unsafe { device.get_device_queue(queue_family_index as u32, 0) };
+        let queue = unsafe { device.get_device_queue(graphics_queue_index as u32, 0) };
+        let transfer_queue = if transfer_queue_index == graphics_queue_index {
+            if graphics_queue_count == 1 {
+                queue
+            } else {
+                // Graphics に Transfer が相乗りする場合でも、複数のキューが存在するなら可能な限り処理を分離するためにそれぞれ割り当てる
+                unsafe { device.get_device_queue(transfer_queue_index as u32, 1) }
+            }
+        } else {
+            unsafe { device.get_device_queue(transfer_queue_index as u32, 0) }
+        };
+
         let surface_format =
             unsafe { surface_loader.get_physical_device_surface_formats(physical_device, surface) }
                 .unwrap()[0];
@@ -472,7 +514,7 @@ impl RenderingService {
 
         const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 64 * 1024;
         let copy_src_buffer = {
-            let queue_family_indices = [queue_family_index as u32];
+            let queue_family_indices = [graphics_queue_index as u32];
             let create_info = vk::BufferCreateInfo::default()
                 .queue_family_indices(&queue_family_indices)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -483,7 +525,7 @@ impl RenderingService {
 
         const BUFFER_SIZE: vk::DeviceSize = 128 * 1024;
         let buffer = {
-            let queue_family_indices = [queue_family_index as u32];
+            let queue_family_indices = [graphics_queue_index as u32];
             let create_info = vk::BufferCreateInfo::default()
                 .queue_family_indices(&queue_family_indices)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -704,7 +746,7 @@ impl RenderingService {
 
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
-                .queue_family_index(queue_family_index as u32)
+                .queue_family_index(graphics_queue_index as u32)
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
             unsafe { device.create_command_pool(&create_info, None) }.unwrap()
         };
@@ -768,6 +810,7 @@ impl RenderingService {
             image_count: swapchain_images.len(),
             surface,
             queue,
+            transfer_queue,
             surface_loader,
             swapchain_loader,
             swapchain,
