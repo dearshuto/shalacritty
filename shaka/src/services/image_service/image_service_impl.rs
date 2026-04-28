@@ -1,4 +1,14 @@
+use ash::*;
 use renge::ParametricService;
+
+pub struct Request {
+    pub receiver: tokio::sync::oneshot::Sender<vk::CommandBuffer>,
+}
+
+pub struct Params {
+    pub submit: tokio::sync::oneshot::Sender<vk::CommandBuffer>,
+    pub reuse: tokio::sync::oneshot::Receiver<()>,
+}
 
 pub struct ImageId {}
 
