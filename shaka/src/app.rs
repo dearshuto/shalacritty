@@ -62,7 +62,7 @@ impl ApplicationHandler<UserEvent> for App {
         let (action_sender, action_receiver) = tokio::sync::mpsc::channel(1);
         let input_event_service = InputEventService::new(action_sender);
         self.service_runner
-            .push_with_params(input_event_service, event_receiver);
+            .push_with_params(input_event_service, event_receiver.resubscribe());
 
         // シェルサービス
         let (content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
@@ -91,6 +91,7 @@ impl ApplicationHandler<UserEvent> for App {
             receiver: redraw_request_receiver,
             content_receiver,
             glyph_request_sender: glyph_service_adapter_sender,
+            resize_receiver: event_receiver,
         };
         self.service_runner
             .push_with_params(rendering_service, params);
