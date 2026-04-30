@@ -61,29 +61,6 @@ impl BufferLayout {
     pub fn total_size(&self) -> usize {
         self.sections.last().map_or(0, |s| s.offset + s.size)
     }
-
-    /// Calculate a section that adheres to specific alignment requirements for both offset and size.
-    /// Useful for Vulkan flush ranges where nonCoherentAtomSize must be respected.
-    pub fn get_limited_section(&self, index: usize, alignment_requirement: usize) -> Section {
-        let section = &self.sections[index];
-
-        // Align down the offset
-        let aligned_offset = section.offset - (section.offset % alignment_requirement);
-
-        // Align up the end to find the new size
-        let end = section.offset + section.size;
-        let remainder = end % alignment_requirement;
-        let aligned_end = if remainder == 0 {
-            end
-        } else {
-            end + (alignment_requirement - remainder)
-        };
-
-        Section {
-            offset: aligned_offset,
-            size: aligned_end - aligned_offset,
-        }
-    }
 }
 
 #[cfg(test)]
