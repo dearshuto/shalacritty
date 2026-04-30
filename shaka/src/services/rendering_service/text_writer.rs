@@ -20,11 +20,11 @@ impl TextWriter {
         dst_buffer: &mut [CharacterData],
         patches: &[PatchData],
         glyph_table: &GlyphTable,
+        window_size: [u32; 2],
     ) -> Vec<T>
     where
         T: CopyRange,
     {
-        let window_size = [1280, 960];
         let font_size = 32.0;
 
         let mut ranges = Vec::default();
