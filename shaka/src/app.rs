@@ -66,7 +66,11 @@ impl ApplicationHandler<UserEvent> for App {
 
         // シェルサービス
         let (content_sender, content_receiver) = tokio::sync::mpsc::channel(1);
-        let shell_service = ShellService::new(content_sender, action_receiver);
+        let shell_service = ShellService::new(
+            content_sender,
+            action_receiver,
+            event_receiver.resubscribe(),
+        );
         self.service_runner.push(shell_service);
 
         // グリフ抽出サービス

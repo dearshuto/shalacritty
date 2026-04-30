@@ -1,10 +1,11 @@
 use std::time::Duration;
 
+use font_kit::sources::multi;
 use renge::Service;
 use tokio::task;
 
 use crate::services::{
-    Action,
+    Action, EventKind,
     utils::{self, Patch, diff_calculator::calculate_diff},
 };
 
@@ -28,6 +29,7 @@ pub struct TextData {
 pub struct ShellService {
     content_sender: tokio::sync::mpsc::Sender<TextData>,
     content_receiver: tokio::sync::mpsc::Receiver<Action>,
+    event_receiver: tokio::sync::broadcast::Receiver<EventKind>,
     old_contents: Vec<asura::Content>,
 }
 
@@ -35,10 +37,12 @@ impl ShellService {
     pub fn new(
         content_sender: tokio::sync::mpsc::Sender<TextData>,
         content_receiver: tokio::sync::mpsc::Receiver<Action>,
+        event_receiver: tokio::sync::broadcast::Receiver<EventKind>,
     ) -> Self {
         Self {
             content_sender,
             content_receiver,
+            event_receiver,
             old_contents: Vec::default(),
         }
     }
@@ -56,12 +60,21 @@ impl ShellService {
 
         self.old_contents = contents;
     }
+
+    fn resize(shell_sender: &mut asura::ShellSender, event: EventKind) {
+        let EventKind::Resized { width, height } = event else {
+            return;
+        };
+
+        let (line_count, column_count) = utils::transform::compute_grid_size([width, height], 32.0);
+        shell_sender.resize(line_count as u16, column_count as u16, 1, 1);
+    }
 }
 
 impl Service for ShellService {
     async fn serve(mut self, mut cancellation_token: renge::CancellationToken) {
         let mut multiplexer = asura::Multiplexer::new();
-        let (_id, mut shell_sender, shell_receiver) =
+        let (id, mut shell_sender, shell_receiver) =
             multiplexer.spawn_separated(&asura::Config::default());
 
         let (content_sender, mut content_receiver) = tokio::sync::mpsc::channel(1);
@@ -80,7 +93,7 @@ impl Service for ShellService {
                             content_sender.send(contents).await.unwrap();
                         }
                         asura::Event::Exit => continue,
-                        asura::Event::Others => continue,
+                        asura::Event::Others => println!("Others"),
                     },
                     Err(_) => continue,
                 }
@@ -94,6 +107,7 @@ impl Service for ShellService {
                     shell_sender.send_input(&str);
                 },
                 Some(contents) = content_receiver.recv() => self.handle_contents(contents).await,
+                Ok(event) = self.event_receiver.recv() => Self::resize(&mut shell_sender, event),
                 _ = &mut cancellation_token => break,
                 else => {println!("else")}
             }
