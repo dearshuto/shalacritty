@@ -82,7 +82,14 @@ impl ApplicationHandler<UserEvent> for App {
             .unwrap();
         });
 
+        let from = std::time::SystemTime::now();
         let rendering_service = RenderingService::new(&window);
+        let elapsed = std::time::SystemTime::now()
+            .duration_since(from)
+            .unwrap()
+            .as_micros();
+        println!("init: {} ms", elapsed as f32 / 1000.0);
+
         let (redraw_request_sender, redraw_request_receiver) = tokio::sync::mpsc::channel(1);
         // ラスタライズ要求は大量に来る可能性があるのである程度のバッファーをもたせた
         let (glyph_service_adapter_sender, mut glyph_service_adapter_receiver) =
