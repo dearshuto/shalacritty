@@ -5,6 +5,8 @@ pub struct Rect {
     pub offsety: u32,
     pub width: u32,
     pub height: u32,
+    pub offset_x: i32,
+    pub offset_y: i32,
 }
 
 pub struct GlyphTable {
@@ -28,6 +30,8 @@ impl GlyphTable {
         offsety: u32,
         width: u32,
         height: u32,
+        offset_x: i32,
+        offset_y: i32,
     ) {
         self.table.insert(
             char,
@@ -36,6 +40,8 @@ impl GlyphTable {
                 offsety,
                 width,
                 height,
+                offset_x,
+                offset_y,
             },
         );
     }
