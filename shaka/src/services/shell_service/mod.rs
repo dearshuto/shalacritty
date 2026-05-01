@@ -90,6 +90,7 @@ impl Service for ShellService {
         loop {
             tokio::select! {
                 Some(action) = self.content_receiver.recv() => {
+                    #[allow(irrefutable_let_patterns)]
                     let Action::Input(str) = action else { continue };
                     shell_sender.send_input(&str);
                 },
