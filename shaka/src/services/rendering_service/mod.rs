@@ -64,6 +64,7 @@ pub struct RenderingService {
     #[allow(unused)]
     swapchain_images: Vec<vk::Image>,
     present_image_views: Vec<vk::ImageView>,
+    surface_resolution: vk::Extent2D,
 
     // フレーム同期
     display_semaphores: Vec<vk::Semaphore>,
@@ -466,11 +467,10 @@ impl RenderingService {
             let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::default()
                 .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
             let viewpors = [vk::Viewport::default()
-                .width(1280.0)
-                .height(-960.0)
-                .y(960.0)];
-            let scissors =
-                [vk::Rect2D::default().extent(vk::Extent2D::default().width(1280).height(960))];
+                .width(surface_resolution.width as f32)
+                .height(-(surface_resolution.height as f32))
+                .y(surface_resolution.height as f32)];
+            let scissors = [vk::Rect2D::default().extent(surface_resolution)];
             let viewport_state = vk::PipelineViewportStateCreateInfo::default()
                 .viewports(&viewpors)
                 .scissors(&scissors);
@@ -812,6 +812,7 @@ impl RenderingService {
             command_buffers,
             image_count: swapchain_images.len(),
             surface,
+            surface_resolution,
             queue,
             transfer_queue,
             surface_loader,
@@ -850,6 +851,7 @@ impl RenderingService {
         mut cancellation_token: renge::CancellationToken,
     ) {
         let mut receiver = params.receiver;
+        let mut resize_receiver = params.resize_receiver;
         let mut content_receiver = params.content_receiver;
 
         let mut draw_params = DrawParams {
@@ -875,10 +877,103 @@ impl RenderingService {
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 },
+                Ok(event) = resize_receiver.recv() => {
+                    self.resize(event);
+                    self.draw(&draw_params);
+                    draw_params.frame += 1;
+                    draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                } ,
                 _ = &mut cancellation_token => break,
                 else => {},
             }
         }
+    }
+
+    fn resize(&mut self, event_kind: EventKind) {
+        let EventKind::Resized { width, height } = event_kind else {
+            return;
+        };
+
+        // ウィンドウのサイズは Vulkan に問い合わせて得られた値を優先して使用する
+        let surface_capabilities = unsafe {
+            self.surface_loader
+                .get_physical_device_surface_capabilities(self.physical_device, self.surface)
+        }
+        .unwrap();
+        let surface_resolution = match surface_capabilities.current_extent.width {
+            u32::MAX => vk::Extent2D { width, height },
+            _ => surface_capabilities.current_extent,
+        };
+
+        let surface_format = unsafe {
+            self.surface_loader
+                .get_physical_device_surface_formats(self.physical_device, self.surface)
+        }
+        .unwrap()[0];
+
+        let old_swapchain = self.swapchain;
+        let create_info = ash::vk::SwapchainCreateInfoKHR::default()
+            // 古いスワップチェーンを指定するのが初期化時と異なるところ
+            .old_swapchain(old_swapchain)
+            // 以下の設定は初期化時と同じ
+            // TODO: 一元管理したい
+            .surface(self.surface)
+            .min_image_count(surface_capabilities.min_image_count)
+            .image_color_space(surface_format.color_space)
+            .image_format(surface_format.format)
+            .image_extent(surface_resolution)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .pre_transform(ash::vk::SurfaceTransformFlagsKHR::IDENTITY)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(vk::PresentModeKHR::FIFO)
+            .clipped(true)
+            .image_array_layers(1);
+        let new_swapchain =
+            unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }.unwrap();
+        let new_swapchain_images =
+            unsafe { self.swapchain_loader.get_swapchain_images(new_swapchain) }.unwrap();
+
+        let new_present_image_views: Vec<_> = new_swapchain_images
+            .iter()
+            .map(|&image| {
+                let create_view_info = vk::ImageViewCreateInfo::default()
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(surface_format.format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .image(image);
+                unsafe { self.device.create_image_view(&create_view_info, None) }.unwrap()
+            })
+            .collect();
+
+        // 古いインスタンスをを破棄するタイミングで GPU がリソースを使用してないことを保証
+        unsafe { self.device.device_wait_idle() }.unwrap();
+
+        // 破棄処理
+        unsafe {
+            self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+
+            for image_view in &self.present_image_views {
+                self.device.destroy_image_view(*image_view, None);
+            }
+        }
+
+        self.swapchain = new_swapchain;
+        self.swapchain_images = new_swapchain_images;
+        self.present_image_views = new_present_image_views;
+        self.surface_resolution = surface_resolution;
     }
 
     async fn apply_patch(
@@ -988,9 +1083,15 @@ impl RenderingService {
             let character_data =
                 buffer_layout.get_slice_mut(ptr as *mut CharacterData, character_data_index);
 
-            let copy_ranges: Vec<vk::BufferCopy> =
-                self.text_writer
-                    .write(character_data, patches, &self.glyph_table);
+            let copy_ranges: Vec<vk::BufferCopy> = self.text_writer.write(
+                character_data,
+                patches,
+                &self.glyph_table,
+                [
+                    self.surface_resolution.width,
+                    self.surface_resolution.height,
+                ],
+            );
             buffer_layout.resize::<CharacterData>(character_data_index, copy_ranges.len());
 
             // フラッシュは特定の値の倍数である必要がある
@@ -1227,10 +1328,7 @@ impl RenderingService {
                 },
             })];
         let begin_info = ash::vk::RenderingInfo::default()
-            .render_area(
-                ash::vk::Rect2D::default()
-                    .extent(ash::vk::Extent2D::default().width(1280).height(960)),
-            )
+            .render_area(ash::vk::Rect2D::default().extent(self.surface_resolution))
             .layer_count(1)
             .color_attachments(&color_attachments);
         unsafe {
