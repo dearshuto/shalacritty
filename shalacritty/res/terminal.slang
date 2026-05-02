@@ -1,9 +1,19 @@
+[[vk::binding(0)]]
+SamplerState g_SamplerState : register(s0);
+
+[[vk::binding(1)]]
+Texture2D<float> g_GlyphTexture : register(t0);
+
+[[vk::binding(2)]]
+Texture2D<float4> g_BackgroundTexture : register(t0);
+
+[[vk::binding(3)]]
+ConstantBuffer<BackgroundView> g_BackgroundView;
+
 struct BackgroundView {
   float4 transform0;
   float4 transform1;
 };
-
-ConstantBuffer<BackgroundView> g_BackgroundView;
 
 struct PositionCoordOutput {
   float4 position : SV_Position;
@@ -29,8 +39,6 @@ PositionCoordOutput background_vs(float2 position) {
 }
 
 // ============================================================================
-Texture2D<float4> g_BackgroundTexture;
-SamplerState g_SamplerState;
 
 [shader("fragment")]
 float4 main_fs() { return float4(1.0); }
@@ -108,12 +116,6 @@ CharacterVertexOutput character_vs(int vertexId: SV_VertexID,
   return output;
 }
 
-[[vk::binding(0)]]
-SamplerState g_GlyphSamplerState : register(s0);
-
-[[vk::binding(1)]]
-Texture2D<float> g_GlyphTexture : register(t0);
-
 [shader("fragment")]
 float4 character_fs(float4 color: COLOR0, float2 uv: TEXCOORD1) {
   float alpha = g_GlyphTexture.Sample(g_SamplerState, uv);
@@ -159,7 +161,7 @@ CharacterVertexOutput character_vs_tentative(CharacterDataTentative data) {
 [shader("fragment")]
 float4 character_fs_tentative(float4 fgColor: COLOR0, float2 uv: TEXCOORD1)
     : SV_Target {
-  float alpha = g_GlyphTexture.Sample(g_GlyphSamplerState, uv);
+  float alpha = g_GlyphTexture.Sample(g_SamplerState, uv);
   return float4(0.7, 0.8, 0.9, alpha);
 }
 
