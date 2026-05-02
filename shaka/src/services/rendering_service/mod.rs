@@ -1020,6 +1020,8 @@ impl RenderingService {
                     offset[1],
                     glyph.width as u32,
                     glyph.height as u32,
+                    glyph.origin_x,
+                    glyph.origin_y,
                 );
 
                 // グリフデータの書き込み

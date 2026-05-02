@@ -28,6 +28,9 @@ pub struct Glyph {
     pub width: i32,
     pub height: i32,
 
+    pub origin_x: i32,
+    pub origin_y: i32,
+
     // RGBA
     pub data: Vec<u8>,
 }
@@ -108,6 +111,8 @@ impl GlyphExtractService {
             width: rect.width(),
             height: rect.height(),
             data: canvas.pixels,
+            origin_x: 0,
+            origin_y: 0,
         };
         request.response.send(glyph).unwrap();
     }
