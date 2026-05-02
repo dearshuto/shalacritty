@@ -96,6 +96,13 @@ pub struct RenderingService {
     character_data_index: usize,
     copy_src_buffer: vk::Buffer,
 
+    // 背景
+    background_image: vk::Image,
+    background_image_view: vk::ImageView,
+    background_image_memory: vk::DeviceMemory,
+    background_descriptor_set_layout: vk::DescriptorSetLayout,
+    background_pipeline_layout: vk::PipelineLayout,
+
     // グリフ
     glyph_image: vk::Image,
     glyph_image_view: vk::ImageView,
@@ -372,9 +379,12 @@ impl RenderingService {
                 vk::DescriptorPoolSize::default()
                     .ty(vk::DescriptorType::SAMPLER)
                     .descriptor_count(8),
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(8),
             ];
             let create_info = vk::DescriptorPoolCreateInfo::default()
-                .max_sets(1)
+                .max_sets(2)
                 .pool_sizes(&pool_sizes);
             unsafe { device.create_descriptor_pool(&create_info, None) }.unwrap()
         };
@@ -396,8 +406,30 @@ impl RenderingService {
             unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
         };
 
+        let background_descriptor_set_layout = {
+            let bindings = [
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(3)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+            ];
+            let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
+        };
+
         let descriptor_sets = {
-            let set_layouts = [descriptor_set_layout];
+            let set_layouts = [descriptor_set_layout, background_descriptor_set_layout];
             let allocate_info = vk::DescriptorSetAllocateInfo::default()
                 .descriptor_pool(descriptor_pool)
                 .set_layouts(&set_layouts);
@@ -410,7 +442,23 @@ impl RenderingService {
             unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
         };
 
+        let background_pipeline_layout = {
+            let set_layouts = [background_descriptor_set_layout];
+            let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+            unsafe { device.create_pipeline_layout(&create_info, None) }.unwrap()
+        };
+
         let pipelines = {
+            let background_stages = [
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(shader_module)
+                    .name(c"background_vs"),
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(shader_module)
+                    .name(c"background_fs"),
+            ];
             let stages = [
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::VERTEX)
@@ -423,11 +471,12 @@ impl RenderingService {
             ];
             // 頂点データは全インスタンスで共通だが、
             // 文字ごとのデータはインスタンスごとのデータなのでそれぞれバッファーを分ける
+            let rect_data = vk::VertexInputBindingDescription::default()
+                .binding(0)
+                .stride(std::mem::size_of::<f32>() as u32 * 2)
+                .input_rate(vk::VertexInputRate::VERTEX);
             let vertex_binding_descriptions = [
-                vk::VertexInputBindingDescription::default()
-                    .binding(0)
-                    .stride(std::mem::size_of::<f32>() as u32 * 2)
-                    .input_rate(vk::VertexInputRate::VERTEX),
+                rect_data,
                 vk::VertexInputBindingDescription::default()
                     .binding(1)
                     .stride(std::mem::size_of::<CharacterData>() as u32)
@@ -463,6 +512,17 @@ impl RenderingService {
             let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
                 .vertex_binding_descriptions(&vertex_binding_descriptions)
                 .vertex_attribute_descriptions(&vertex_attribute_descriptions);
+            let background_vertex_binding_descriptions = [rect_data];
+            let background_vertex_attribute_descriptions =
+                [vk::VertexInputAttributeDescription::default()
+                    .binding(0)
+                    .location(0)
+                    .format(vk::Format::R32G32_SFLOAT)
+                    .offset(0)];
+            let background_vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
+                .vertex_binding_descriptions(&background_vertex_binding_descriptions)
+                .vertex_attribute_descriptions(&background_vertex_attribute_descriptions);
+
             let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::default()
                 .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
             let viewpors = [vk::Viewport::default()
@@ -480,6 +540,13 @@ impl RenderingService {
             let multisample_state = vk::PipelineMultisampleStateCreateInfo::default()
                 .rasterization_samples(vk::SampleCountFlags::TYPE_1);
             let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default();
+            let blend_attachment_state_background =
+                [vk::PipelineColorBlendAttachmentState::default()
+                    .blend_enable(false)
+                    .color_write_mask(vk::ColorComponentFlags::RGBA)];
+            let blend_state_background = vk::PipelineColorBlendStateCreateInfo::default()
+                .logic_op(vk::LogicOp::NO_OP)
+                .attachments(&blend_attachment_state_background);
             let blend_attachment_states = [vk::PipelineColorBlendAttachmentState::default()
                 .blend_enable(true)
                 .color_blend_op(vk::BlendOp::ADD)
@@ -490,24 +557,40 @@ impl RenderingService {
                 .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
                 .color_write_mask(vk::ColorComponentFlags::RGBA)];
             let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-                .logic_op(vk::LogicOp::CLEAR)
+                .logic_op(vk::LogicOp::NO_OP)
                 .attachments(&blend_attachment_states);
             let dynamic_state = vk::PipelineDynamicStateCreateInfo::default();
             let color_attachment_formats = [surface_format.format];
+            let mut create_info_background = ash::vk::PipelineRenderingCreateInfo::default()
+                .color_attachment_formats(&color_attachment_formats);
             let mut create_info = ash::vk::PipelineRenderingCreateInfo::default()
                 .color_attachment_formats(&color_attachment_formats);
-            let create_infos = [ash::vk::GraphicsPipelineCreateInfo::default()
-                .stages(&stages)
-                .vertex_input_state(&vertex_input_state)
-                .input_assembly_state(&input_assembly_state)
-                .viewport_state(&viewport_state)
-                .rasterization_state(&rasterization_state)
-                .multisample_state(&multisample_state)
-                .depth_stencil_state(&depth_stencil_state)
-                .color_blend_state(&color_blend_state)
-                .dynamic_state(&dynamic_state)
-                .layout(layout)
-                .push_next(&mut create_info)];
+            let create_infos = [
+                vk::GraphicsPipelineCreateInfo::default()
+                    .stages(&background_stages)
+                    .vertex_input_state(&background_vertex_input_state)
+                    .input_assembly_state(&input_assembly_state)
+                    .viewport_state(&viewport_state)
+                    .rasterization_state(&rasterization_state)
+                    .multisample_state(&multisample_state)
+                    .depth_stencil_state(&depth_stencil_state)
+                    .color_blend_state(&blend_state_background)
+                    .dynamic_state(&dynamic_state)
+                    .layout(background_pipeline_layout)
+                    .push_next(&mut create_info_background),
+                ash::vk::GraphicsPipelineCreateInfo::default()
+                    .stages(&stages)
+                    .vertex_input_state(&vertex_input_state)
+                    .input_assembly_state(&input_assembly_state)
+                    .viewport_state(&viewport_state)
+                    .rasterization_state(&rasterization_state)
+                    .multisample_state(&multisample_state)
+                    .depth_stencil_state(&depth_stencil_state)
+                    .color_blend_state(&color_blend_state)
+                    .dynamic_state(&dynamic_state)
+                    .layout(layout)
+                    .push_next(&mut create_info),
+            ];
 
             unsafe {
                 device.create_graphics_pipelines(vk::PipelineCache::null(), &create_infos, None)
@@ -720,6 +803,71 @@ impl RenderingService {
             unsafe { device.create_image_view(&create_info, None) }.unwrap()
         };
 
+        let background_image = {
+            let create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8_UNORM)
+                .extent(vk::Extent3D::default().width(4).height(4).depth(1))
+                .usage(vk::ImageUsageFlags::SAMPLED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .array_layers(1)
+                .mip_levels(1)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            unsafe { device.create_image(&create_info, None) }.unwrap()
+        };
+
+        let background_image_memory = {
+            let requirements = unsafe { device.get_image_memory_requirements(background_image) };
+            let memory_index = {
+                unsafe { instance.get_physical_device_memory_properties(physical_device) }
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+                        (1 << index) & requirements.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
+            };
+            let create_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(requirements.size)
+                .memory_type_index(memory_index);
+            unsafe { device.allocate_memory(&create_info, None) }.unwrap()
+        };
+
+        unsafe {
+            device
+                .bind_image_memory(background_image, background_image_memory, 0)
+                .unwrap();
+        }
+
+        let background_image_view = {
+            let create_info = vk::ImageViewCreateInfo::default()
+                .image(background_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::R8_UNORM)
+                .components(
+                    vk::ComponentMapping::default()
+                        .r(vk::ComponentSwizzle::R)
+                        .g(vk::ComponentSwizzle::G)
+                        .b(vk::ComponentSwizzle::B)
+                        .a(vk::ComponentSwizzle::A),
+                )
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                );
+            unsafe { device.create_image_view(&create_info, None) }.unwrap()
+        };
+
         let sampler = {
             let create_info = vk::SamplerCreateInfo::default();
             unsafe { device.create_sampler(&create_info, None) }.unwrap()
@@ -836,6 +984,14 @@ impl RenderingService {
             character_data_index,
 
             copy_src_buffer,
+
+            // 背景
+            background_image,
+            background_image_view,
+            background_image_memory,
+            background_descriptor_set_layout,
+            background_pipeline_layout,
+
             // グリフ
             glyph_image,
             glyph_image_view,
@@ -1240,7 +1396,7 @@ impl RenderingService {
             device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines[0],
+                self.pipelines[1],
             );
 
             device.cmd_bind_descriptor_sets(
@@ -1248,7 +1404,7 @@ impl RenderingService {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0, /*first_set*/
-                &self.descriptor_sets,
+                &self.descriptor_sets[0..1],
                 &[],
             );
 
@@ -1391,6 +1547,15 @@ impl Drop for RenderingService {
             device.destroy_image(self.glyph_image, None);
             device.destroy_image_view(self.glyph_image_view, None);
             device.free_memory(self.glyph_memory, None);
+        }
+
+        // 背景
+        unsafe {
+            device.destroy_image(self.background_image, None);
+            device.destroy_image_view(self.background_image_view, None);
+            device.destroy_pipeline_layout(self.background_pipeline_layout, None);
+            device.destroy_descriptor_set_layout(self.background_descriptor_set_layout, None);
+            device.free_memory(self.background_image_memory, None);
         }
 
         unsafe { device.destroy_descriptor_set_layout(self.descriptor_set_layout, None) };
