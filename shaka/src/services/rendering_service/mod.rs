@@ -1493,21 +1493,7 @@ impl RenderingService {
             self.dynamic_rendering_device
                 .cmd_begin_rendering(command_buffer, &begin_info);
 
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines[1],
-            );
-
-            device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
-                0, /*first_set*/
-                &self.descriptor_sets[0..1],
-                &[],
-            );
-
+            // 背景描画と文字列描画で矩形のジオメトリ情報は共有しているので、頂点バッファーは 1 度だけ設定してそのまま使い回す
             // ひとつのバッファーを分割してふたつの頂点データとして利用
             // 矩形をシェーダー上で生成してしまえば頂点分のデータはいらなくなるかも
             let vertex_section = self.buffer_layout.get_section(self.vertex_data_index);
@@ -1528,6 +1514,32 @@ impl RenderingService {
                 self.buffer,
                 index_section.offset as u64, /*offset*/
                 vk::IndexType::UINT16,
+            );
+
+            // 背景描画
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines[0],
+            );
+
+            // TODO: ここで背景描画のリソースと draw コマンドを積む
+            // 背景描画ここまで
+
+            // 文字列描画
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines[1],
+            );
+
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0, /*first_set*/
+                &self.descriptor_sets[0..1],
+                &[],
             );
 
             device.cmd_draw_indexed(
