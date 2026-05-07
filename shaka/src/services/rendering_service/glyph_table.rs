@@ -70,4 +70,11 @@ impl GlyphTable {
             (rect.offsety + rect.height) as f32 / self.size[1] as f32,
         ])
     }
+
+    pub fn get_origin(&self, code: char) -> Option<[i32; 2]> {
+        let Some(rect) = self.table.get(&code) else {
+            return None;
+        };
+        Some([rect.offset_x, rect.offset_y])
+    }
 }

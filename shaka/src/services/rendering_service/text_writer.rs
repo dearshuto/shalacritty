@@ -31,11 +31,19 @@ impl TextWriter {
         let count = patches.len().min(dst_buffer.len());
         for index in 0..count {
             let patch = &patches[index];
-            let matrix = utils::compute_world_matrix(
+            let Some(base_point) = glyph_table.get_origin(patch.content.code) else {
+                continue;
+            };
+            let Some(rect) = glyph_table.get_rect(patch.content.code) else {
+                continue;
+            };
+            let matrix = utils::compute_world_matrix_with_base_point(
                 window_size,
                 font_size,
                 patch.content.x as u32,
                 patch.content.y as u32,
+                [rect.width as f32, rect.height as f32],
+                base_point,
             )
             .transpose();
             // 3 要素を足りない分はゼロ埋めしつつ 4 要素にする

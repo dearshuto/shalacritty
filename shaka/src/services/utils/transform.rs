@@ -11,6 +11,24 @@ pub fn compute_world_matrix(
     grid_x: u32,
     grid_y: u32,
 ) -> nalgebra::Matrix3<f32> {
+    compute_world_matrix_with_base_point(
+        window_size,
+        font_size,
+        grid_x,
+        grid_y,
+        [font_size, font_size],
+        [0, 0],
+    )
+}
+
+pub fn compute_world_matrix_with_base_point(
+    window_size: [u32; 2],
+    font_size: f32,
+    grid_x: u32,
+    grid_y: u32,
+    size: [f32; 2],
+    base_point: [i32; 2],
+) -> nalgebra::Matrix3<f32> {
     let (cols, rows) = compute_grid_size(window_size, font_size);
     let font_width = font_size / 2.0;
 
@@ -27,17 +45,20 @@ pub fn compute_world_matrix(
     // ローカル座標の単位正方形（幅1, 高さ1, 中心(0,0)）を
     // NDC空間（[-1, 1]）上の対応するグリッド位置へ変換する。
 
-    // スケーリング：単位サイズをセルサイズに変換し、NDCの全幅2で正規化
-    let sx = (font_width / width) * 2.0;
-    let sy = (font_size / height) * 2.0;
+    // スケーリング：指定されたサイズをセルサイズに変換し、NDCの全幅2で正規化
+    let sx = (size[0] / width) * 2.0;
+    let sy = (size[1] / height) * 2.0;
 
-    // 平行移動：ピクセル単位のセル中心座標を求め、NDCの [-1, 1] に変換
+    // 平行移動：ピクセル単位のセル中心座標を求め、base_pointを考慮して調整、NDCの [-1, 1] に変換
+    let base_point_offset_x = (base_point[0] as f32 / width) * 2.0;
+    let base_point_offset_y = (base_point[1] as f32 / height) * 2.0;
+
     let px = offset_x + (grid_x as f32 + 0.5) * font_width;
     let py = offset_y + (grid_y as f32 + 0.5) * font_size;
 
-    let tx = (px / width) * 2.0 - 1.0;
+    let tx = (px / width) * 2.0 - 1.0 + base_point_offset_x;
     // Y軸が上向きなので、ピクセル座標を反転して計算
-    let ty = ((height - py) / height) * 2.0 - 1.0;
+    let ty = ((height - py) / height) * 2.0 - 1.0 + base_point_offset_y;
 
     nalgebra::Matrix3::new(
         sx, 0.0, tx, //

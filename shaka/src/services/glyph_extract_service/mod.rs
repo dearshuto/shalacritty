@@ -111,8 +111,8 @@ impl GlyphExtractService {
             width: rect.width(),
             height: rect.height(),
             data: canvas.pixels,
-            origin_x: 0,
-            origin_y: 0,
+            origin_x: rect.origin().x(),
+            origin_y: -rect.origin().y(),
         };
         request.response.send(glyph).unwrap();
     }

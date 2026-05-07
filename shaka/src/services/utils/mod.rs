@@ -5,3 +5,4 @@ pub mod transform;
 pub use patch_generator::Patch;
 pub use patch_generator::generate_patch;
 pub use transform::compute_world_matrix;
+pub use transform::compute_world_matrix_with_base_point;
