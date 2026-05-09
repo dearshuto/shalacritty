@@ -11,4 +11,4 @@ pub use glyph_extract_service::GlyphExtractService;
 pub use input_event_service::{Action, InputEventService};
 pub use rendering_service::{RenderingService, RenderingServiceParams};
 pub use shell_service::ShellService;
-pub use zellij_bridge_service::ZellijBridgeService;
+pub use zellij_bridge_service::{ZellijBridgeParams, ZellijBridgeService};

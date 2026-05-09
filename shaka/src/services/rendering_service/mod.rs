@@ -1,9 +1,11 @@
+mod api;
 mod buffer_layout;
 mod buffer_view;
 mod glyph_table;
 mod range_allocator;
 mod text_writer;
 mod transfer_queue;
+pub use api::CaptureRequest;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
 
@@ -16,6 +18,7 @@ use crate::services::{
     EventKind,
     glyph_extract_service::{FontId, GlyphRequest},
     rendering_service::{
+        api::CaptureResponse,
         buffer_layout::BufferLayout,
         buffer_view::CharacterData,
         text_writer::{CopyRange, TextWriter},
@@ -30,6 +33,8 @@ pub struct RenderingServiceParams {
     pub glyph_request_sender: tokio::sync::mpsc::Sender<GlyphRequest>,
     #[allow(unused)]
     pub resize_receiver: tokio::sync::broadcast::Receiver<EventKind>,
+
+    pub api_request_receiver: tokio::sync::mpsc::Receiver<api::CaptureRequest>,
 }
 
 struct DrawParams {
@@ -1039,6 +1044,7 @@ impl RenderingService {
                     draw_params.frame += 1;
                     draw_params.image_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 } ,
+                Some(request) = params.api_request_receiver.recv() => self.handle_api_request(request),
                 _ = &mut cancellation_token => break,
                 else => {},
             }
@@ -1618,6 +1624,11 @@ impl RenderingService {
             }
             .unwrap();
         }
+    }
+
+    fn handle_api_request(&self, request: api::CaptureRequest) {
+        let data = Vec::default();
+        request.handle.send(CaptureResponse { data }).unwrap();
     }
 
     extern "system" fn vulkan_debug_callback(
