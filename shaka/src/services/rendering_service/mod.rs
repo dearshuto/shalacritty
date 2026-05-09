@@ -2,11 +2,13 @@ mod api;
 mod buffer_layout;
 mod buffer_view;
 mod glyph_table;
+mod image_service;
 mod range_allocator;
 mod text_writer;
 mod transfer_queue;
 pub use api::CaptureRequest;
 use glyph_table::GlyphTable;
+pub use image_service::ImageService;
 use range_allocator::RangeAllocator;
 
 use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
