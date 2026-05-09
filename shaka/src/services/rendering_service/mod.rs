@@ -44,6 +44,15 @@ struct DrawParams {
     transfer_queue: TransferQueue<PatchData>,
 }
 
+#[repr(C)]
+struct BackgroundView {
+    // 4 つの配列の w 成分をそれぞれ RGBA として背景色とのブレンドカラーとする
+    position_transform0: [f32; 4],
+    position_transform1: [f32; 4],
+    uv_transform0: [f32; 4],
+    uv_transform1: [f32; 4],
+}
+
 pub struct RenderingService {
     glyph_table: GlyphTable,
     text_writer: TextWriter,
@@ -100,6 +109,7 @@ pub struct RenderingService {
     vertex_data_index: usize,
     index_data_index: usize,
     character_data_index: usize,
+    background_uniform_buffer_index0: usize,
     copy_src_buffer: vk::Buffer,
 
     // 背景
@@ -711,7 +721,8 @@ impl RenderingService {
             min_storage_buffer_offset_alignment.max(std::mem::align_of::<CharacterData>());
         let character_data_index =
             buffer_layout.add::<CharacterData>(1024, character_data_alignment);
-
+        let background_uniform_buffer_index0 =
+            buffer_layout.add::<BackgroundView>(1, 1 /*アラインメント不要*/);
         {
             const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5];
             buffer_layout
@@ -725,8 +736,16 @@ impl RenderingService {
                 .copy_from_slice(&INDEX_DATA);
         }
 
-        // background_view.transform0 = [1.0, 0.0, 0.0, 1.0];
-        // background_view.transform1 = [0.0, 1.0, 0.0, 1.0];
+        {
+            let background_view = &mut buffer_layout.get_slice_mut::<BackgroundView>(
+                ptr as *mut BackgroundView,
+                background_uniform_buffer_index0,
+            )[0];
+            background_view.position_transform0 = [2.0, 0.0, 0.0, 0.1 /*R*/];
+            background_view.position_transform1 = [0.0, 2.0, 0.0, 0.2 /*G*/];
+            background_view.uv_transform0 = [1.0, 0.0, 0.0, 0.3 /*B*/];
+            background_view.uv_transform1 = [0.0, 1.0, 0.0, 1.0 /*A*/];
+        }
 
         unsafe {
             let atom_size = limits.non_coherent_atom_size as usize;
@@ -897,6 +916,38 @@ impl RenderingService {
                             .image_view(glyph_image_view)]),
                 ],
                 &[],
+            );
+
+            // 背景
+            let background_view_section =
+                buffer_layout.get_section(background_uniform_buffer_index0);
+            device.update_descriptor_sets(
+                &[
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[1])
+                        .dst_binding(0)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::SAMPLER)
+                        .image_info(&[vk::DescriptorImageInfo::default().sampler(sampler)]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[1])
+                        .dst_binding(2)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&[vk::DescriptorImageInfo::default()
+                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .image_view(background_image_view)]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[1])
+                        .dst_binding(3)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                        .buffer_info(&[vk::DescriptorBufferInfo::default()
+                            .buffer(buffer)
+                            .offset(background_view_section.offset as vk::DeviceSize)
+                            .range(background_view_section.size as vk::DeviceSize)]),
+                ],
+                &[],
             )
         };
 
@@ -988,6 +1039,7 @@ impl RenderingService {
             vertex_data_index,
             index_data_index,
             character_data_index,
+            background_uniform_buffer_index0,
 
             copy_src_buffer,
 
@@ -1482,15 +1534,36 @@ impl RenderingService {
             )
         };
 
+        // MEMO: 本当は初期化後に 1 度だけ呼び出せばよい
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                ash::vk::PipelineStageFlags::TOP_OF_PIPE,
+                ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ash::vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[ash::vk::ImageMemoryBarrier::default()
+                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+                    .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image(self.background_image)
+                    .subresource_range(
+                        ash::vk::ImageSubresourceRange::default()
+                            .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1),
+                    )
+                    .dst_access_mask(ash::vk::AccessFlags::COLOR_ATTACHMENT_WRITE)],
+            );
+        }
+
         let color_attachments = [vk::RenderingAttachmentInfo::default()
             .image_view(self.present_image_views[next_frame_index as usize])
             .image_layout(ash::vk::ImageLayout::ATTACHMENT_OPTIMAL)
-            .load_op(ash::vk::AttachmentLoadOp::CLEAR)
-            .clear_value(ash::vk::ClearValue {
-                color: ash::vk::ClearColorValue {
-                    float32: [0.1, 0.2, 0.3, 1.0],
-                },
-            })];
+            // 背景にかならず画面を覆う矩形を用意しているのでクリアしなくてもよい
+            .load_op(ash::vk::AttachmentLoadOp::DONT_CARE)];
         let begin_info = ash::vk::RenderingInfo::default()
             .render_area(ash::vk::Rect2D::default().extent(self.surface_resolution))
             .layer_count(1)
@@ -1529,7 +1602,25 @@ impl RenderingService {
                 self.pipelines[0],
             );
 
-            // TODO: ここで背景描画のリソースと draw コマンドを積む
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.background_pipeline_layout,
+                0, /*first_set*/
+                &self.descriptor_sets[1..2],
+                &[],
+            );
+
+            // 画面全体を覆うように矩形をひとつ描画
+            device.cmd_draw_indexed(
+                command_buffer,
+                6, /*index_count*/
+                1, /*instance_count*/
+                0, /*first_index*/
+                0, /*vertex_offset*/
+                0, /*first_instance*/
+            );
+
             // 背景描画ここまで
 
             // 文字列描画

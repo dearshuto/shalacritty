@@ -11,13 +11,25 @@ Texture2D<float4> g_BackgroundTexture : register(t0);
 ConstantBuffer<BackgroundView> g_BackgroundView;
 
 struct BackgroundView {
-  float4 transform0;
-  float4 transform1;
+  // 矩形の座標変換
+  float4 position_transform0;
+  float4 position_transform1;
+
+  // UV の座標変換
+  float4 uv_transform0;
+  float4 uv_transform1;
+
+  //  各トランスフォーム行列の w 成分 4 つを RGBA として
+  //  背景テクスチャーとのブレンド色とする
 };
+
 
 struct PositionCoordOutput {
   float4 position : SV_Position;
   float2 uv : TEXTOORD0;
+
+  // 背景テクスチャーとのブレンド色
+  float4 color : COLOR0;
 };
 
 [shader("vertex")]
@@ -29,11 +41,22 @@ float4 main_vs(float2 position) : SV_Position {
 PositionCoordOutput background_vs(float2 position) {
   PositionCoordOutput output;
 
-  // position は [-1.0, 1.0] を想定
-  float2 uv = 0.5 * (position + 1.0);
-  output.uv.x = dot(g_BackgroundView.transform0.xyz, float3(uv, 1.0));
-  output.uv.y = dot(g_BackgroundView.transform1.xyz, float3(uv, 1.0));
-  output.position = float4(position, 0.0, 1.0);
+  // 座標変換
+  float2 transformed_position = float2(
+      dot(g_BackgroundView.position_transform0.xyz, float3(position, 1.0)),
+      dot(g_BackgroundView.position_transform1.xyz, float3(position, 1.0)));
+  output.position = float4(transformed_position, 0.0, 1.0);
+
+  // 座標から UV を計算
+  float2 uv =
+      float2(dot(g_BackgroundView.uv_transform0.xyz, float3(position, 1.0)),
+             dot(g_BackgroundView.uv_transform1.xyz, float3(position, 1.0)));
+  output.uv = uv;
+
+  output.color = float4(g_BackgroundView.position_transform0.w,
+                        g_BackgroundView.position_transform1.w,
+                        g_BackgroundView.uv_transform0.w,
+                        g_BackgroundView.uv_transform1.w);
 
   return output;
 }
@@ -44,9 +67,11 @@ PositionCoordOutput background_vs(float2 position) {
 float4 main_fs() { return float4(1.0); }
 
 [shader("fragment")]
-float4 background_fs(float2 uv: TEXTOORD0) : SV_Target {
-  float4 color = g_BackgroundTexture.Sample(g_SamplerState, uv);
-  return color;
+float4 background_fs(float2 uv: TEXTOORD0, float4 color: COLOR0) : SV_Target {
+  float4 sampled_color = g_BackgroundTexture.Sample(g_SamplerState, uv);
+
+  // MEMO: シンプルに足しているがアルファブレンドした方がよい？
+  return sampled_color + color;
 }
 
 // ============================================================================
