@@ -9,7 +9,7 @@ use winit::{
 
 use crate::services::{
     EventStream, GlyphExtractService, InputEventService, RenderingService, RenderingServiceParams,
-    ShellService, StreamingEvent, ZellijBridgeService,
+    ShellService, StreamingEvent, ZellijBridgeParams, ZellijBridgeService,
 };
 
 pub struct UserEvent {}
@@ -87,17 +87,21 @@ impl ApplicationHandler<UserEvent> for App {
         // ラスタライズ要求は大量に来る可能性があるのである程度のバッファーをもたせた
         let (glyph_service_adapter_sender, mut glyph_service_adapter_receiver) =
             tokio::sync::mpsc::channel(64);
+        let (api_request_sender, api_request_receiver) = tokio::sync::mpsc::channel(1);
         let params = RenderingServiceParams {
             receiver: redraw_request_receiver,
             content_receiver,
             glyph_request_sender: glyph_service_adapter_sender,
             resize_receiver: event_receiver,
+            api_request_receiver,
         };
         self.service_runner
             .push_with_params(rendering_service, params);
 
         let zellij_bridge_service = ZellijBridgeService::new();
-        self.service_runner.push(zellij_bridge_service);
+        let zellij_bridge_params = ZellijBridgeParams { api_request_sender };
+        self.service_runner
+            .push_with_params(zellij_bridge_service, zellij_bridge_params);
 
         // 同期的に動くグリフのラスタライズと非同期のサービスの変換
         let _ = tokio::spawn(async move {
