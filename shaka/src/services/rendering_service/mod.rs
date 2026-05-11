@@ -721,8 +721,8 @@ impl RenderingService {
             min_storage_buffer_offset_alignment.max(std::mem::align_of::<CharacterData>());
         let character_data_index =
             buffer_layout.add::<CharacterData>(1024, character_data_alignment);
-        let background_uniform_buffer_index0 =
-            buffer_layout.add::<BackgroundView>(1, 1 /*アラインメント不要*/);
+        let background_uniform_buffer_index0 = buffer_layout
+            .add::<BackgroundView>(1, limits.min_uniform_buffer_offset_alignment as usize);
         {
             const VERTEX_DATA: [f32; 8] = [-0.5f32, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5];
             buffer_layout
