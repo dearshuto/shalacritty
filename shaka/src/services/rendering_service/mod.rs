@@ -1850,3 +1850,72 @@ impl CopyRange for vk::BufferCopy {
             .size(count as vk::DeviceSize)
     }
 }
+
+pub struct DescriptorSetOperationHandle {
+    device: ash::Device,
+    sampler: vk::Sampler,
+
+    // 定数バッファー
+    uniform_buffer: vk::Buffer,
+    offset: vk::DeviceSize,
+    size: vk::DeviceSize,
+
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_sets: Vec<vk::DescriptorSet>,
+
+    sender: tokio::sync::oneshot::Sender<Vec<vk::DescriptorSet>>,
+}
+
+impl DescriptorSetOperationHandle {
+    pub fn create_descriptor_sets(&mut self, count: usize) {
+        let set_layouts = [self.descriptor_set_layout; 8];
+        let allocate_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(self.descriptor_pool)
+            .set_layouts(&set_layouts[0..count]);
+        self.descriptor_sets =
+            unsafe { self.device.allocate_descriptor_sets(&allocate_info) }.unwrap();
+    }
+
+    pub fn update_descriptor_set(&mut self, index: usize, image_view: vk::ImageView) {
+        let descriptor_set = self.descriptor_sets[index];
+        let sampler_infos = [vk::DescriptorImageInfo::default().sampler(self.sampler)];
+        let image_infos = [vk::DescriptorImageInfo::default()
+            .image_view(image_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+        let uniform_buffer_infos = [vk::DescriptorBufferInfo::default()
+            .buffer(self.uniform_buffer)
+            .offset(self.offset)
+            .range(self.size)];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLER)
+                .image_info(&sampler_infos),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&image_infos),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(3)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&uniform_buffer_infos),
+        ];
+
+        unsafe {
+            self.device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
+    }
+
+    pub fn finish(self) {
+        self.sender.send(self.descriptor_sets).ok();
+    }
+}
