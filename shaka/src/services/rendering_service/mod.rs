@@ -1851,6 +1851,20 @@ impl CopyRange for vk::BufferCopy {
     }
 }
 
+pub struct DescriptorSetOperationRequest {
+    sender: tokio::sync::oneshot::Sender<DescriptorSetOperationHandle>,
+}
+
+impl DescriptorSetOperationRequest {
+    pub fn new() -> (
+        Self,
+        tokio::sync::oneshot::Receiver<DescriptorSetOperationHandle>,
+    ) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        (Self { sender: tx }, rx)
+    }
+}
+
 pub struct DescriptorSetOperationHandle {
     device: ash::Device,
     sampler: vk::Sampler,
@@ -1877,7 +1891,23 @@ impl DescriptorSetOperationHandle {
             unsafe { self.device.allocate_descriptor_sets(&allocate_info) }.unwrap();
     }
 
-    pub fn update_descriptor_set(&mut self, index: usize, image_view: vk::ImageView) {
+    pub fn update_descriptor_set(&mut self, index: usize, data: &[u8]) {
+        let image = unsafe {
+            let create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::R8_UNORM)
+                .extent(vk::Extent3D::default().width(1024).height(1024).depth(1))
+                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED);
+            self.device.create_image(&create_info, None).unwrap()
+        };
+
+        let image_view = unsafe {
+            let create_info = vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D);
+            self.device.create_image_view(&create_info, None).unwrap()
+        };
+
         let descriptor_set = self.descriptor_sets[index];
         let sampler_infos = [vk::DescriptorImageInfo::default().sampler(self.sampler)];
         let image_infos = [vk::DescriptorImageInfo::default()
@@ -1917,5 +1947,67 @@ impl DescriptorSetOperationHandle {
 
     pub fn finish(self) {
         self.sender.send(self.descriptor_sets).ok();
+    }
+}
+
+struct Transfer {
+    device: ash::Device,
+    queue: vk::Queue,
+    command_buffer: vk::CommandBuffer,
+    transfer_buffer: vk::Buffer,
+}
+
+impl Transfer {
+    pub fn transfer(&self, data: &[u8]) {
+        let command_buffer_begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        let mut chunk = [0u8; 256];
+        let mut transfer_queue = TransferQueue::new();
+        let mut size = transfer_queue.push(&mut chunk, data);
+
+        while size > 0 {
+            unsafe {
+                self.device
+                    .begin_command_buffer(self.command_buffer, &command_buffer_begin_info)
+                    .unwrap();
+
+                let regions = [vk::BufferImageCopy2::default()
+                    .buffer_row_length(64)
+                    .buffer_image_height(64)
+                    .buffer_offset(0)
+                    .image_extent(vk::Extent3D::default().width(128).height(128).depth(1))
+                    .image_offset(vk::Offset3D::default())
+                    .image_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .mip_level(0)
+                            .aspect_mask(vk::ImageAspectFlags::COLOR),
+                    )];
+                let copy_buffer_to_image_info = vk::CopyBufferToImageInfo2::default()
+                    .src_buffer(self.transfer_buffer)
+                    .dst_image(vk::Image::null())
+                    .dst_image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .regions(&regions);
+                self.device
+                    .cmd_copy_buffer_to_image2(self.command_buffer, &copy_buffer_to_image_info);
+
+                self.device.end_command_buffer(self.command_buffer).unwrap();
+            }
+
+            let command_buffer_submit_infos =
+                [vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer)];
+            let submit_infos =
+                [vk::SubmitInfo2::default().command_buffer_infos(&command_buffer_submit_infos)];
+
+            unsafe {
+                self.device
+                    .queue_submit2(self.queue, &submit_infos, vk::Fence::null())
+                    .unwrap();
+            }
+
+            size = transfer_queue.pop(&mut chunk);
+        }
     }
 }
