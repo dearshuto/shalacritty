@@ -1865,8 +1865,26 @@ impl DescriptorSetOperationRequest {
     }
 }
 
+pub enum ImageFormat {
+    R32g32b32Float,
+}
+
+pub struct ImageData {
+    pub data: Vec<f32>,
+    pub width: u32,
+    pub height: u32,
+    pub raw: u32,
+    pub format: ImageFormat,
+}
+
 pub struct DescriptorSetOperationHandle {
     device: ash::Device,
+    // データ転送用のキュー
+    queue: vk::Queue,
+    // データ転送コマンドを積むバッファー
+    command_buffer: vk::CommandBuffer,
+    // データ転送完了待ちフェンス
+    fence: vk::Fence,
     sampler: vk::Sampler,
 
     // 定数バッファー
@@ -1879,6 +1897,8 @@ pub struct DescriptorSetOperationHandle {
     descriptor_sets: Vec<vk::DescriptorSet>,
 
     sender: tokio::sync::oneshot::Sender<Vec<vk::DescriptorSet>>,
+
+    transfer_queue: TransferQueue<f32>,
 }
 
 impl DescriptorSetOperationHandle {
@@ -1891,12 +1911,17 @@ impl DescriptorSetOperationHandle {
             unsafe { self.device.allocate_descriptor_sets(&allocate_info) }.unwrap();
     }
 
-    pub fn update_descriptor_set(&mut self, index: usize, data: &[u8]) {
+    pub fn update_descriptor_set(&mut self, index: usize, data: ImageData) {
         let image = unsafe {
             let create_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
-                .format(vk::Format::R8_UNORM)
-                .extent(vk::Extent3D::default().width(1024).height(1024).depth(1))
+                .format(Self::to_vk_format(data.format))
+                .extent(
+                    vk::Extent3D::default()
+                        .width(data.width)
+                        .height(data.height)
+                        .depth(1),
+                )
                 .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED);
             self.device.create_image(&create_info, None).unwrap()
         };
@@ -1906,6 +1931,33 @@ impl DescriptorSetOperationHandle {
                 .image(image)
                 .view_type(vk::ImageViewType::TYPE_2D);
             self.device.create_image_view(&create_info, None).unwrap()
+        };
+
+        let regions = [vk::BufferImageCopy2::default()
+            .image_extent(
+                vk::Extent3D::default()
+                    .width(data.width)
+                    .height(data.height)
+                    .depth(1),
+            )
+            .image_offset(vk::Offset3D::default())
+            .buffer_offset(0)
+            .buffer_row_length(data.raw)
+            .image_subresource(
+                vk::ImageSubresourceLayers::default()
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .mip_level(0)
+                    .aspect_mask(vk::ImageAspectFlags::COLOR),
+            )];
+        let buffer_image_copy = vk::CopyBufferToImageInfo2::default()
+            .dst_image(image)
+            .dst_image_layout(vk::ImageLayout::UNDEFINED)
+            .src_buffer(vk::Buffer::null())
+            .regions(&regions);
+        unsafe {
+            self.device
+                .cmd_copy_buffer_to_image2(vk::CommandBuffer::null(), &buffer_image_copy)
         };
 
         let descriptor_set = self.descriptor_sets[index];
@@ -1943,10 +1995,20 @@ impl DescriptorSetOperationHandle {
         unsafe {
             self.device.update_descriptor_sets(&descriptor_writes, &[]);
         }
+
+        while !self.transfer_queue.is_empty() {
+            self.device.queue_submit2(self.queue, submits, fence)
+        }
     }
 
     pub fn finish(self) {
         self.sender.send(self.descriptor_sets).ok();
+    }
+
+    fn to_vk_format(image_format: ImageFormat) -> vk::Format {
+        match image_format {
+            ImageFormat::R32g32b32Float => vk::Format::R32G32B32_SFLOAT,
+        }
     }
 }
 
