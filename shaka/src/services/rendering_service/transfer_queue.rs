@@ -12,14 +12,27 @@ where
 
     pub fn push(&mut self, dst_buffer: &mut [T], src_buffer: &[T]) -> usize {
         self.buffer.extend_from_slice(src_buffer);
-        self.pop(dst_buffer)
+
+        let Some(size) = self.pop(dst_buffer) else {
+            return 0;
+        };
+        size
     }
 
-    pub fn pop(&mut self, dst_buffer: &mut [T]) -> usize {
+    pub fn pop(&mut self, dst_buffer: &mut [T]) -> Option<usize> {
+        if self.buffer.is_empty() {
+            return None;
+        }
+
         let copy_count = dst_buffer.len().min(self.buffer.len());
         dst_buffer[0..copy_count].copy_from_slice(&self.buffer[0..copy_count]);
         self.buffer.drain(0..copy_count);
-        copy_count
+
+        if self.buffer.is_empty() {
+            return None;
+        } else {
+            Some(copy_count)
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -53,11 +66,11 @@ mod tests {
         assert_eq!(dst, [0, 1]);
 
         // pop すると内部データから値が返ってくる
-        assert_eq!(queue.pop(&mut dst), 2);
+        assert_eq!(queue.pop(&mut dst).unwrap(), 2);
         assert_eq!(dst, [2, 3]);
 
         // pop すると内部データから値が返ってくる
-        assert_eq!(queue.pop(&mut dst), 1);
+        assert_eq!(queue.pop(&mut dst).unwrap(), 1);
         assert_eq!(dst[0..1], [4]);
     }
 }
