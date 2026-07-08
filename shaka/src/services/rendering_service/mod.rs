@@ -257,7 +257,6 @@ impl RenderingService {
 
         // デバイス作成
         let device = unsafe {
-            let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
             let priorities = [1.0];
             let queue_infos = [
                 vk::DeviceQueueCreateInfo::default()
@@ -275,6 +274,11 @@ impl RenderingService {
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
+
+            // フィーチャーの有効化
+            let features = ash::vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
+            let mut features2 = ash::vk::PhysicalDeviceFeatures2::default().features(features);
+
             let mut vulkan_features =
                 vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
             let mut dynamic_rendering_features =
@@ -283,6 +287,13 @@ impl RenderingService {
                 ash::vk::PhysicalDeviceSynchronization2Features::default().synchronization2(true);
             let mut timeline_semaphore_features =
                 vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
+
+            // pNext チェーンの構築
+            features2 = features2.push_next(&mut vulkan_features);
+            vulkan_features = vulkan_features.push_next(&mut dynamic_rendering_features);
+            dynamic_rendering_features = dynamic_rendering_features.push_next(&mut sync_features);
+            sync_features = sync_features.push_next(&mut timeline_semaphore_features);
+
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 // キューファミリーインデックスはユニークでないといけないので、
                 // Transfer キューが Graphics キューに相乗りしてる場合はグラフィックスだけが設定されるようにする
@@ -292,11 +303,7 @@ impl RenderingService {
                     std::slice::from_ref(&queue_infos[graphics_queue_index])
                 })
                 .enabled_extension_names(&device_extension_names_raw)
-                .enabled_features(&features)
-                .push_next(&mut vulkan_features)
-                .push_next(&mut dynamic_rendering_features)
-                .push_next(&mut sync_features)
-                .push_next(&mut timeline_semaphore_features);
+                .push_next(&mut features2);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
@@ -601,7 +608,7 @@ impl RenderingService {
                     .rasterization_state(&rasterization_state)
                     .multisample_state(&multisample_state)
                     .depth_stencil_state(&depth_stencil_state)
-                    .color_blend_state(&color_blend_state)
+                    .color_blend_state(&blend_state_color_blend_state)
                     .dynamic_state(&dynamic_state)
                     .layout(layout)
                     .push_next(&mut create_info),
