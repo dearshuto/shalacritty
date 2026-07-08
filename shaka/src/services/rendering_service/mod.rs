@@ -303,6 +303,7 @@ impl RenderingService {
                     std::slice::from_ref(&queue_infos[graphics_queue_index])
                 })
                 .enabled_extension_names(&device_extension_names_raw)
+                .enabled_features(std::ptr::null()) // 明示的に null を設定
                 .push_next(&mut features2);
             ash::vk::DeviceCreateFlags::default();
 
@@ -608,7 +609,7 @@ impl RenderingService {
                     .rasterization_state(&rasterization_state)
                     .multisample_state(&multisample_state)
                     .depth_stencil_state(&depth_stencil_state)
-                    .color_blend_state(&blend_state_color_blend_state)
+                    .color_blend_state(&color_blend_state)
                     .dynamic_state(&dynamic_state)
                     .layout(layout)
                     .push_next(&mut create_info),
