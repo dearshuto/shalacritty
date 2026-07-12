@@ -271,7 +271,6 @@ impl RenderingService {
                 ash::khr::swapchain::NAME.as_ptr(),
                 ash::khr::storage_buffer_storage_class::NAME.as_ptr(),
                 ash::khr::dynamic_rendering::NAME.as_ptr(),
-                ash::khr::synchronization2::NAME.as_ptr(),
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
