@@ -5,6 +5,7 @@ mod glyph_table;
 mod range_allocator;
 mod text_writer;
 mod transfer_queue;
+mod vkutil;
 pub use api::CaptureRequest;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
@@ -133,12 +134,7 @@ impl RenderingService {
     {
         let entry = ash::Entry::linked();
         let instance = {
-            let application_info = vk::ApplicationInfo::default()
-                .application_name(c"shalacritty")
-                .engine_name(c"shalacritty")
-                .application_version(0)
-                .engine_version(0)
-                .api_version(vk::API_VERSION_1_3);
+            let application_info = vkutil::ApplicationInfoFactory::create();
             let extension_names: Vec<_> = ash_window::enumerate_required_extensions(
                 window.display_handle().unwrap().as_raw(),
             )
