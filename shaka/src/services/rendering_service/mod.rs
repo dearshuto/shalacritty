@@ -303,9 +303,7 @@ impl RenderingService {
                     std::slice::from_ref(&queue_infos[graphics_queue_index])
                 })
                 .enabled_extension_names(&device_extension_names_raw)
-                .enabled_features(std::ptr::null()) // 明示的に null を設定
                 .push_next(&mut features2);
-            ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(physical_device, &device_create_info, None)
         }
@@ -1527,8 +1525,8 @@ impl RenderingService {
                 &[],
                 &[],
                 &[ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
-                    .new_layout(ash::vk::ImageLayout::ATTACHMENT_OPTIMAL)
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::ATTACHMENT_OPTIMAL)
                     .image(self.swapchain_images[next_frame_index as usize])
                     .subresource_range(
                         ash::vk::ImageSubresourceRange::default()
@@ -1552,8 +1550,8 @@ impl RenderingService {
                 &[],
                 &[],
                 &[ash::vk::ImageMemoryBarrier::default()
-                    .old_layout(ash::vk::ImageLayout::UNDEFINED)
-                    .new_layout(ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .image(self.background_image)
                     .subresource_range(
                         ash::vk::ImageSubresourceRange::default()
