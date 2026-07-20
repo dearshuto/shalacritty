@@ -186,56 +186,7 @@ impl RenderingService {
 
         // 物理デバイスの検索
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-        let (physical_device, graphics_queue_index, graphics_queue_count, transfer_queue_index) = {
-            unsafe { instance.enumerate_physical_devices() }
-                .unwrap()
-                .iter()
-                .find_map(|physical_device| {
-                    let properties = unsafe {
-                        instance.get_physical_device_queue_family_properties(*physical_device)
-                    };
-
-                    let mut graphics_queue_count = None;
-                    let mut graphics_queue_index = None;
-                    let mut transfer_queue_index = None;
-                    for (index, property) in properties.into_iter().enumerate() {
-                        if graphics_queue_index.is_none() {
-                            if property.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                                graphics_queue_count = Some(property.queue_count);
-                                graphics_queue_index = Some(index);
-                            }
-                        }
-
-                        if transfer_queue_index.is_none() {
-                            // 転送用は専用キューがあるか
-                            if property.queue_flags == vk::QueueFlags::TRANSFER {
-                                transfer_queue_index = Some(index);
-                                break;
-                            }
-
-                            // 次点で描画キューと干渉しないで使えるキューがあるか
-                            if property.queue_flags.contains(vk::QueueFlags::TRANSFER)
-                                && !property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                            {
-                                transfer_queue_index = Some(index);
-                                break;
-                            }
-                        }
-                    }
-                    // Transfer 専用キューが見つからない場合、Graphics が Transfer 能力を内包しているので相乗りさせる
-                    if transfer_queue_index.is_none() {
-                        transfer_queue_index = graphics_queue_index;
-                    }
-
-                    return Some((
-                        *physical_device,
-                        graphics_queue_index.unwrap(),
-                        graphics_queue_count.unwrap(),
-                        transfer_queue_index.unwrap(),
-                    ));
-                })
-                .unwrap()
-        };
+        let device_capability = vkutil::search_device_capability(&instance);
 
         // デバイス作成
         let device = unsafe {
@@ -243,10 +194,10 @@ impl RenderingService {
             let priorities = [1.0];
             let queue_infos = [
                 vk::DeviceQueueCreateInfo::default()
-                    .queue_family_index(graphics_queue_index as u32)
+                    .queue_family_index(device_capability.graphics_queue_index as u32)
                     .queue_priorities(&priorities),
                 vk::DeviceQueueCreateInfo::default()
-                    .queue_family_index(transfer_queue_index as u32)
+                    .queue_family_index(device_capability.transfer_queue_index as u32)
                     .queue_priorities(&priorities),
             ];
             let device_extension_names_raw = [
@@ -267,11 +218,15 @@ impl RenderingService {
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 // キューファミリーインデックスはユニークでないといけないので、
                 // Transfer キューが Graphics キューに相乗りしてる場合はグラフィックスだけが設定されるようにする
-                .queue_create_infos(if graphics_queue_index != transfer_queue_index {
-                    &queue_infos
-                } else {
-                    std::slice::from_ref(&queue_infos[graphics_queue_index])
-                })
+                .queue_create_infos(
+                    if device_capability.graphics_queue_index
+                        != device_capability.transfer_queue_index
+                    {
+                        &queue_infos
+                    } else {
+                        std::slice::from_ref(&queue_infos[device_capability.graphics_queue_index])
+                    },
+                )
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
                 .push_next(&mut vulkan_features)
@@ -280,30 +235,38 @@ impl RenderingService {
                 .push_next(&mut timeline_semaphore_features);
             ash::vk::DeviceCreateFlags::default();
 
-            instance.create_device(physical_device, &device_create_info, None)
+            instance.create_device(device_capability.physical_device, &device_create_info, None)
         }
         .unwrap();
 
         let dynamic_rendering_device = khr::dynamic_rendering::Device::new(&instance, &device);
 
-        let queue = unsafe { device.get_device_queue(graphics_queue_index as u32, 0) };
-        let transfer_queue = if transfer_queue_index == graphics_queue_index {
-            if graphics_queue_count == 1 {
+        let queue =
+            unsafe { device.get_device_queue(device_capability.graphics_queue_index as u32, 0) };
+        let transfer_queue = if device_capability.transfer_queue_index
+            == device_capability.graphics_queue_index
+        {
+            if device_capability.graphics_queue_count == 1 {
                 queue
             } else {
                 // Graphics に Transfer が相乗りする場合でも、複数のキューが存在するなら可能な限り処理を分離するためにそれぞれ割り当てる
-                unsafe { device.get_device_queue(transfer_queue_index as u32, 1) }
+                unsafe { device.get_device_queue(device_capability.transfer_queue_index as u32, 1) }
             }
         } else {
-            unsafe { device.get_device_queue(transfer_queue_index as u32, 0) }
+            unsafe { device.get_device_queue(device_capability.transfer_queue_index as u32, 0) }
         };
 
-        let surface_format =
-            unsafe { surface_loader.get_physical_device_surface_formats(physical_device, surface) }
-                .unwrap()[0];
+        let surface_format = unsafe {
+            surface_loader
+                .get_physical_device_surface_formats(device_capability.physical_device, surface)
+        }
+        .unwrap()[0];
 
         let surface_capabilities = unsafe {
-            surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
+            surface_loader.get_physical_device_surface_capabilities(
+                device_capability.physical_device,
+                surface,
+            )
         }
         .unwrap();
 
@@ -596,7 +559,7 @@ impl RenderingService {
 
         const COPY_SRC_BUFFER_SIZE: vk::DeviceSize = 64 * 1024;
         let copy_src_buffer = {
-            let queue_family_indices = [graphics_queue_index as u32];
+            let queue_family_indices = [device_capability.graphics_queue_index as u32];
             let create_info = vk::BufferCreateInfo::default()
                 .queue_family_indices(&queue_family_indices)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -607,7 +570,7 @@ impl RenderingService {
 
         const BUFFER_SIZE: vk::DeviceSize = 128 * 1024;
         let buffer = {
-            let queue_family_indices = [graphics_queue_index as u32];
+            let queue_family_indices = [device_capability.graphics_queue_index as u32];
             let create_info = vk::BufferCreateInfo::default()
                 .queue_family_indices(&queue_family_indices)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -624,18 +587,21 @@ impl RenderingService {
         let device_memory = {
             let memory_index = {
                 let memory_requirement = unsafe { device.get_buffer_memory_requirements(buffer) };
-                unsafe { instance.get_physical_device_memory_properties(physical_device) }
-                    .memory_types_as_slice()
-                    .iter()
-                    .enumerate()
-                    .find(|(index, memory_type)| {
-                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
-                            | vk::MemoryPropertyFlags::HOST_COHERENT;
-                        (1 << index) & memory_requirement.memory_type_bits != 0
-                            && memory_type.property_flags & flags == flags
-                    })
-                    .map(|(index, _)| index as u32)
-                    .unwrap()
+                unsafe {
+                    instance
+                        .get_physical_device_memory_properties(device_capability.physical_device)
+                }
+                .memory_types_as_slice()
+                .iter()
+                .enumerate()
+                .find(|(index, memory_type)| {
+                    let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                        | vk::MemoryPropertyFlags::HOST_COHERENT;
+                    (1 << index) & memory_requirement.memory_type_bits != 0
+                        && memory_type.property_flags & flags == flags
+                })
+                .map(|(index, _)| index as u32)
+                .unwrap()
             };
             let allocate_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(BUFFER_SIZE)
@@ -649,18 +615,21 @@ impl RenderingService {
             let memory_index = {
                 let memory_requirement =
                     unsafe { device.get_buffer_memory_requirements(copy_src_buffer) };
-                unsafe { instance.get_physical_device_memory_properties(physical_device) }
-                    .memory_types_as_slice()
-                    .iter()
-                    .enumerate()
-                    .find(|(index, memory_type)| {
-                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
-                            | vk::MemoryPropertyFlags::HOST_COHERENT;
-                        (1 << index) & memory_requirement.memory_type_bits != 0
-                            && memory_type.property_flags & flags == flags
-                    })
-                    .map(|(index, _)| index as u32)
-                    .unwrap()
+                unsafe {
+                    instance
+                        .get_physical_device_memory_properties(device_capability.physical_device)
+                }
+                .memory_types_as_slice()
+                .iter()
+                .enumerate()
+                .find(|(index, memory_type)| {
+                    let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                        | vk::MemoryPropertyFlags::HOST_COHERENT;
+                    (1 << index) & memory_requirement.memory_type_bits != 0
+                        && memory_type.property_flags & flags == flags
+                })
+                .map(|(index, _)| index as u32)
+                .unwrap()
             };
             let allocate_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(COPY_SRC_BUFFER_SIZE)
@@ -682,7 +651,7 @@ impl RenderingService {
 
         let limits = unsafe {
             &instance
-                .get_physical_device_properties(physical_device)
+                .get_physical_device_properties(device_capability.physical_device)
                 .limits
         };
         let min_storage_buffer_offset_alignment =
@@ -761,17 +730,20 @@ impl RenderingService {
         let glyph_memory = {
             let requirements = unsafe { device.get_image_memory_requirements(glyph_image) };
             let memory_index = {
-                unsafe { instance.get_physical_device_memory_properties(physical_device) }
-                    .memory_types_as_slice()
-                    .iter()
-                    .enumerate()
-                    .find(|(index, memory_type)| {
-                        let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
-                        (1 << index) & requirements.memory_type_bits != 0
-                            && memory_type.property_flags & flags == flags
-                    })
-                    .map(|(index, _)| index as u32)
-                    .unwrap()
+                unsafe {
+                    instance
+                        .get_physical_device_memory_properties(device_capability.physical_device)
+                }
+                .memory_types_as_slice()
+                .iter()
+                .enumerate()
+                .find(|(index, memory_type)| {
+                    let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+                    (1 << index) & requirements.memory_type_bits != 0
+                        && memory_type.property_flags & flags == flags
+                })
+                .map(|(index, _)| index as u32)
+                .unwrap()
             };
             let create_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(requirements.size)
@@ -826,17 +798,20 @@ impl RenderingService {
         let background_image_memory = {
             let requirements = unsafe { device.get_image_memory_requirements(background_image) };
             let memory_index = {
-                unsafe { instance.get_physical_device_memory_properties(physical_device) }
-                    .memory_types_as_slice()
-                    .iter()
-                    .enumerate()
-                    .find(|(index, memory_type)| {
-                        let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
-                        (1 << index) & requirements.memory_type_bits != 0
-                            && memory_type.property_flags & flags == flags
-                    })
-                    .map(|(index, _)| index as u32)
-                    .unwrap()
+                unsafe {
+                    instance
+                        .get_physical_device_memory_properties(device_capability.physical_device)
+                }
+                .memory_types_as_slice()
+                .iter()
+                .enumerate()
+                .find(|(index, memory_type)| {
+                    let flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+                    (1 << index) & requirements.memory_type_bits != 0
+                        && memory_type.property_flags & flags == flags
+                })
+                .map(|(index, _)| index as u32)
+                .unwrap()
             };
             let create_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(requirements.size)
@@ -934,7 +909,7 @@ impl RenderingService {
 
         let command_pool = {
             let create_info = vk::CommandPoolCreateInfo::default()
-                .queue_family_index(graphics_queue_index as u32)
+                .queue_family_index(device_capability.graphics_queue_index as u32)
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
             unsafe { device.create_command_pool(&create_info, None) }.unwrap()
         };
@@ -985,7 +960,7 @@ impl RenderingService {
             range_allocator: RangeAllocator::new(4096, 4096),
             instance,
             device,
-            physical_device,
+            physical_device: device_capability.physical_device,
             debug_utils: Some(debug_utils),
             dynamic_rendering_device,
             display_semaphores,
