@@ -10,9 +10,9 @@ pub use api::CaptureRequest;
 use glyph_table::GlyphTable;
 use range_allocator::RangeAllocator;
 
-use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
+use std::{io::Cursor, mem::offset_of, u64};
 
-use ash::{ext::debug_utils, *};
+use ash::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
@@ -1675,34 +1675,6 @@ impl RenderingService {
     fn handle_api_request(&self, request: api::CaptureRequest) {
         let data = Vec::default();
         request.handle.send(CaptureResponse { data }).unwrap();
-    }
-
-    extern "system" fn vulkan_debug_callback(
-        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-        message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-        p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
-        _user_data: *mut std::os::raw::c_void,
-    ) -> vk::Bool32 {
-        let callback_data = unsafe { *p_callback_data };
-        let message_id_number = callback_data.message_id_number;
-
-        let message_id_name = if callback_data.p_message_id_name.is_null() {
-            Cow::from("")
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy() }
-        };
-
-        let message = if callback_data.p_message.is_null() {
-            Cow::from("")
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy() }
-        };
-
-        println!(
-            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
-        );
-
-        vk::FALSE
     }
 }
 
