@@ -12,7 +12,7 @@ use range_allocator::RangeAllocator;
 
 use std::{borrow::Cow, io::Cursor, mem::offset_of, u64};
 
-use ash::*;
+use ash::{ext::debug_utils, *};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
@@ -65,8 +65,7 @@ pub struct RenderingService {
     queue: vk::Queue,
     #[allow(unused)]
     transfer_queue: vk::Queue,
-    debug_utils_loader: ext::debug_utils::Instance,
-    debug_utils_messanger: vk::DebugUtilsMessengerEXT,
+    debug_utils: Option<vkutil::DebugUtils>,
 
     dynamic_rendering_device: khr::dynamic_rendering::Device,
 
@@ -171,20 +170,7 @@ impl RenderingService {
             }
             .unwrap()
         };
-        let debug_utils_loader = ext::debug_utils::Instance::new(&entry, &instance);
-        let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
-            .message_severity(
-                vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING,
-            )
-            .message_type(
-                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
-                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
-            )
-            .pfn_user_callback(Some(Self::vulkan_debug_callback));
-        let debug_utils =
-            unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None) }.unwrap();
+        let debug_utils = vkutil::DebugUtils::new(&entry, &instance);
 
         // サーフェイス
         let surface = unsafe {
@@ -1000,8 +986,7 @@ impl RenderingService {
             instance,
             device,
             physical_device,
-            debug_utils_loader,
-            debug_utils_messanger: debug_utils,
+            debug_utils: Some(debug_utils),
             dynamic_rendering_device,
             display_semaphores,
             command_completed_semaphores,
@@ -1804,10 +1789,8 @@ impl Drop for RenderingService {
         unsafe { self.device.free_memory(self.buffer_memory, None) };
         unsafe { self.device.destroy_buffer(self.buffer, None) };
 
-        unsafe {
-            self.debug_utils_loader
-                .destroy_debug_utils_messenger(self.debug_utils_messanger, None)
-        };
+        // Instance の破棄よりも先に Drop
+        self.debug_utils.take().unwrap();
 
         unsafe { device.free_command_buffers(self.command_pool, &self.command_buffers) };
         unsafe { device.destroy_command_pool(self.command_pool, None) };
