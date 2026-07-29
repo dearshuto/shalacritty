@@ -24,6 +24,7 @@ use crate::services::{
         buffer_view::CharacterData,
         text_writer::{CopyRange, TextWriter},
         transfer_queue::TransferQueue,
+        vkutil::DrawPass,
     },
     shell_service::{PatchData, TextData},
 };
@@ -350,40 +351,15 @@ impl RenderingService {
         };
 
         let descriptor_set_layout = {
-            let bindings = [
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(0)
-                    .descriptor_type(vk::DescriptorType::SAMPLER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(1)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            ];
+            let bindings =
+                vkutil::DescriptorSetUtils::descriptor_set_layout_bindings(DrawPass::Character);
             let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
             unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
         };
 
         let background_descriptor_set_layout = {
-            let bindings = [
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(0)
-                    .descriptor_type(vk::DescriptorType::SAMPLER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(2)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(3)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::VERTEX),
-            ];
+            let bindings =
+                vkutil::DescriptorSetUtils::descriptor_set_layout_bindings(DrawPass::Background);
             let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
             unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
         };
