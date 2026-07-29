@@ -12,7 +12,7 @@ use range_allocator::RangeAllocator;
 
 use std::{io::Cursor, mem::offset_of, u64};
 
-use ash::*;
+use ash::{ext::physical_device_drm, *};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::services::{
@@ -584,24 +584,41 @@ impl RenderingService {
             unsafe { device.create_buffer(&create_info, None) }.unwrap()
         };
 
+        let physical_device_memory_properties = {
+            let mut physical_device_memory_properties =
+                vk::PhysicalDeviceMemoryProperties2::default();
+            unsafe {
+                instance.get_physical_device_memory_properties2(
+                    device_capability.physical_device,
+                    &mut physical_device_memory_properties,
+                )
+            }
+            physical_device_memory_properties
+        };
+
         let device_memory = {
             let memory_index = {
-                let memory_requirement = unsafe { device.get_buffer_memory_requirements(buffer) };
+                let mut memory_requirements = vk::MemoryRequirements2::default();
                 unsafe {
-                    instance
-                        .get_physical_device_memory_properties(device_capability.physical_device)
-                }
-                .memory_types_as_slice()
-                .iter()
-                .enumerate()
-                .find(|(index, memory_type)| {
-                    let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
-                        | vk::MemoryPropertyFlags::HOST_COHERENT;
-                    (1 << index) & memory_requirement.memory_type_bits != 0
-                        && memory_type.property_flags & flags == flags
-                })
-                .map(|(index, _)| index as u32)
-                .unwrap()
+                    device.get_buffer_memory_requirements2(
+                        &vk::BufferMemoryRequirementsInfo2::default().buffer(buffer),
+                        &mut memory_requirements,
+                    )
+                };
+
+                physical_device_memory_properties
+                    .memory_properties
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | vk::MemoryPropertyFlags::HOST_COHERENT;
+                        (1 << index) & memory_requirements.memory_requirements.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
             };
             let allocate_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(BUFFER_SIZE)
@@ -609,27 +626,29 @@ impl RenderingService {
             unsafe { device.allocate_memory(&allocate_info, None) }.unwrap()
         };
 
-        unsafe { device.bind_buffer_memory(buffer, device_memory, 0) }.unwrap();
-
         let copy_src_memory = {
             let memory_index = {
-                let memory_requirement =
-                    unsafe { device.get_buffer_memory_requirements(copy_src_buffer) };
+                let mut memory_requirements = vk::MemoryRequirements2::default();
                 unsafe {
-                    instance
-                        .get_physical_device_memory_properties(device_capability.physical_device)
-                }
-                .memory_types_as_slice()
-                .iter()
-                .enumerate()
-                .find(|(index, memory_type)| {
-                    let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
-                        | vk::MemoryPropertyFlags::HOST_COHERENT;
-                    (1 << index) & memory_requirement.memory_type_bits != 0
-                        && memory_type.property_flags & flags == flags
-                })
-                .map(|(index, _)| index as u32)
-                .unwrap()
+                    device.get_buffer_memory_requirements2(
+                        &vk::BufferMemoryRequirementsInfo2::default().buffer(copy_src_buffer),
+                        &mut memory_requirements,
+                    )
+                };
+
+                physical_device_memory_properties
+                    .memory_properties
+                    .memory_types_as_slice()
+                    .iter()
+                    .enumerate()
+                    .find(|(index, memory_type)| {
+                        let flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | vk::MemoryPropertyFlags::HOST_COHERENT;
+                        (1 << index) & memory_requirements.memory_requirements.memory_type_bits != 0
+                            && memory_type.property_flags & flags == flags
+                    })
+                    .map(|(index, _)| index as u32)
+                    .unwrap()
             };
             let allocate_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(COPY_SRC_BUFFER_SIZE)
@@ -637,7 +656,19 @@ impl RenderingService {
             unsafe { device.allocate_memory(&allocate_info, None) }.unwrap()
         };
 
-        unsafe { device.bind_buffer_memory(copy_src_buffer, copy_src_memory, 0) }.unwrap();
+        unsafe {
+            device.bind_buffer_memory2(&[
+                vk::BindBufferMemoryInfo::default()
+                    .buffer(buffer)
+                    .memory(device_memory)
+                    .memory_offset(0),
+                vk::BindBufferMemoryInfo::default()
+                    .buffer(copy_src_buffer)
+                    .memory(copy_src_memory)
+                    .memory_offset(0),
+            ])
+        }
+        .unwrap();
 
         let ptr = unsafe {
             device.map_memory(
