@@ -67,8 +67,6 @@ pub struct RenderingService {
     transfer_queue: vk::Queue,
     debug_utils: Option<vkutil::DebugUtils>,
 
-    dynamic_rendering_device: khr::dynamic_rendering::Device,
-
     // Graphics Framework
     image_count: usize,
     surface: vk::SurfaceKHR,
@@ -207,14 +205,13 @@ impl RenderingService {
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 ash::khr::portability_subset::NAME.as_ptr(),
             ];
-            let mut vulkan_features =
+            let mut vulkan_11_features =
                 vk::PhysicalDeviceVulkan11Features::default().shader_draw_parameters(true);
-            let mut dynamic_rendering_features =
-                ash::vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
-            let mut sync_features =
-                ash::vk::PhysicalDeviceSynchronization2Features::default().synchronization2(true);
-            let mut timeline_semaphore_features =
-                vk::PhysicalDeviceTimelineSemaphoreFeatures::default().timeline_semaphore(true);
+            let mut vulkan_12_features =
+                vk::PhysicalDeviceVulkan12Features::default().timeline_semaphore(true);
+            let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::default()
+                .dynamic_rendering(true)
+                .synchronization2(true);
             let device_create_info = ash::vk::DeviceCreateInfo::default()
                 // キューファミリーインデックスはユニークでないといけないので、
                 // Transfer キューが Graphics キューに相乗りしてる場合はグラフィックスだけが設定されるようにする
@@ -229,17 +226,14 @@ impl RenderingService {
                 )
                 .enabled_extension_names(&device_extension_names_raw)
                 .enabled_features(&features)
-                .push_next(&mut vulkan_features)
-                .push_next(&mut dynamic_rendering_features)
-                .push_next(&mut sync_features)
-                .push_next(&mut timeline_semaphore_features);
+                .push_next(&mut vulkan_11_features)
+                .push_next(&mut vulkan_12_features)
+                .push_next(&mut vulkan_13_features);
             ash::vk::DeviceCreateFlags::default();
 
             instance.create_device(device_capability.physical_device, &device_create_info, None)
         }
         .unwrap();
-
-        let dynamic_rendering_device = khr::dynamic_rendering::Device::new(&instance, &device);
 
         let queue =
             unsafe { device.get_device_queue(device_capability.graphics_queue_index as u32, 0) };
@@ -962,7 +956,6 @@ impl RenderingService {
             device,
             physical_device: device_capability.physical_device,
             debug_utils: Some(debug_utils),
-            dynamic_rendering_device,
             display_semaphores,
             command_completed_semaphores,
             command_semaphore,
@@ -1524,8 +1517,7 @@ impl RenderingService {
             .layer_count(1)
             .color_attachments(&color_attachments);
         unsafe {
-            self.dynamic_rendering_device
-                .cmd_begin_rendering(command_buffer, &begin_info);
+            device.cmd_begin_rendering(command_buffer, &begin_info);
 
             // 背景描画と文字列描画で矩形のジオメトリ情報は共有しているので、頂点バッファーは 1 度だけ設定してそのまま使い回す
             // ひとつのバッファーを分割してふたつの頂点データとして利用
@@ -1603,8 +1595,7 @@ impl RenderingService {
                 0,                 /*first_instance*/
             );
 
-            self.dynamic_rendering_device
-                .cmd_end_rendering(command_buffer)
+            device.cmd_end_rendering(command_buffer)
         }
 
         unsafe {
