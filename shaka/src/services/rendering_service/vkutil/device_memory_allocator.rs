@@ -1,31 +1,18 @@
-use ash::{vk::MemoryRequirements2, *};
 use std::collections::HashMap;
 
-#[derive(Debug, Hash)]
-struct MemoryPoolTypeKey;
+use ash::*;
+
+struct MemoryInfo {
+    device_memory: vk::DeviceMemory,
+    capacity: vk::DeviceSize,
+    used: vk::DeviceSize,
+}
 
 #[derive(Debug, Default)]
 pub struct AllocateInfo {
-    flags: vk::MemoryPropertyFlags,
-    size: vk::DeviceSize,
-    memory_type_bits: u32,
-}
-
-impl AllocateInfo {
-    pub fn with_flags(mut self, flags: vk::MemoryPropertyFlags) -> Self {
-        self.flags = flags;
-        self
-    }
-
-    pub fn with_size(mut self, size: vk::DeviceSize) -> Self {
-        self.size = size;
-        self
-    }
-
-    pub fn with_memory_type_bits(mut self, bit: u32) -> Self {
-        self.memory_type_bits = bit;
-        self
-    }
+    pub memory_type_index: u32,
+    pub size: vk::DeviceSize,
+    pub alignlemt: vk::DeviceSize,
 }
 
 pub struct AllocateResult {
@@ -35,37 +22,25 @@ pub struct AllocateResult {
 
 pub struct DeviceMemoryAllocator {
     device: ash::Device,
-    memory_pool: Vec<vk::DeviceMemory>,
-    memory_types: Vec<vk::MemoryType>,
+    memory_pool: HashMap<u32, Vec<MemoryInfo>>,
 }
 
 impl DeviceMemoryAllocator {
-    pub fn new(device: ash::Device, memory_types: &[vk::MemoryType]) -> Self {
+    pub fn new(device: ash::Device) -> Self {
         Self {
             device,
-            memory_pool: Vec::default(),
-            memory_types: memory_types.to_vec(),
+            memory_pool: HashMap::default(),
         }
     }
 
     pub fn allocate(&mut self, info: AllocateInfo) -> Option<AllocateResult> {
-        let search_result = self
-            .memory_types
-            .iter()
-            .enumerate()
-            .find(|(index, memory_type)| {
-                let flags =
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
-                (1 << index) & info.memory_type_bits != 0
-                    && memory_type.property_flags & flags == flags
-            })
-            .map(|(index, _)| index as u32);
-        let Some(search_index) = search_result else {
+        let memory_info: Option<MemoryInfo> = None;
+        let Some(memory_info) = memory_info else {
             return None;
         };
 
         Some(AllocateResult {
-            device_memory: self.memory_pool[search_index as usize],
+            device_memory: memory_info.device_memory,
             offset: 0,
         })
     }
@@ -73,12 +48,12 @@ impl DeviceMemoryAllocator {
 
 impl Drop for DeviceMemoryAllocator {
     fn drop(&mut self) {
-        while let Some(device_memory) = self.memory_pool.pop() {
-            unsafe {
-                self.device.free_memory(device_memory, None);
+        for memory_infos in self.memory_pool.values_mut() {
+            while let Some(memory_info) = memory_infos.pop() {
+                unsafe {
+                    self.device.free_memory(memory_info.device_memory, None);
+                }
             }
         }
-
-        self.memory_types.clear();
     }
 }
