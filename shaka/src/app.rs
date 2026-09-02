@@ -7,9 +7,13 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-use crate::services::{
-    EventStream, GlyphExtractService, InputEventService, RenderingService, RenderingServiceParams,
-    ShellService, StreamingEvent, ZellijBridgeParams, ZellijBridgeService,
+use crate::{
+    services::{
+        EventStream, GlyphExtractService, InputEventService, RenderingService,
+        RenderingServiceParams, ShellService, StreamingEvent, ZellijBridgeParams,
+        ZellijBridgeService,
+    },
+    terminal_adapter::TerminalAdapter,
 };
 
 pub struct UserEvent {}
@@ -21,6 +25,8 @@ pub struct App {
     event_loop_proxy: EventLoopProxy<UserEvent>,
     redraw_request_sender: Option<tokio::sync::mpsc::Sender<()>>,
     event_sender_bridge: Option<std::sync::mpsc::Sender<StreamingEvent>>,
+
+    terminal_adapter: TerminalAdapter,
 }
 
 impl App {
@@ -31,6 +37,7 @@ impl App {
             event_loop_proxy: proxy,
             redraw_request_sender: None,
             event_sender_bridge: None,
+            terminal_adapter: TerminalAdapter::new(),
         }
     }
 }
@@ -120,10 +127,12 @@ impl ApplicationHandler<UserEvent> for App {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
         window_id: winit::window::WindowId,
-        event: winit::event::WindowEvent,
+        window_event: winit::event::WindowEvent,
     ) {
-        match event {
-            WindowEvent::KeyboardInput { .. } => {
+        match &window_event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.terminal_adapter.handle_event(&event);
+
                 let Some(sender) = &self.event_sender_bridge else {
                     return;
                 };
@@ -131,7 +140,7 @@ impl ApplicationHandler<UserEvent> for App {
                 sender
                     .send(StreamingEvent {
                         window_id,
-                        window_event: event,
+                        window_event,
                     })
                     .unwrap_or_default();
             }
@@ -151,7 +160,7 @@ impl ApplicationHandler<UserEvent> for App {
                 sender
                     .send(StreamingEvent {
                         window_id,
-                        window_event: event,
+                        window_event,
                     })
                     .unwrap_or_default();
             }
