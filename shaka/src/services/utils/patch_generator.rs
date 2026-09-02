@@ -60,7 +60,7 @@ mod tests {
         } else if old.len() > new.len() {
             old.truncate(new.len());
         }
-        let diff_collectin = utils::diff_calculator::calculate_diff(&old, &new);
+        let diff_collectin = utils::diff_calculator::calculate_diff(old.as_slice(), new.as_slice());
 
         let patches: Vec<PatchData> = utils::generate_patch(diff_collectin.into_iter());
         for patch in &patches {

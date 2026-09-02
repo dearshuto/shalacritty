@@ -44,7 +44,7 @@ impl ShellService {
     }
 
     async fn handle_contents(&mut self, contents: Vec<asura::Content>) {
-        let diff_collection = calculate_diff(&self.old_contents, &contents);
+        let diff_collection = calculate_diff(self.old_contents.as_slice(), contents.as_slice());
         let patches = utils::generate_patch(diff_collection.into_iter());
         self.content_sender
             .send(TextData {
