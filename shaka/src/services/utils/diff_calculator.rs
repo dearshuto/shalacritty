@@ -1,3 +1,9 @@
+pub trait RandomAccess<T> {
+    fn len(&self) -> usize;
+
+    fn get(&self, index: usize) -> &T;
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Diff<T> {
     Common(T),
@@ -6,7 +12,12 @@ pub enum Diff<T> {
 }
 
 /// Myers' diff algorithm implementation.
-pub fn calculate_diff<T: PartialEq + Clone>(old: &[T], new: &[T]) -> Vec<Diff<T>> {
+pub fn calculate_diff<T, TOld, TNew>(old: TOld, new: TNew) -> Vec<Diff<T>>
+where
+    T: PartialEq + Clone,
+    TOld: RandomAccess<T>,
+    TNew: RandomAccess<T>,
+{
     let n = old.len();
     let m = new.len();
 
@@ -15,11 +26,11 @@ pub fn calculate_diff<T: PartialEq + Clone>(old: &[T], new: &[T]) -> Vec<Diff<T>
     }
 
     if n == 0 {
-        return new.iter().map(|v| Diff::Add(v.clone())).collect();
+        return (0..m).map(|i| Diff::Add(new.get(i).clone())).collect();
     }
 
     if m == 0 {
-        return old.iter().map(|v| Diff::Remove(v.clone())).collect();
+        return (0..n).map(|i| Diff::Remove(old.get(i).clone())).collect();
     }
 
     let max_d = n + m;
@@ -42,7 +53,7 @@ pub fn calculate_diff<T: PartialEq + Clone>(old: &[T], new: &[T]) -> Vec<Diff<T>
 
             let mut y = x - k;
 
-            while x < n as isize && y < m as isize && old[x as usize] == new[y as usize] {
+            while x < n as isize && y < m as isize && old.get(x as usize) == new.get(y as usize) {
                 x += 1;
                 y += 1;
             }
@@ -60,14 +71,19 @@ pub fn calculate_diff<T: PartialEq + Clone>(old: &[T], new: &[T]) -> Vec<Diff<T>
     Vec::new()
 }
 
-fn reconstruct_path<T: PartialEq + Clone>(
-    old: &[T],
-    new: &[T],
+fn reconstruct_path<T, TOld, TNew>(
+    old: TOld,
+    new: TNew,
     history: &[Vec<isize>],
     d_final: usize,
     mut k: isize,
     offset: isize,
-) -> Vec<Diff<T>> {
+) -> Vec<Diff<T>>
+where
+    T: PartialEq + Clone,
+    TOld: RandomAccess<T>,
+    TNew: RandomAccess<T>,
+{
     let mut diffs = Vec::new();
     let mut x = old.len() as isize;
     let mut y = new.len() as isize;
@@ -94,18 +110,18 @@ fn reconstruct_path<T: PartialEq + Clone>(
         while x > move_x && y > move_y {
             x -= 1;
             y -= 1;
-            diffs.push(Diff::Common(old[x as usize].clone()));
+            diffs.push(Diff::Common(old.get(x as usize).clone()));
         }
 
         if d > 0 {
             if k > prev_k {
                 // Move Right (Remove from old)
                 x -= 1;
-                diffs.push(Diff::Remove(old[x as usize].clone()));
+                diffs.push(Diff::Remove(old.get(x as usize).clone()));
             } else {
                 // Move Down (Add to new)
                 y -= 1;
-                diffs.push(Diff::Add(new[y as usize].clone()));
+                diffs.push(Diff::Add(new.get(y as usize).clone()));
             }
             k = prev_k;
         }
@@ -113,6 +129,25 @@ fn reconstruct_path<T: PartialEq + Clone>(
 
     diffs.reverse();
     diffs
+}
+
+impl<T> RandomAccess<T> for [T] {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn get(&self, index: usize) -> &T {
+        &self[index]
+    }
+}
+
+impl<'a, T> RandomAccess<T> for &'a [T] {
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+    fn get(&self, index: usize) -> &T {
+        &self[index]
+    }
 }
 
 #[cfg(test)]
@@ -129,9 +164,9 @@ mod tests {
 
     #[test]
     fn test_identical_sequences() {
-        let old = &['A', 'B', 'C'];
-        let new = &['A', 'B', 'C'];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C'];
+        let new = ['A', 'B', 'C'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![Diff::Common('A'), Diff::Common('B'), Diff::Common('C'),]
@@ -140,17 +175,17 @@ mod tests {
 
     #[test]
     fn test_all_additions() {
-        let old: &[char] = &[];
-        let new = &['A', 'B', 'C'];
-        let diff = calculate_diff(old, new);
+        let old: [char; 0] = [];
+        let new = ['A', 'B', 'C'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(diff, vec![Diff::Add('A'), Diff::Add('B'), Diff::Add('C'),]);
     }
 
     #[test]
     fn test_all_deletions() {
-        let old = &['A', 'B', 'C'];
-        let new: &[char] = &[];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C'];
+        let new: [char; 0] = [];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![Diff::Remove('A'), Diff::Remove('B'), Diff::Remove('C'),]
@@ -159,9 +194,9 @@ mod tests {
 
     #[test]
     fn test_mixed_changes() {
-        let old = &['A', 'B', 'C', 'D', 'F'];
-        let new = &['A', 'C', 'D', 'E', 'F'];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C', 'D', 'F'];
+        let new = ['A', 'C', 'D', 'E', 'F'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![
@@ -177,9 +212,9 @@ mod tests {
 
     #[test]
     fn test_replace() {
-        let old = &['A', 'B', 'C'];
-        let new = &['A', 'X', 'C'];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C'];
+        let new = ['A', 'X', 'C'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![
@@ -193,9 +228,9 @@ mod tests {
 
     #[test]
     fn test_long_common_prefix() {
-        let old = &['A', 'B', 'C', 'D', 'E'];
-        let new = &['A', 'B', 'C', 'X', 'Y'];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C', 'D', 'E'];
+        let new = ['A', 'B', 'C', 'X', 'Y'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![
@@ -212,9 +247,9 @@ mod tests {
 
     #[test]
     fn test_long_common_suffix() {
-        let old = &['A', 'B', 'C', 'D', 'E'];
-        let new = &['X', 'Y', 'C', 'D', 'E'];
-        let diff = calculate_diff(old, new);
+        let old = ['A', 'B', 'C', 'D', 'E'];
+        let new = ['X', 'Y', 'C', 'D', 'E'];
+        let diff = calculate_diff(old.as_slice(), new.as_slice());
         assert_eq!(
             diff,
             vec![
