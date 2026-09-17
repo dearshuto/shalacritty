@@ -31,13 +31,15 @@ pub struct App {
 
 impl App {
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel();
+
         Self {
             window: None,
             service_runner: ServiceRunner::default(),
             event_loop_proxy: proxy,
             redraw_request_sender: None,
             event_sender_bridge: None,
-            terminal_adapter: TerminalAdapter::new(),
+            terminal_adapter: TerminalAdapter::new(sender),
         }
     }
 }

@@ -1,6 +1,7 @@
 mod app;
+mod gfx;
 mod plugin_system;
-mod rendering_content_update_job;
+mod rendering_job;
 mod services;
 mod terminal;
 mod terminal_adapter;

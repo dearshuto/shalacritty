@@ -15,19 +15,25 @@ use std::{io::Cursor, mem::offset_of, u64};
 use ash::{ext::physical_device_drm, *};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::services::{
-    EventKind,
-    glyph_extract_service::{FontId, GlyphRequest},
-    rendering_service::{
-        api::CaptureResponse,
-        buffer_layout::BufferLayout,
-        buffer_view::CharacterData,
-        text_writer::{CopyRange, TextWriter},
-        transfer_queue::TransferQueue,
-        vkutil::DrawPass,
+use crate::{
+    gfx,
+    services::{
+        EventKind,
+        glyph_extract_service::{FontId, GlyphRequest},
+        rendering_service::{
+            api::CaptureResponse,
+            buffer_layout::BufferLayout,
+            buffer_view::CharacterData,
+            text_writer::{CopyRange, TextWriter},
+            transfer_queue::TransferQueue,
+            vkutil::DrawPass,
+        },
+        shell_service::{PatchData, TextData},
     },
-    shell_service::{PatchData, TextData},
 };
+
+use crate::gfx::vkutil::ApplicationInfoFactory;
+use crate::gfx::vkutil::DebugUtils;
 
 pub struct RenderingServiceParams {
     pub receiver: tokio::sync::mpsc::Receiver<()>,
@@ -66,7 +72,7 @@ pub struct RenderingService {
     queue: vk::Queue,
     #[allow(unused)]
     transfer_queue: vk::Queue,
-    debug_utils: Option<vkutil::DebugUtils>,
+    debug_utils: Option<DebugUtils>,
 
     // Graphics Framework
     image_count: usize,
@@ -132,7 +138,7 @@ impl RenderingService {
     {
         let entry = ash::Entry::linked();
         let instance = {
-            let application_info = vkutil::ApplicationInfoFactory::create();
+            let application_info = ApplicationInfoFactory::create();
             let extension_names: Vec<_> = ash_window::enumerate_required_extensions(
                 window.display_handle().unwrap().as_raw(),
             )
@@ -169,7 +175,7 @@ impl RenderingService {
             }
             .unwrap()
         };
-        let debug_utils = vkutil::DebugUtils::new(&entry, &instance);
+        let debug_utils = DebugUtils::new(&entry, &instance);
 
         // サーフェイス
         let surface = unsafe {
@@ -185,7 +191,7 @@ impl RenderingService {
 
         // 物理デバイスの検索
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-        let device_capability = vkutil::search_device_capability(&instance);
+        let device_capability = gfx::vkutil::search_device_capability(&instance);
 
         // デバイス作成
         let device = unsafe {
