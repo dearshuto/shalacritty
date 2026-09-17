@@ -1,9 +1,11 @@
 use vt100::Cell;
 
-use crate::services::RandomAccess;
+use crate::services::{RandomAccess, utils::diff_calculator::Diff};
 
 pub struct DiffInfo {
     pub cursor: Option<(u16, u16)>,
+
+    pub diffs: Vec<Diff<Cell>>,
 }
 
 pub struct Terminal {
@@ -30,8 +32,16 @@ impl Terminal {
     pub fn push(&mut self, data: &[u8]) -> DiffInfo {
         self.parser.process(data);
         let screen = self.parser.screen();
+        // TODO: 差分を適用するパッチを生成する
+        let diffs = crate::services::utils::calculate_diff(
+            self.character_cache.as_ref(),
+            SliceAdapter(screen),
+        );
 
-        let mut diff = DiffInfo { cursor: None };
+        let mut diff = DiffInfo {
+            cursor: None,
+            diffs,
+        };
 
         // カーソル位置
         let cursor = screen.cursor_position();
@@ -39,12 +49,6 @@ impl Terminal {
             diff.cursor = Some(cursor);
             self.cursor_position_cache = cursor;
         }
-
-        // TODO: 差分を適用するパッチを生成する
-        let _diffs = crate::services::utils::calculate_diff(
-            self.character_cache.as_ref(),
-            SliceAdapter(screen),
-        );
 
         diff
     }

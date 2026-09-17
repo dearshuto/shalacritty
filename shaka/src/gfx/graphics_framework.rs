@@ -3,6 +3,9 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::gfx::vkutil;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CommandBufferHandle {}
+
 pub struct GraphicsFramework {
     instance: ash::Instance,
     device: ash::Device,
@@ -274,6 +277,10 @@ impl GraphicsFramework {
             command_buffers: [vk::CommandBuffer::null(); 2],
             frame_count: 0,
         }
+    }
+
+    pub fn allocate_command_buffer(&mut self) -> CommandBufferHandle {
+        CommandBufferHandle {}
     }
 
     pub fn render(&mut self) {
