@@ -1,4 +1,5 @@
 mod app;
+mod gfx;
 mod plugin_system;
 mod services;
 
