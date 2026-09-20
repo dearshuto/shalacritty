@@ -83,7 +83,7 @@ impl Widget for &App {
                 //
                 // Y 座標でグループ化
                 // 各グループを 1 行の表示単位として ListItem に変換していく
-                let messages = contents
+                let messages_by_y = contents
                     .iter()
                     .fold(
                         BTreeMap::default(),
@@ -93,8 +93,32 @@ impl Widget for &App {
                                 .push(value.clone());
                             tree
                         },
-                    )
+                    );
+
+                let terminal_height = area.height as i32;
+                let num_content_lines = messages_by_y.len() as i32;
+
+                let mut scroll_offset = 0;
+
+                // If content exceeds terminal height, calculate scroll_offset
+                if num_content_lines > terminal_height {
+                    // Make sure the cursor is visible
+                    if cursor_y >= terminal_height {
+                        scroll_offset = cursor_y - terminal_height + 1;
+                    }
+
+                    // Ensure we don't scroll past the end of the content
+                    let max_possible_scroll_offset = num_content_lines - terminal_height;
+                    scroll_offset = scroll_offset.min(max_possible_scroll_offset);
+                }
+
+                // Make sure scroll_offset is never negative
+                scroll_offset = scroll_offset.max(0);
+
+                let messages: Vec<ListItem> = messages_by_y
                     .into_iter()
+                    .skip(scroll_offset as usize)
+                    .take(terminal_height as usize)
                     .map(|(_key, contents)| {
                         let spans: Vec<Span> = contents
                             .into_iter()
@@ -109,7 +133,8 @@ impl Widget for &App {
                             })
                             .collect();
                         ListItem::new(Text::from(Line::from(spans)))
-                    });
+                    })
+                    .collect();
 
                 List::new(messages)
                     .block(
@@ -120,7 +145,7 @@ impl Widget for &App {
                     .render(area, buf);
 
                 let cursor_x = cursor_x as u16;
-                let cursor_y = cursor_y as u16;
+                let cursor_y = (cursor_y - scroll_offset) as u16; // Adjust cursor_y for display
 
                 // Ensure cursor is within the visible area and within the drawing area bounds
                 if cursor_x < area.width && cursor_y < area.height {
