@@ -15,18 +15,21 @@ use std::{io::Cursor, mem::offset_of, u64};
 use ash::{ext::physical_device_drm, *};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::services::{
-    EventKind,
-    glyph_extract_service::{FontId, GlyphRequest},
-    rendering_service::{
-        api::CaptureResponse,
-        buffer_layout::BufferLayout,
-        buffer_view::CharacterData,
-        text_writer::{CopyRange, TextWriter},
-        transfer_queue::TransferQueue,
-        vkutil::DrawPass,
+use crate::{
+    gfx::vkutil::DeviceMemoryAllocator,
+    services::{
+        EventKind,
+        glyph_extract_service::{FontId, GlyphRequest},
+        rendering_service::{
+            api::CaptureResponse,
+            buffer_layout::BufferLayout,
+            buffer_view::CharacterData,
+            text_writer::{CopyRange, TextWriter},
+            transfer_queue::TransferQueue,
+            vkutil::DrawPass,
+        },
+        shell_service::{PatchData, TextData},
     },
-    shell_service::{PatchData, TextData},
 };
 
 pub struct RenderingServiceParams {
@@ -59,6 +62,7 @@ pub struct RenderingService {
     glyph_table: GlyphTable,
     text_writer: TextWriter,
     range_allocator: RangeAllocator,
+    device_memory_allocator: DeviceMemoryAllocator,
 
     instance: ash::Instance,
     device: ash::Device,
@@ -235,6 +239,8 @@ impl RenderingService {
             instance.create_device(device_capability.physical_device, &device_create_info, None)
         }
         .unwrap();
+
+        let device_memory_allocator = DeviceMemoryAllocator::new(device.clone());
 
         let queue =
             unsafe { device.get_device_queue(device_capability.graphics_queue_index as u32, 0) };
@@ -959,6 +965,7 @@ impl RenderingService {
             glyph_table: GlyphTable::new(4096, 4096),
             text_writer: TextWriter::new(),
             range_allocator: RangeAllocator::new(4096, 4096),
+            device_memory_allocator,
             instance,
             device,
             physical_device: device_capability.physical_device,

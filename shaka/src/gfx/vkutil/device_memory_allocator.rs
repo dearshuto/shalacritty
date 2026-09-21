@@ -22,7 +22,7 @@ pub struct AllocateResult {
 
 pub struct DeviceMemoryAllocator {
     device: ash::Device,
-    memory_pool: HashMap<u32, Vec<MemoryInfo>>,
+    memory_pool: HashMap<u32, MemoryInfo>,
 }
 
 impl DeviceMemoryAllocator {
@@ -34,14 +34,23 @@ impl DeviceMemoryAllocator {
     }
 
     pub fn allocate(&mut self, info: AllocateInfo) -> Option<AllocateResult> {
-        let memory_info: Option<MemoryInfo> = None;
-        let Some(memory_info) = memory_info else {
-            return None;
+        let Some(memory_info) = self.memory_pool.get_mut(&info.memory_type_index) else {
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(info.size)
+                .memory_type_index(info.memory_type_index);
+            let device_memory =
+                unsafe { self.device.allocate_memory(&allocate_info, None) }.unwrap();
+            return Some(AllocateResult {
+                device_memory,
+                offset: 0,
+            });
         };
 
+        let offset = memory_info.used;
+        memory_info.used += info.size;
         Some(AllocateResult {
             device_memory: memory_info.device_memory,
-            offset: 0,
+            offset,
         })
     }
 }
