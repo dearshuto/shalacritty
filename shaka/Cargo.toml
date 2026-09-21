@@ -10,6 +10,7 @@ renge = { path = "../renge" }
 ash = { workspace = true }
 ash-window = { workspace = true }
 font-kit = "0.14"
+gpu-allocator = "0.28.0"
 pathfinder_geometry = "*"
 nalgebra = "0.32.3"
 num-integer = "0.1"
