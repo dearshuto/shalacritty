@@ -10,6 +10,8 @@ alacritty_terminal = { git = "https://github.com/alacritty/alacritty.git", rev =
 itertools = "0.14"
 parking_lot = "*"
 uuid = { version = "*", features = ["v4", "v7"] }
+portable-pty = "0.9.0"
+vt100 = "*"
 
 [dev-dependencies]
 eframe = "0.31.1"
