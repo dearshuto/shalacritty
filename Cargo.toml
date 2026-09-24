@@ -9,6 +9,8 @@ members = [
     "shaka",
     "shalacritty",
     "term-gfx",
+    "vijn",
+    "vijn-cli",
     "zazen",
     "zellij-shaka-bridge",
 ]
