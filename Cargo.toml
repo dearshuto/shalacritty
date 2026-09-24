@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["asura", "asura-cli", "profiler_core", "renge", "shaka", "shalacritty", "term-gfx", "zazen", "zellij-shaka-bridge"]
+members = ["asura", "asura-cli", "profiler_core", "renge", "shaka", "shalacritty", "term-gfx", "vijn", "vijn-cli", "zazen", "zellij-shaka-bridge"]
 
 [workspace.dependencies]
 # 2025 年 1 月 14 日のリビジョン
