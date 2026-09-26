@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 asura = { path = "../asura" }
+karma = { path = "../karma" }
 renge = { path = "../renge" }
 
 ash = { workspace = true }

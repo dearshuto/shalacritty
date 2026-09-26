@@ -1,0 +1,8 @@
+[package]
+name = "karma"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+generational-arena = "*"
+font-kit = "0.14"
