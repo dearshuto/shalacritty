@@ -2,13 +2,11 @@ mod api;
 mod buffer_layout;
 mod buffer_view;
 mod glyph_table;
-mod range_allocator;
 mod text_writer;
 mod transfer_queue;
 mod vkutil;
 pub use api::CaptureRequest;
 use glyph_table::GlyphTable;
-use range_allocator::RangeAllocator;
 
 use std::{io::Cursor, mem::offset_of, u64};
 
@@ -58,7 +56,7 @@ struct BackgroundView {
 pub struct RenderingService {
     glyph_table: GlyphTable,
     text_writer: TextWriter,
-    range_allocator: RangeAllocator,
+    atlas_allocator: karma::AtlasAllocator,
 
     instance: ash::Instance,
     device: ash::Device,
@@ -958,7 +956,7 @@ impl RenderingService {
         Self {
             glyph_table: GlyphTable::new(4096, 4096),
             text_writer: TextWriter::new(),
-            range_allocator: RangeAllocator::new(4096, 4096),
+            atlas_allocator: karma::AtlasAllocator::new(4096, 4096, 1),
             instance,
             device,
             physical_device: device_capability.physical_device,
@@ -1177,7 +1175,7 @@ impl RenderingService {
 
                 // 管理用データを構築
                 let Some(offset) = self
-                    .range_allocator
+                    .atlas_allocator
                     .allocate(glyph.width as u32, glyph.height as u32)
                 else {
                     continue;
@@ -1185,8 +1183,8 @@ impl RenderingService {
 
                 self.glyph_table.insert_glyph(
                     glyph.code,
-                    offset[0],
-                    offset[1],
+                    offset.x,
+                    offset.y,
                     glyph.width as u32,
                     glyph.height as u32,
                     glyph.origin_x,
