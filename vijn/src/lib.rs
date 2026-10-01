@@ -1,4 +1,5 @@
 mod graphics_engine;
+pub mod vkutil;
 
 pub use graphics_engine::GraphicsEngine;
 

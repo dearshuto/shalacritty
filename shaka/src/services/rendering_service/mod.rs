@@ -183,7 +183,7 @@ impl RenderingService {
 
         // 物理デバイスの検索
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-        let device_capability = crate::gfx::vkutil::search_device_capability(&instance);
+        let device_capability = vijn::vkutil::search_device_capability(&instance);
 
         // デバイス作成
         let device = unsafe {

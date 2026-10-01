@@ -7,6 +7,7 @@ edition = "2024"
 asura = { path = "../asura" }
 karma = { path = "../karma" }
 renge = { path = "../renge" }
+vijn = { path = "../vijn" }
 
 ash = { workspace = true }
 ash-window = { workspace = true }

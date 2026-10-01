@@ -2,9 +2,9 @@ use ash::*;
 
 pub struct DeviceCapability {
     pub physical_device: vk::PhysicalDevice,
-    pub graphics_queue_index: usize,
+    pub graphics_queue_index: u32,
     pub graphics_queue_count: u32,
-    pub transfer_queue_index: usize,
+    pub transfer_queue_index: u32,
 }
 
 pub fn search_device_capability(instance: &ash::Instance) -> DeviceCapability {
@@ -22,14 +22,14 @@ pub fn search_device_capability(instance: &ash::Instance) -> DeviceCapability {
                 if graphics_queue_index.is_none() {
                     if property.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
                         graphics_queue_count = Some(property.queue_count);
-                        graphics_queue_index = Some(index);
+                        graphics_queue_index = Some(index as u32);
                     }
                 }
 
                 if transfer_queue_index.is_none() {
                     // 転送用は専用キューがあるか
                     if property.queue_flags == vk::QueueFlags::TRANSFER {
-                        transfer_queue_index = Some(index);
+                        transfer_queue_index = Some(index as u32);
                         break;
                     }
 
@@ -37,7 +37,7 @@ pub fn search_device_capability(instance: &ash::Instance) -> DeviceCapability {
                     if property.queue_flags.contains(vk::QueueFlags::TRANSFER)
                         && !property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                     {
-                        transfer_queue_index = Some(index);
+                        transfer_queue_index = Some(index as u32);
                         break;
                     }
                 }

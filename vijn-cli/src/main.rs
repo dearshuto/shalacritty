@@ -10,6 +10,9 @@ fn main() {
         }
     };
 
+    let physical_device = vk::PhysicalDevice::null();
+    let graphics_engine = vijn::GraphicsEngine::new(&instance, physical_device);
+
     let factory = asura::DefaultFactory::default();
     let mut system = asura::TerminalSystem::new(factory);
 
