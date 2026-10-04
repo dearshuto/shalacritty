@@ -3,15 +3,31 @@ use ash::*;
 fn main() {
     let entry = ash::Entry::linked();
     let instance = {
-        unsafe {
-            let application_info = vk::ApplicationInfo::default();
-            let create_info = vk::InstanceCreateInfo::default().application_info(&application_info);
-            entry.create_instance(&create_info, None).unwrap()
-        }
+        let application_info = vk::ApplicationInfo::default();
+
+        let extension_names = [
+            ash::ext::debug_utils::NAME.as_ptr(),
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            khr::get_physical_device_properties2::NAME.as_ptr(),
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            khr::portability_enumeration::NAME.as_ptr(),
+        ];
+        let create_flags = if cfg!(any(target_os = "macos", target_os = "ios")) {
+            ash::vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
+        } else {
+            ash::vk::InstanceCreateFlags::default()
+        };
+        let layer_names = [c"VK_LAYER_KHRONOS_validation".as_ptr()];
+        let create_info = vk::InstanceCreateInfo::default()
+            .application_info(&application_info)
+            .enabled_layer_names(&layer_names)
+            .enabled_extension_names(&extension_names)
+            .flags(create_flags);
+        unsafe { entry.create_instance(&create_info, None).unwrap() }
     };
 
-    let physical_device = vk::PhysicalDevice::null();
-    let graphics_engine = vijn::GraphicsEngine::new(&instance, physical_device);
+    let device_capability = vijn::vkutil::search_device_capability(&instance);
+    let mut graphics_engine = vijn::GraphicsEngine::new(&instance, &device_capability);
 
     let factory = asura::DefaultFactory::default();
     let mut system = asura::TerminalSystem::new(factory);
@@ -44,4 +60,7 @@ fn main() {
             // }
         }
     }
+
+    graphics_engine.cleanup(&instance);
+    unsafe { instance.destroy_instance(None) };
 }
