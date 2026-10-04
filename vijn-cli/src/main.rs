@@ -27,7 +27,7 @@ fn main() {
     };
 
     let device_capability = vijn::vkutil::search_device_capability(&instance);
-    let mut graphics_engine = vijn::GraphicsEngine::new(&instance, &device_capability);
+    let graphics_engine = vijn::GraphicsEngine::new(&instance, &device_capability);
 
     let factory = asura::DefaultFactory::default();
     let mut system = asura::TerminalSystem::new(factory);
@@ -61,6 +61,6 @@ fn main() {
         }
     }
 
-    graphics_engine.cleanup(&instance);
+    drop(graphics_engine);
     unsafe { instance.destroy_instance(None) };
 }
